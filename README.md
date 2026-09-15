@@ -408,35 +408,36 @@ The instructor should be able to approve, modify, or reject an AI-generated eval
 ## Repository Structure
 
 ```text
-ai-oral-exam-platform/
-│
-├── backend/
-│   ├── api/
-│   ├── models/
-│   ├── services/
-│   ├── prompts/
-│   ├── database/
-│   └── tests/
-│
-├── frontend/
-│   ├── app/
-│   ├── components/
-│   └── services/
-│
-├── ai/
-│   ├── examiner/
-│   ├── evaluator/
-│   ├── speech/
-│   └── avatar/
-│
-├── docs/
-│   ├── architecture/
-│   ├── development/
-│   ├── testing/
-│   └── security/
+AI-Oral-Examiner/
 │
 ├── README.md
-├── requirements.txt
+│
+├── docs/
+│   ├── architecture.md
+│   ├── windows-setup.md
+│   ├── ubuntu-deployment.md
+│   └── security.md
+│
+├── prompts/
+│   ├── examiner-system-prompt.md
+│   ├── grading-prompt.md
+│   └── follow-up-prompt.md
+│
+├── workflows/
+│   └── dify/
+│
+├── database/
+│   └── schema.sql
+│
+├── knowledge/
+│   └── README.md
+│
+├── scripts/
+│
+├── config/
+│
+├── tests/
+│
 ├── .env.example
 └── .gitignore
 ```

@@ -1,0 +1,35 @@
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: examdb
+    ports:
+      - "5432:5432"        # remove later if only containers need it
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./database:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d examdb"]
+      interval: 5s
+      retries: 10
+
+  ollama:
+    image: ollama/ollama:latest
+    entrypoint: ["/bin/sh", "/modelfiles/entrypoint.sh"]
+    environment:
+      BASE_MODEL: ${BASE_MODEL}
+    ports:
+      - "11434:11434"      # lets your Python tests and Dify reach it
+    volumes:
+      - ollama_models:/root/.ollama
+      - ./ollama:/modelfiles:ro
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      retries: 10
+
+volumes:
+  pgdata:
+  ollama_models: qwen3:4b

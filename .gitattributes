@@ -8,3 +8,5 @@ tests/expected.json -text
 tests/run_rubrics.py -text
 tests/test_harness.py -text
 tests/results/** -text
+*.sh text eol=lf
+Dockerfile text eol=lf

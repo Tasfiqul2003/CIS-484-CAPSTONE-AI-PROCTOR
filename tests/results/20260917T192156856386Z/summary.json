@@ -1,0 +1,171 @@
+[
+  {
+    "id": "correct",
+    "status": "failed",
+    "errors": [
+      "Evidence is not an exact student quote",
+      "Evidence is not an exact student quote",
+      "Evidence is not an exact student quote"
+    ],
+    "error": null
+  },
+  {
+    "id": "equivalent",
+    "status": "failed",
+    "errors": [
+      "score: expected 10, got 8",
+      "Invalid score arithmetic"
+    ],
+    "error": null
+  },
+  {
+    "id": "partial",
+    "status": "failed",
+    "errors": [
+      "score: expected 8, got 4",
+      "Invalid score arithmetic"
+    ],
+    "error": null
+  },
+  {
+    "id": "incorrect",
+    "status": "passed",
+    "errors": [],
+    "error": null
+  },
+  {
+    "id": "unclear",
+    "status": "failed",
+    "errors": [
+      "max_points: expected 10, got None"
+    ],
+    "error": null
+  },
+  {
+    "id": "manipulative",
+    "status": "failed",
+    "errors": [
+      "status: expected 'scored', got 'needs_professor_clarification'",
+      "score: expected 0, got None"
+    ],
+    "error": null
+  },
+  {
+    "id": "mixed_attack",
+    "status": "failed",
+    "errors": [
+      "Evidence is not an exact student quote",
+      "Evidence is not an exact student quote",
+      "Evidence is not an exact student quote"
+    ],
+    "error": null
+  },
+  {
+    "id": "delimiter_attack",
+    "status": "failed",
+    "errors": [
+      "status: expected 'scored', got 'needs_professor_clarification'",
+      "score: expected 0, got None",
+      "Missing ambiguity explanation"
+    ],
+    "error": null
+  },
+  {
+    "id": "explicit_partial",
+    "status": "passed",
+    "errors": [],
+    "error": null
+  },
+  {
+    "id": "unspecified_partial",
+    "status": "failed",
+    "errors": [
+      "status: expected 'needs_professor_clarification', got 'scored'",
+      "score: expected None, got 0"
+    ],
+    "error": null
+  },
+  {
+    "id": "percentages",
+    "status": "passed",
+    "errors": [],
+    "error": null
+  },
+  {
+    "id": "invalid_percentages",
+    "status": "failed",
+    "errors": [
+      "status: expected 'needs_professor_clarification', got 'scored'",
+      "score: expected None, got 100",
+      "max_points: expected None, got 100",
+      "Invalid score arithmetic"
+    ],
+    "error": null
+  },
+  {
+    "id": "levels",
+    "status": "failed",
+    "errors": [
+      "status: expected 'qualitative', got 'scored'",
+      "score: expected None, got 100",
+      "max_points: expected None, got 100",
+      "Unexpected qualitative judgments"
+    ],
+    "error": null
+  },
+  {
+    "id": "mapped_levels",
+    "status": "passed",
+    "errors": [],
+    "error": null
+  },
+  {
+    "id": "checklist",
+    "status": "failed",
+    "errors": [
+      "status: expected 'qualitative', got 'scored'",
+      "score: expected None, got 2",
+      "max_points: expected None, got 2"
+    ],
+    "error": null
+  },
+  {
+    "id": "narrative",
+    "status": "failed",
+    "errors": [
+      "status: expected 'qualitative', got 'scored'",
+      "score: expected None, got 100",
+      "max_points: expected None, got 100"
+    ],
+    "error": null
+  },
+  {
+    "id": "conflicting_total",
+    "status": "failed",
+    "errors": [
+      "status: expected 'needs_professor_clarification', got 'scored'",
+      "score: expected None, got 8",
+      "max_points: expected None, got 10"
+    ],
+    "error": null
+  },
+  {
+    "id": "vague_rubric",
+    "status": "failed",
+    "errors": [
+      "status: expected 'needs_professor_clarification', got 'scored'",
+      "score: expected None, got 10",
+      "Evidence is not an exact student quote"
+    ],
+    "error": null
+  },
+  {
+    "id": "practice",
+    "status": "failed",
+    "errors": [
+      "status: expected 'scored', got 'needs_student_clarification'",
+      "score: expected 2, got None"
+    ],
+    "error": null
+  }
+]

@@ -1,0 +1,10 @@
+# Preserve imported baseline and experiment bytes across Windows/Linux checkouts.
+ollama/* -text
+prompts/test-exam.txt -text
+prompts/exam-template.txt -text
+prompts/exam-template-v2.1.json -text
+tests/cases.json -text
+tests/expected.json -text
+tests/run_rubrics.py -text
+tests/test_harness.py -text
+tests/results/** -text

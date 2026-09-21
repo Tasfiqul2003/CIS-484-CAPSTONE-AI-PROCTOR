@@ -1,0 +1,6 @@
+{
+  "ollama/Modelfile": "615227b5ab39dd8b374ae1af97445a4663e8ab9391adc9afab77437eb53c21ee",
+  "ollama/Modelfile-v2": "d8198178fb6c693214ee1e73a3f84f9fcb61e326549d06def482ec910ee488a6",
+  "prompts/test-exam.txt": "db52f95927b701069710470e0d8fd74e826f998c96b214026f790f1ec3efaec9",
+  "prompts/exam-template.txt": "ddabf930f5cda1b8a024331968c5fd128036572ebb97184825ab19512c9d16bb"
+}

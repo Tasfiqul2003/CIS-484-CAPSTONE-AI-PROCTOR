@@ -1,0 +1,53 @@
+# Secrets and machine configuration
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+credentials*.json
+secrets.*
+hosts.yml
+# Local environments and caches
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+node_modules/
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+# Weights, installers and downloaded runtime assets
+.ollama/
+models/
+model-weights/
+*.gguf
+*.safetensors
+*.pt
+*.pth
+*.onnx
+*.exe
+*.msi
+*.msix
+*.zip
+# Private examination data must never be committed
+private-data/
+student-records/
+exam-records/
+recordings/
+transcripts/
+*.wav
+*.mp3
+*.m4a
+*.mp4
+*.webm
+*.sqlite*
+*.db
+# New raw results are local until reviewed as synthetic; preserve known evidence
+/tests/results/*
+!/tests/results/20260917T192156856386Z/

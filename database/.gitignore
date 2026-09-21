@@ -1,0 +1,39 @@
+# --- Environment / secrets ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# .env.* with !.env.example ignores all your real env files
+# but keeps an example template trackable — useful for teammates to know what variables they need
+# without seeing actual credentials
+
+# --- Database ---
+*.sql.bak
+pgdata/
+*.dump
+*.sqlc
+
+# pgdata/ is there in case you're running Postgres locally via Docker with a mounted volume folder in the repo
+# delete that line if you're not doing that
+
+# --- OS junk ---
+.DS_Store
+Thumbs.db
+
+# --- Editor / IDE ---
+.vscode/
+.idea/
+*.swp
+
+# --- Logs ---
+*.log
+logs/
+
+# --- Dependencies (uncomment what applies to your backend) ---
+# node_modules/
+# venv/
+# __pycache__/
+# bin/
+# obj/

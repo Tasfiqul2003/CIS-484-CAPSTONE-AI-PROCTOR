@@ -2,13 +2,16 @@
 .env
 .env.*
 !.env.example
+*.env
 *.pem
 *.key
 *.p12
 *.pfx
 credentials*.json
 secrets.*
+config/secrets.yml
 hosts.yml
+
 # Local environments and caches
 .venv/
 venv/
@@ -22,6 +25,7 @@ node_modules/
 Thumbs.db
 .vscode/
 .idea/
+
 # Weights, installers and downloaded runtime assets
 .ollama/
 models/
@@ -35,6 +39,7 @@ model-weights/
 *.msi
 *.msix
 *.zip
+
 # Private examination data must never be committed
 private-data/
 student-records/
@@ -48,6 +53,7 @@ transcripts/
 *.webm
 *.sqlite*
 *.db
+
 # New raw results are local until reviewed as synthetic; preserve known evidence
 /tests/results/*
 !/tests/results/20260917T192156856386Z/

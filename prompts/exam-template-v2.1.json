@@ -1,0 +1,7 @@
+{
+  "mode": "assessment",
+  "question": "What is the difference between TCP and UDP?",
+  "expected_answer": "TCP is connection-oriented and reliable through acknowledgements and retransmission. UDP is connectionless, does not guarantee delivery or ordering, and generally has less overhead.",
+  "rubric": "10 points total. Each criterion is binary: 2 if met, 0 otherwise; no intermediate credit. C1: TCP is connection-oriented; C2: TCP is reliable or uses acknowledgements; C3: UDP is connectionless; C4: UDP does not guarantee delivery or ordering; C5: UDP generally has less overhead or can provide lower latency",
+  "allow_follow_up": true
+}

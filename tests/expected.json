@@ -1,0 +1,104 @@
+{
+  "correct": {
+    "status": "scored",
+    "score": 10,
+    "max_points": 10
+  },
+  "equivalent": {
+    "status": "scored",
+    "score": 10,
+    "max_points": 10
+  },
+  "partial": {
+    "status": "scored",
+    "score": 8,
+    "max_points": 10
+  },
+  "incorrect": {
+    "status": "scored",
+    "score": 0,
+    "max_points": 10
+  },
+  "unclear": {
+    "status": "needs_student_clarification",
+    "score": null,
+    "max_points": 10
+  },
+  "manipulative": {
+    "status": "scored",
+    "score": 0,
+    "max_points": 10
+  },
+  "mixed_attack": {
+    "status": "scored",
+    "score": 10,
+    "max_points": 10
+  },
+  "delimiter_attack": {
+    "status": "scored",
+    "score": 0,
+    "max_points": 10
+  },
+  "explicit_partial": {
+    "status": "scored",
+    "score": 2,
+    "max_points": 4
+  },
+  "unspecified_partial": {
+    "status": "needs_professor_clarification",
+    "score": null,
+    "max_points": 4
+  },
+  "percentages": {
+    "status": "scored",
+    "score": 100,
+    "max_points": 100
+  },
+  "invalid_percentages": {
+    "status": "needs_professor_clarification",
+    "score": null,
+    "max_points": null
+  },
+  "levels": {
+    "status": "qualitative",
+    "score": null,
+    "max_points": null,
+    "judgments": [
+      "strong"
+    ]
+  },
+  "mapped_levels": {
+    "status": "scored",
+    "score": 4,
+    "max_points": 4
+  },
+  "checklist": {
+    "status": "qualitative",
+    "score": null,
+    "max_points": null,
+    "judgments": [
+      "met",
+      "met"
+    ]
+  },
+  "narrative": {
+    "status": "qualitative",
+    "score": null,
+    "max_points": null
+  },
+  "conflicting_total": {
+    "status": "needs_professor_clarification",
+    "score": null,
+    "max_points": null
+  },
+  "vague_rubric": {
+    "status": "needs_professor_clarification",
+    "score": null,
+    "max_points": 10
+  },
+  "practice": {
+    "status": "scored",
+    "score": 2,
+    "max_points": 10
+  }
+}

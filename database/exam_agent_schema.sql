@@ -55,7 +55,7 @@ CREATE TABLE questions (
 );
 
 -- similarity search index (for retrieving related/follow-up questions)
-CREATE INDEX ON questions USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
+--  CREATE INDEX ON questions USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
 
 -- ------------------------------------------------------------
 -- Exam sessions (one row per student attempt)

@@ -46,6 +46,7 @@ student-records/
 exam-records/
 recordings/
 transcripts/
+media/
 *.wav
 *.mp3
 *.m4a

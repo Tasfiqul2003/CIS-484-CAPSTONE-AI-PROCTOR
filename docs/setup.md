@@ -44,3 +44,42 @@ Results go to a new UTC directory under tests/results. The default runner uses q
 Select CIS hardware and supported runtime versions; prepare approved installers, Python, model weights, checksums and licenses before isolation. On Ubuntu use python3 and the platform's approved Ollama installation procedure. Recreate the models and repeat tests on actual hardware. Disconnect networking and verify all required functions, logs, dependencies, and recovery paths locally. Localhost requests alone do not prove air-gapped operation. Cloud database/auth proposals need client reconciliation before implementation.
 
 References: https://docs.ollama.com/modelfile and https://docs.ollama.com/api/chat.
+
+## Python integration prototypes
+
+The scripts in `python/` require the official Ollama Python package, unlike the standard-library rubric tests above. The original environment metadata records Python 3.13.15 and ollama 0.6.2. Install Python 3.13 and Ollama separately, then run these commands from the repository root:
+
+```powershell
+py -3.13 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+ollama list
+```
+
+If PowerShell blocks activation, temporarily allow scripts for this process and retry:
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+.\.venv\Scripts\Activate.ps1
+```
+
+Activation is optional. You can instead use `.\.venv\Scripts\python.exe` wherever these instructions use `python`, including dependency installation.
+
+Ollama must be running with `oral-examiner-v2:latest` installed. Models are not included in a Git clone. If the base model is missing, run `ollama pull qwen3:4b` (requires network access and disk space). If the custom V2 model is missing, run `ollama create oral-examiner-v2 -f ollama/Modelfile-v2`, then check `ollama list` again. Do not recreate an existing customized model unless you intend to replace its local definition.
+
+```powershell
+python python/test_ollama.py
+python python/test_ollama_v2.py
+```
+
+V1 prints one response and exits. V2 waits at `You:`; ask multiple questions and type `exit` to stop. It accepts case-insensitive `exit` without surrounding spaces. Blank input is sent as-is, each request is independent, and connection errors are not caught. These are preserved prototypes, not an exam session or a grading service.
+
+For team updates, first save unfinished changes on your own branch. In a clean checkout, fetch and switch to the published contribution branch:
+
+```powershell
+git fetch origin
+git switch python/ollama-integration-v1-v2
+git pull --ff-only
+```
+
+Then create/activate the environment, install requirements, verify the model, and run the scripts above. If Git cannot switch or fast-forward, stop and coordinate instead of discarding changes. Follow CONTRIBUTING.md for review and eventual maintainer merge; this branch is not automatically merged into main.

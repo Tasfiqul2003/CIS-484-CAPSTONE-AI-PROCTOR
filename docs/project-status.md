@@ -25,3 +25,7 @@ Client-approved CIS 454 requirements baseline is not supplied. Follow-up limits,
 ## Conflict to resolve
 
 Version 0.1 examiner/follow-up designs prohibit hints and grading during assessment. V2 allows explanations, correction, and adaptation. Preserve both for comparison; do not use v2's conversational behavior as enforcement of assessment rules. V2.1's intended rules also failed several synthetic cases. Human review and application controls remain necessary.
+
+## Python text integration increment — September 21
+
+Added preserved one-shot and interactive Python milestones under `python/`, both using `oral-examiner-v2:latest` through ollama 0.6.2. Development environment metadata records Python 3.13.15. V2 supports repeated typed questions but retains no conversation history and sends blank input unchanged. User-reported successful runs covered an introduction, arithmetic, and TCP/UDP explanations. See [Python progress](python-progress.md) for current verification evidence. This adds a text client, not the proposed FastAPI application or voice/avatar system.

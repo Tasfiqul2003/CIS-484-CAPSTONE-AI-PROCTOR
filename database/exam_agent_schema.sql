@@ -20,6 +20,8 @@
 --     and has no real timezone storage; DATETIME is the safer match).
 -- ============================================================
 
+CREATE EXTENSION IF NOT EXISTS vector;
+
 SET NAMES utf8mb4;
 SET FOREIGN_KEY_CHECKS = 1;
 

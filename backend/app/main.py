@@ -5,8 +5,10 @@ import httpx
 import os
 
 from .db import get_db
+from .exam import router as exam_router
 
 app = FastAPI(title="AI Oral Exam Proctor")
+app.include_router(exam_router)
 
 
 @app.get("/")

@@ -7,10 +7,14 @@ import os
 from .db import get_db
 from .exam import router as exam_router
 from .grading import router as grading_router
+from .review import router as review_router
+from .stream import router as stream_router
 
 app = FastAPI(title="AI Oral Exam Proctor")
 app.include_router(exam_router)
 app.include_router(grading_router)
+app.include_router(review_router)
+app.include_router(stream_router)
 
 
 @app.get("/")

@@ -23,3 +23,9 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+def open_session():
+    """Standalone session for code that outlives the request (e.g. streaming)."""
+    _init()
+    return _SessionLocal()

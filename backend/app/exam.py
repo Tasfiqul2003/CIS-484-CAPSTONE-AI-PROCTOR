@@ -72,7 +72,7 @@ def ask_model(template, history, bank_remaining):
 def end_session(db: Session, session_id: str):
     db.execute(
         text("""UPDATE exam_sessions
-                SET status = 'pending_grading', ended_at = now()
+                SET status = CASE WHEN EXISTS (SELECT 1 FROM integrity_events WHERE session_id = CAST(:sid AS uuid) AND severity >= 4) THEN 'flagged' ELSE 'pending_grading' END, ended_at = now()
                 WHERE id = CAST(:sid AS uuid)"""),
         {"sid": session_id},
     )

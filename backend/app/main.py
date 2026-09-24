@@ -1,6 +1,10 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
+from sqlalchemy import text
+from sqlalchemy.orm import Session
 import httpx
 import os
+
+from app.db import get_db
 
 app = FastAPI(title="AI Oral Exam Proctor")
 
@@ -16,6 +20,17 @@ def root():
 def health():
     return {
         "status": "healthy"
+    }
+
+
+@app.get("/db")
+def database_test(db: Session = Depends(get_db)):
+    result = db.execute(text("SELECT current_database();"))
+    database_name = result.scalar()
+
+    return {
+        "status": "connected",
+        "database": database_name
     }
 
 

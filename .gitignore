@@ -20,6 +20,11 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.cache/
+.huggingface/
+huggingface/
+hf-cache/
+huggingface-cache/
 node_modules/
 .DS_Store
 Thumbs.db
@@ -35,6 +40,7 @@ model-weights/
 *.pt
 *.pth
 *.onnx
+*.onnx.json
 *.exe
 *.msi
 *.msix

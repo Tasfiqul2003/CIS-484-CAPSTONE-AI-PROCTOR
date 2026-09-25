@@ -12,3 +12,9 @@ Pair six teammates across rubric/evaluation, application/session, and tests/depl
 Immediate work: investigate invalid percentage normalization and invented numeric grades for qualitative rubrics; preserve failing runs; resolve whether nullable maxima are required on unclear answers; test equivalent wording and OR conditions without invented requirements. A professor-approved structured rubric plus deterministic arithmetic is a possible next increment, not implemented here.
 
 Avoid widening scope until the text acceptance gate is met. Avatar, RAG and identity approaches remain pending client scope decisions; defer optional work if integration slips. Do not equate prompt version 2.0 with sprint completion or an application release.
+
+## Foundation V1 update — September 25, 2026
+
+A standalone single-turn voice foundation now exists using sounddevice, Faster-Whisper, Ollama/Qwen3, and Piper. Local end-to-end success is developer-reported; safe integration checks do not measure speech quality or latency. Existing team API/frontend/database/Docker work is preserved but is not connected to this voice script yet.
+
+Next voice increments: continuous back-and-forth conversation and session state; measured latency and model-loading improvements; streaming audio and improved voice quality; professor-created questions and rubric-aware evaluation; controlled follow-ups; transcript and score/result handling; professor/student interface, authentication and database integration; then avatar and Ubuntu deployment. The rubric acceptance and professor-review gates above still apply. A working spoken demo does not resolve grading or assessment-policy failures.

@@ -10,3 +10,7 @@ tests/test_harness.py -text
 tests/results/** -text
 *.sh text eol=lf
 Dockerfile text eol=lf
+
+# Preserve the imported voice milestone and manual development snapshots.
+backend/ai_oral_examiner_foundation_v1.py -text
+tests/development/manual_*.py -text

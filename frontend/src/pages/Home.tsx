@@ -1,8 +1,4 @@
-import { useNavigate } from "react-router-dom";
-
 export default function Home() {
-  const navigate = useNavigate();
-
   return (
     <div className="home-page">
       <header className="home-header">
@@ -33,11 +29,8 @@ export default function Home() {
             <h2>How are you using OralExam AI?</h2>
 
             <div className="role-cards">
-              <button
-                className="role-card"
-                onClick={() => navigate("/student/verify")}
-              >
-                <div className="role-icon student-icon">👤</div>
+              <button className="role-card">
+                <div className="role-icon">👤</div>
 
                 <div className="role-card-content">
                   <h3>I'm a Student</h3>
@@ -50,11 +43,8 @@ export default function Home() {
                 <span className="arrow">→</span>
               </button>
 
-              <button
-                className="role-card"
-                onClick={() => navigate("/teacher/login")}
-              >
-                <div className="role-icon teacher-icon">▣</div>
+              <button className="role-card">
+                <div className="role-icon">▣</div>
 
                 <div className="role-card-content">
                   <h3>I'm a Professor</h3>

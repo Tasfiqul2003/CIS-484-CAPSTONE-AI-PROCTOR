@@ -1,6 +1,7 @@
 export default function Home() {
   return (
     <div className="home-page">
+
       <header className="home-header">
         <div className="logo">
           <span className="logo-icon">◉</span>
@@ -9,9 +10,13 @@ export default function Home() {
       </header>
 
       <main className="home-content">
+
         <section className="hero-section">
+
           <div className="hero-text">
-            <p className="eyebrow">AI-POWERED ORAL EXAMINATIONS</p>
+            <p className="eyebrow">
+              AI-POWERED ORAL EXAMINATIONS
+            </p>
 
             <h1>
               A smarter way to conduct
@@ -26,14 +31,23 @@ export default function Home() {
           </div>
 
           <div className="role-selection">
+
             <h2>How are you using OralExam AI?</h2>
 
             <div className="role-cards">
-              <button className="role-card">
+
+              <button
+                type="button"
+                className="role-card"
+                onClick={() => {
+                  window.location.href = "/student/verification";
+                }}
+              >
                 <div className="role-icon">👤</div>
 
                 <div className="role-card-content">
                   <h3>I'm a Student</h3>
+
                   <p>
                     Swipe your JACard to verify your identity and access your
                     available exams.
@@ -43,11 +57,18 @@ export default function Home() {
                 <span className="arrow">→</span>
               </button>
 
-              <button className="role-card">
+              <button
+                type="button"
+                className="role-card"
+                onClick={() => {
+                  alert("Professor login coming next!");
+                }}
+              >
                 <div className="role-icon">▣</div>
 
                 <div className="role-card-content">
                   <h3>I'm a Professor</h3>
+
                   <p>
                     Log in to create exams, manage questions and materials,
                     and review student submissions.
@@ -56,15 +77,20 @@ export default function Home() {
 
                 <span className="arrow">→</span>
               </button>
+
             </div>
           </div>
+
         </section>
 
         <section className="features-section">
+
           <div className="feature">
             <div className="feature-icon">🎙️</div>
+
             <div>
               <h3>Interactive Oral Exams</h3>
+
               <p>
                 Students answer questions verbally through an AI-powered
                 examination experience.
@@ -74,8 +100,10 @@ export default function Home() {
 
           <div className="feature">
             <div className="feature-icon">🔐</div>
+
             <div>
               <h3>Student Verification</h3>
+
               <p>
                 JACard and identity verification help ensure students take
                 their own examinations.
@@ -85,21 +113,21 @@ export default function Home() {
 
           <div className="feature">
             <div className="feature-icon">📚</div>
+
             <div>
               <h3>Professor Controls</h3>
+
               <p>
                 Professors control their question banks, course materials,
                 exams, and student submissions.
               </p>
             </div>
           </div>
+
         </section>
+
       </main>
 
-      <footer className="home-footer">
-        <p>OralExam AI</p>
-        <p>AI-assisted oral examination platform</p>
-      </footer>
     </div>
   );
 }

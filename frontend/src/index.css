@@ -119,6 +119,10 @@ button {
   border: 1px solid #e0e4ea;
   border-radius: 14px;
   cursor: pointer;
+
+  font: inherit;
+  color: inherit;
+
   transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
 }
 

@@ -1,4 +1,4 @@
-# Project status — 2026-09-28
+# Project status â€” 2026-09-28
 
 ## Saved implementation
 
@@ -14,7 +14,7 @@ Six harness tests previously passed; preparation checks and any fresh rerun are 
 
 The existing `prompts/Version 2 Ollama Answers.txt` is an informal historical conversation, not a controlled benchmark. It includes coaching, role switching, and displayed thinking. Do not use its claims about TCP or its grading behavior as approved course material. The historical grading prompt's 8/10 and confidence 0.95 are expected/example values, not measured performance.
 
-## Foundation V1 — Core Voice + LLM Interaction Engine
+## Foundation V1 â€” Core Voice + LLM Interaction Engine
 
 Added `backend/ai_oral_examiner_foundation_v1.py` as the unchanged local reference snapshot. It is byte-identical to the latest root `test_voice_ollama_ttsV2.py`, so a second copy is not included. Six distinct earlier prototypes are preserved under `tests/development/`; duplicated copies from the local `Python_Ollama_VoiceInput` folder are not imported. Earlier Python text V1/V2 work remains on its existing contribution branch.
 
@@ -49,7 +49,7 @@ Client-approved CIS 454 requirements baseline is not supplied. Follow-up limits,
 
 Version 0.1 examiner/follow-up designs prohibit hints and grading during assessment. V2 allows explanations, correction, and adaptation. Preserve both for comparison; do not use v2's conversational behavior as enforcement of assessment rules. V2.1's intended rules also failed several synthetic cases. Human review and application controls remain necessary.
 
-## Foundation V1 Launcher and GUI Avatar Prototype — September 28
+## Foundation V1 Launcher and GUI Avatar Prototype â€” September 28
 
 The Foundation V1 Python source is unchanged (SHA-256 `71441d63be0f9386bc846129311e614f8110a11a5ffc65996dd8c11b6953be1a`). The GUI-only checkpoint and integrated GUI are preserved separately under backend. The integrated version launches the existing foundation with `sys.executable -u` in a worker thread; a queue carries log/state events to Tkinter's main event loop. It does not import or rewrite the foundation pipeline. A Session Log displays child output, while state changes drive the simple timed mouth animation.
 
@@ -58,3 +58,9 @@ The imported GUI's only behavior adjustments are portable script/model working-d
 Developer-reported evidence: the original Foundation launcher, GUI-only state/animation prototype, and integrated launcher completed local Windows tests; the avatar transitioned through listening, thinking, speaking, and idle during real voice interaction. Integration checks documented in tests/README.md are synthetic/offline and do not constitute a fresh live-audio run. The Tkinter avatar is separate from the existing web frontend; it is not a final professor/student exam interface.
 
 Current limits: one subprocess/turn per click, no conversation memory, status inference from console substrings, timed mouth movement rather than lip-sync, an in-memory diagnostic log, no close-window child cancellation, and no reliable child failure/completion distinction. No changes to grading, authentication, storage, or the underlying voice/model behavior are claimed.
+
+## Model documentation update — September 28, 2026
+
+Added unchanged local v3/v4 Modelfiles as separate development configurations. The local API lists both models; installed SYSTEM instructions (after newline normalization) and explicit parameters match the saved files. This is configuration evidence only. The owner reports local testing and selects v2 as the stable presentation/Python API baseline; the repository voice foundation still selects v2. No selection changed here.
+
+V3 adds intended adaptive examiner behavior; v4 adds concise/speech-friendly instructions, 8192 context and a 400-token prediction limit. No v3/v4 behavioral or latency benchmark was run for this update. The old 4/19 rubric result belongs to v2.1 and must not be attributed to either newer version. See [model history](model-version-history.md) for exact settings, recreation, risks and [test plan](../tests/v3-v4-test-plan.md).

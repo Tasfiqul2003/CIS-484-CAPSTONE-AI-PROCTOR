@@ -1,4 +1,4 @@
-# AI Oral Examiner — CIS 484
+# AI Oral Examiner â€” CIS 484
 
 James Madison University capstone exploring oral assessment with professor-controlled questions and rubrics. CIS 454 contributes requirements, analysis, and design; CIS 484 implements the MVP. Professors decide final grades.
 
@@ -6,11 +6,25 @@ James Madison University capstone exploring oral assessment with professor-contr
 
 Saved Qwen3 4B Ollama configurations, separate examiner/follow-up/grading prompt designs, synthetic text fixtures, and a Python rubric experiment. This configures an existing model; it does not train one. **Version 2.0 names a model configuration, not a completed application release.** V2.1 is an experimental rubric prompt, not a reliable grading service.
 
-**AI Oral Examiner Foundation V1 — Core Voice + LLM Interaction Engine** adds a standalone spoken interaction prototype: microphone → dynamic silence detection → Faster-Whisper → Ollama/Qwen3 → structured `spoken_response` → speech cleanup and reasoning-phrase check → Piper TTS → speakers. The developer reports successful end-to-end Windows testing. This is the basic AI foundation, not the final examination product or a validated grading service.
+**AI Oral Examiner Foundation V1 â€” Core Voice + LLM Interaction Engine** adds a standalone spoken interaction prototype: microphone â†’ dynamic silence detection â†’ Faster-Whisper â†’ Ollama/Qwen3 â†’ structured `spoken_response` â†’ speech cleanup and reasoning-phrase check â†’ Piper TTS â†’ speakers. The developer reports successful end-to-end Windows testing. This is the basic AI foundation, not the final examination product or a validated grading service.
 
 The reference is `backend/ai_oral_examiner_foundation_v1.py`. It processes **one spoken turn per launch**, using `base.en` on CPU/int8, `oral-examiner-v2:latest`, and Piper `en_US-lessac-medium`. It stops recording after about five seconds of silence following detected speech, or at the 60-second limit. Read [voice setup](docs/setup.md#foundation-v1-voice-setup) before running it; Python 3.13.15 and the recorded dependency versions were used locally. Only parsed `spoken_response` text reaches speech cleanup and the phrase filter. These checks reduce unwanted output but do not guarantee reasoning suppression.
 
 The preserved September 17 run has **4/19 automated passes and 15/19 failures**. Failures include invented numeric scales, incorrect totals, missed equivalent wording, and paraphrased evidence. See [status](docs/project-status.md) and [test instructions](tests/README.md).
+
+## Model configuration history
+
+V2 remains the project owner's **stable presentation build** and the model selected by the current voice foundation. V3/v4 are separate development models; this update does not switch any application model selection.
+
+| Version | Focus | Role |
+|---|---|---|
+| 1 | Basic rubric evaluator | Preserved baseline |
+| 2 | Conversational oral examiner | Presentation baseline |
+| 2.1 | Rubric/mode experiment | Separate experimental fixture suite |
+| 3 | Adaptive examiner: modes, professor rules, flexible rubrics and purposeful follow-ups | Development |
+| 4 | Adaptive examiner with shorter, more speech-friendly responses and tighter generation settings | Development; speedup not yet measured |
+
+These are Ollama configuration versions, not releases of the whole application. See [model history, v3→v4 comparison and recreation](docs/model-version-history.md) and [v3/v4 test plan](tests/v3-v4-test-plan.md). Qwen3 weights are downloaded separately; the Modelfiles are behavior blueprints.
 
 ## Quick start (Windows)
 
@@ -42,7 +56,7 @@ The developer reports successful original launcher, GUI-only, and full GUI-plus-
 
 ## Folder layout
 
-- `ollama/`: original, v2, and experimental v2.1 configurations.
+- `ollama/`: original, v2, experimental v2.1, and development v3/v4 configurations.
 - `prompts/`: preserved Version 0.1 prompt designs, historical transcript, reusable inputs.
 - `docs/`: setup, status, requirements, architecture, roadmap, comparison, and original design background.
 - `tests/`: synthetic fixtures, expected outputs, harness, conversation specifications, actual-results template, and one preserved synthetic run.

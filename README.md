@@ -1,4 +1,4 @@
-# AI Oral Examiner â€” CIS 484
+# AI Oral Examiner — CIS 484
 
 James Madison University capstone exploring oral assessment with professor-controlled questions and rubrics. CIS 454 contributes requirements, analysis, and design; CIS 484 implements the MVP. Professors decide final grades.
 
@@ -6,7 +6,7 @@ James Madison University capstone exploring oral assessment with professor-contr
 
 Saved Qwen3 4B Ollama configurations, separate examiner/follow-up/grading prompt designs, synthetic text fixtures, and a Python rubric experiment. This configures an existing model; it does not train one. **Version 2.0 names a model configuration, not a completed application release.** V2.1 is an experimental rubric prompt, not a reliable grading service.
 
-**AI Oral Examiner Foundation V1 â€” Core Voice + LLM Interaction Engine** adds a standalone spoken interaction prototype: microphone â†’ dynamic silence detection â†’ Faster-Whisper â†’ Ollama/Qwen3 â†’ structured `spoken_response` â†’ speech cleanup and reasoning-phrase check â†’ Piper TTS â†’ speakers. The developer reports successful end-to-end Windows testing. This is the basic AI foundation, not the final examination product or a validated grading service.
+**AI Oral Examiner Foundation V1 — Core Voice + LLM Interaction Engine** adds a standalone spoken interaction prototype: microphone → dynamic silence detection → Faster-Whisper → Ollama/Qwen3 → structured `spoken_response` → speech cleanup and reasoning-phrase check → Piper TTS → speakers. The developer reports successful end-to-end Windows testing. This is the basic AI foundation, not the final examination product or a validated grading service.
 
 The reference is `backend/ai_oral_examiner_foundation_v1.py`. It processes **one spoken turn per launch**, using `base.en` on CPU/int8, `oral-examiner-v2:latest`, and Piper `en_US-lessac-medium`. It stops recording after about five seconds of silence following detected speech, or at the 60-second limit. Read [voice setup](docs/setup.md#foundation-v1-voice-setup) before running it; Python 3.13.15 and the recorded dependency versions were used locally. Only parsed `spoken_response` text reaches speech cleanup and the phrase filter. These checks reduce unwanted output but do not guarantee reasoning suppression.
 

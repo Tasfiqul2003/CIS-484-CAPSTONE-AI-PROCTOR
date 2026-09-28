@@ -13,7 +13,7 @@ Immediate work: investigate invalid percentage normalization and invented numeri
 
 Avoid widening scope until the text acceptance gate is met. Avatar, RAG and identity approaches remain pending client scope decisions; defer optional work if integration slips. Do not equate prompt version 2.0 with sprint completion or an application release.
 
-## Foundation V1 update â€” September 25, 2026
+## Foundation V1 update — September 25, 2026
 
 A standalone single-turn voice foundation now exists using sounddevice, Faster-Whisper, Ollama/Qwen3, and Piper. Local end-to-end success is developer-reported; safe integration checks do not measure speech quality or latency. Existing team API/frontend/database/Docker work is preserved but is not connected to this voice script yet.
 

@@ -27,6 +27,19 @@ py -3 tests/run_rubrics.py --case explicit_partial
 
 The runner explicitly supplies v2.1 SYSTEM instructions to local qwen3:4b. It is not testing the installed v2 model. A nonzero test exit is expected when model behavior fails checks.
 
+## Foundation V1 Launcher and GUI Avatar Prototype
+
+Foundation V1 remains the unchanged fallback voice engine. Two Windows launchers and two standalone Tkinter programs now sit alongside it in `backend/`:
+
+- `ai_oral_examiner_gui_v1.py`: preserved GUI-only checkpoint with Idle, Listening, Thinking, and Speaking buttons and simple mouth animation.
+- `ai_oral_examiner_gui_integrated_v1.py`: starts Foundation V1 as a subprocess on a worker thread, sends console messages through a queue, displays a Session Log, and updates avatar states on the Tkinter thread. Mouth animation runs during the reported Speaking state and stops on Idle.
+- `Start_AI_Oral_Examiner.bat`: runs the original voice foundation.
+- `Start_AI_Oral_Examiner_GUI_Integrated.bat`: opens the integrated avatar; click **Start Voice Interaction** for one spoken turn.
+
+After the existing voice setup, double-click the integrated BAT file in `backend/`. Both launchers use the repository's `.venv` directly and require no PowerShell activation or execution-policy change. Keep the Piper voice and JSON configuration together at the repository root. See [GUI startup](docs/setup.md#gui-avatar-and-windows-launchers).
+
+The developer reports successful original launcher, GUI-only, and full GUI-plus-voice testing. Repository checks are offline and do not re-establish live audio success. This is a desktop prototype, separate from the team's web frontend. The mouth motion is a timed visual indication of speech, not phoneme lip-sync; repeated clicks start fresh processes, not a continuous conversation.
+
 ## Folder layout
 
 - `ollama/`: original, v2, and experimental v2.1 configurations.
@@ -34,15 +47,15 @@ The runner explicitly supplies v2.1 SYSTEM instructions to local qwen3:4b. It is
 - `docs/`: setup, status, requirements, architecture, roadmap, comparison, and original design background.
 - `tests/`: synthetic fixtures, expected outputs, harness, conversation specifications, actual-results template, and one preserved synthetic run.
 - `tests/development/`: preserved manual voice prototypes; excluded from normal test discovery by their `manual_` filenames.
-- `backend/`: existing FastAPI application and the standalone Foundation V1 voice script; their dependencies remain separate.
+- `backend/`: existing FastAPI application, unchanged Foundation V1 voice script, desktop GUI checkpoints, and Windows launchers; the voice and FastAPI dependencies remain separate.
 - `frontend/`, `database/`, Docker files: existing team implementation work, not validated or connected to the standalone voice script by this increment.
 - `AI Foundations/`, `Workflows/`: existing placeholders, retained unchanged.
 
 ## Limitations and next milestone
 
-The standalone voice pipeline is implemented, but its integration with team interfaces, authentication, database, avatar, and server deployment remains unfinished. Existing frontend/backend/Docker code is preserved; its end-to-end behavior was not tested in this increment. Prompt rules and phrase filtering are not access controls. The rubric harness keeps assessment output from its student view; the voice prototype is a conversational demo and does not inherit that grading boundary. No privacy compliance, air-gap operation, grading reliability, or confidence calibration has been established.
+The standalone voice pipeline is implemented, but a basic Tkinter avatar now wraps it; integration with team web interfaces, authentication, database, and server deployment remains unfinished. Existing frontend/backend/Docker code is preserved; its end-to-end behavior was not tested in this increment. Prompt rules and phrase filtering are not access controls. The rubric harness keeps assessment output from its student view; the voice prototype is a conversational demo and does not inherit that grading boundary. No privacy compliance, air-gap operation, grading reliability, or confidence calibration has been established.
 
-Next for the voice foundation: a continuous conversation loop, measured latency improvements, streaming audio, voice quality, professor-created questions, rubric-aware grading, controlled follow-ups, session management, transcripts and results, interface/authentication/storage integration, avatar, and Ubuntu deployment. See [status and limitations](docs/project-status.md) and [safe checks/manual history](tests/README.md). Earlier text V1/V2 work remains on `python/ollama-integration-v1-v2`; it is not duplicated here.
+Next for the voice foundation: a continuous conversation loop, measured latency improvements, streaming audio, voice quality, professor-created questions, rubric-aware grading, controlled follow-ups, session management, transcripts and results, interface/authentication/storage integration, further avatar work, and Ubuntu deployment. See [status and limitations](docs/project-status.md) and [safe checks/manual history](tests/README.md). Earlier text V1/V2 work remains on `python/ollama-integration-v1-v2`; it is not duplicated here.
 
 Next: have the professor approve rubric interpretation and partial-credit policies, investigate failed cases, and repeat reviewed text tests before incremental integration. See [roadmap](docs/roadmap.md), [requirements](docs/requirements.md), and [CONTRIBUTING](CONTRIBUTING.md).
 

@@ -31,7 +31,6 @@ export default function Home() {
           </div>
 
           <div className="role-selection">
-
             <h2>How are you using OralExam AI?</h2>
 
             <div className="role-cards">
@@ -43,7 +42,9 @@ export default function Home() {
                   window.location.href = "/student/verification";
                 }}
               >
-                <div className="role-icon">👤</div>
+                <div className="role-icon">
+                  👤
+                </div>
 
                 <div className="role-card-content">
                   <h3>I'm a Student</h3>
@@ -54,7 +55,9 @@ export default function Home() {
                   </p>
                 </div>
 
-                <span className="arrow">→</span>
+                <span className="arrow">
+                  →
+                </span>
               </button>
 
               <button
@@ -64,7 +67,9 @@ export default function Home() {
                   alert("Professor login coming next!");
                 }}
               >
-                <div className="role-icon">▣</div>
+                <div className="role-icon">
+                  ▣
+                </div>
 
                 <div className="role-card-content">
                   <h3>I'm a Professor</h3>
@@ -75,11 +80,14 @@ export default function Home() {
                   </p>
                 </div>
 
-                <span className="arrow">→</span>
+                <span className="arrow">
+                  →
+                </span>
               </button>
 
             </div>
           </div>
+
 
         </section>
 
@@ -98,6 +106,7 @@ export default function Home() {
             </div>
           </div>
 
+
           <div className="feature">
             <div className="feature-icon">🔐</div>
 
@@ -110,6 +119,7 @@ export default function Home() {
               </p>
             </div>
           </div>
+
 
           <div className="feature">
             <div className="feature-icon">📚</div>
@@ -127,6 +137,11 @@ export default function Home() {
         </section>
 
       </main>
+
+      <footer className="home-footer">
+        <p>OralExam AI</p>
+        <p>AI-assisted oral examination platform</p>
+      </footer>
 
     </div>
   );

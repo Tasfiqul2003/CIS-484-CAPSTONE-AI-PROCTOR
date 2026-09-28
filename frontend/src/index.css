@@ -236,3 +236,388 @@ button {
     gap: 8px;
   }
 }
+
+/* Student Verification */
+
+.verification-page {
+  min-height: 100vh;
+  background: #f7f8fa;
+}
+
+.simple-header {
+  height: 72px;
+  display: flex;
+  align-items: center;
+  padding: 0 7%;
+  background: white;
+  border-bottom: 1px solid #e6e8ec;
+}
+
+.verification-content {
+  min-height: calc(100vh - 72px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 50px 20px;
+}
+
+.verification-card {
+  width: 100%;
+  max-width: 620px;
+  padding: 45px;
+  text-align: center;
+  background: white;
+  border: 1px solid #e0e4ea;
+  border-radius: 16px;
+  box-shadow: 0 10px 30px rgba(23, 32, 51, 0.06);
+}
+
+.verification-icon {
+  width: 64px;
+  height: 64px;
+  margin: 0 auto 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #eef1f5;
+  border-radius: 14px;
+  font-size: 28px;
+}
+
+.verification-card h1 {
+  margin-bottom: 16px;
+  font-size: 34px;
+}
+
+.verification-description {
+  max-width: 480px;
+  margin: 0 auto 30px;
+  color: #687386;
+  line-height: 1.6;
+}
+
+.jacard-placeholder {
+  padding: 40px 25px;
+  border: 2px dashed #cdd3dc;
+  border-radius: 14px;
+  background: #fafbfc;
+  cursor: pointer;
+}
+
+.jacard-placeholder:hover {
+  border-color: #8994a6;
+}
+
+.card-icon {
+  font-size: 42px;
+  margin-bottom: 15px;
+}
+
+.jacard-placeholder h2 {
+  margin-bottom: 8px;
+  font-size: 20px;
+}
+
+.jacard-placeholder p {
+  margin-bottom: 20px;
+  color: #7b8494;
+}
+
+.jacard-placeholder button {
+  padding: 11px 18px;
+  border: 0;
+  border-radius: 8px;
+  background: #172033;
+  color: white;
+  cursor: pointer;
+}
+
+.jacard-placeholder button:hover {
+  opacity: 0.9;
+}
+
+.verification-note {
+  margin-top: 22px;
+  color: #7b8494;
+  font-size: 13px;
+}
+
+.student-identity {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 25px;
+  margin-bottom: 20px;
+  text-align: left;
+  border: 1px solid #dce1e8;
+  border-radius: 12px;
+  background: #fafbfc;
+}
+
+.student-avatar {
+  width: 64px;
+  height: 64px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: #eef1f5;
+  font-size: 28px;
+}
+
+.student-label {
+  margin-bottom: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: #7b8494;
+}
+
+.student-details h2 {
+  margin-bottom: 5px;
+  font-size: 20px;
+}
+
+.student-details p:last-child {
+  color: #687386;
+  font-size: 13px;
+}
+
+.verified-badge {
+  margin-left: auto;
+  padding: 6px 10px;
+  border-radius: 20px;
+  background: #eef1f5;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.verification-warning {
+  margin-bottom: 22px;
+  padding: 16px;
+  text-align: left;
+  border-radius: 10px;
+  background: #f5f6f8;
+  color: #53627a;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.verification-warning strong {
+  display: block;
+  margin-bottom: 4px;
+  color: #172033;
+}
+
+.continue-button {
+  width: 100%;
+  padding: 14px;
+  border: none;
+  border-radius: 9px;
+  background: #172033;
+  color: white;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.continue-button:hover {
+  opacity: 0.9;
+}
+
+.back-button {
+  margin-top: 22px;
+  padding: 8px 0;
+  border: none;
+  background: transparent;
+  color: #687386;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.back-button:hover {
+  color: #172033;
+}
+
+@media (max-width: 600px) {
+  .verification-card {
+    padding: 30px 20px;
+  }
+
+  .student-identity {
+    flex-wrap: wrap;
+  }
+
+  .verified-badge {
+    margin-left: 0;
+  }
+}
+
+/* Face Verification */
+
+.camera-placeholder {
+  padding: 25px;
+  margin-bottom: 22px;
+  border: 1px solid #dce1e8;
+  border-radius: 14px;
+  background: #fafbfc;
+}
+
+.camera-frame {
+  width: 260px;
+  height: 190px;
+  margin: 0 auto 15px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid #cdd3dc;
+  border-radius: 12px;
+  background: #eef1f5;
+}
+
+.camera-face {
+  width: 90px;
+  height: 110px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px dashed #8994a6;
+  border-radius: 50%;
+  font-size: 40px;
+}
+
+.camera-placeholder > p {
+  color: #7b8494;
+  font-size: 13px;
+}
+
+.camera-test {
+  width: 400px;
+  height: 300px;
+  background: black;
+  color: white;
+  margin-top: 20px;
+  padding: 20px;
+}
+
+.face-outline {
+  width: 150px;
+  height: 200px;
+  border: 3px dashed white;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 50px;
+}
+
+.camera-test + p {
+  margin-top: 10px;
+}
+
+.camera-preview {
+  width: 400px;
+  height: 300px;
+  margin: 30px auto;
+  padding: 20px;
+  background: #172033;
+  color: white;
+}
+
+.exam-page {
+  min-height: 100vh;
+  padding: 50px 30px;
+  text-align: center;
+}
+
+.exam-page h1 {
+  margin-bottom: 15px;
+}
+
+.exam-page h2 {
+  margin: 25px auto;
+  max-width: 700px;
+}
+
+.exam-page p {
+  color: #687386;
+}
+
+
+.exam-page {
+  min-height: 100vh;
+  padding: 50px 30px;
+  text-align: center;
+}
+
+.exam-page h1 {
+  margin-bottom: 15px;
+}
+
+.exam-page h2 {
+  margin: 25px auto;
+  max-width: 700px;
+}
+
+.exam-page p {
+  color: #687386;
+}
+
+
+.ai-avatar-placeholder {
+  width: 220px;
+  height: 220px;
+  margin: 30px auto;
+  background: #172033;
+  color: white;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+}
+
+
+.exam-page > div:nth-of-type(2) {
+  width: 220px;
+  height: 220px;
+  margin: 30px auto;
+  background: #172033;
+  color: white;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+}
+
+
+.answer-status {
+  max-width: 500px;
+  margin: 30px auto;
+  padding: 20px;
+  background: white;
+  border: 1px solid #e0e4ea;
+  border-radius: 12px;
+}
+
+.answer-status p {
+  margin-bottom: 15px;
+}
+
+.answer-status button {
+  padding: 12px 24px;
+  background: #172033;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 15px;
+}
+
+.answer-status button:hover {
+  background: #2a3850;
+}
+

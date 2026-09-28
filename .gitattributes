@@ -14,3 +14,6 @@ Dockerfile text eol=lf
 # Preserve the imported voice milestone and manual development snapshots.
 backend/ai_oral_examiner_foundation_v1.py -text
 tests/development/manual_*.py -text
+
+# Windows launchers need CRLF line endings.
+*.bat text eol=crlf

@@ -89,3 +89,44 @@ Temporary `voice_ollama_input.wav` and `ai_response.wav` are written in the repo
 Select CIS hardware and supported runtime versions; prepare approved installers, Python, model weights, checksums and licenses before isolation. On Ubuntu use python3 and the platform's approved Ollama installation procedure. Recreate the models and repeat tests on actual hardware. Disconnect networking and verify all required functions, logs, dependencies, and recovery paths locally. Localhost requests alone do not prove air-gapped operation. Cloud database/auth proposals need client reconciliation before implementation.
 
 References: https://docs.ollama.com/modelfile and https://docs.ollama.com/api/chat.
+
+## GUI avatar and Windows launchers
+
+First complete the Foundation V1 setup above. Reuse the repository-root `.venv`; do not create another environment for the GUI. Tkinter must be available in that Python installation (it is not a pip requirement). From the repository root, check without opening a window:
+
+```powershell
+.\.venv\Scripts\python.exe -c "import tkinter; print(tkinter.TkVersion)"
+```
+
+If tkinter is unavailable, modify the Windows Python installation to include Tcl/Tk. No GUI-specific pip packages or changes to either requirements file are needed.
+
+Double-click **backend/Start_AI_Oral_Examiner_GUI_Integrated.bat**, then click **Start Voice Interaction** in the window. To use the known-good console-only fallback, double-click **backend/Start_AI_Oral_Examiner.bat**. Both resolve the repository root from their own location, check for `.venv` and the two Piper files, and invoke the environment's Python directly. They do not activate PowerShell, alter execution policy, install packages, download models, or start Ollama. Keep Ollama running with `oral-examiner-v2:latest` available.
+
+Required local layout (models and environment remain ignored):
+
+```text
+repository-root/
+  .venv/Scripts/python.exe
+  en_US-lessac-medium.onnx
+  en_US-lessac-medium.onnx.json
+  backend/ai_oral_examiner_foundation_v1.py
+  backend/ai_oral_examiner_gui_v1.py
+  backend/ai_oral_examiner_gui_integrated_v1.py
+  backend/Start_AI_Oral_Examiner.bat
+  backend/Start_AI_Oral_Examiner_GUI_Integrated.bat
+```
+
+Download the Piper pair once into this root using the earlier command. Do not copy another voice model into backend or a GUI folder. The child process runs with the root as its working directory, so unchanged Foundation V1 still finds the voice model and writes its ignored temporary WAV files there. Moving the checkout to a different Windows path does not require editing the GUI or BAT files. Keep the launchers in backend; create a shortcut if you want one elsewhere.
+
+Alternatively, run from PowerShell at the repository root without activation:
+
+```powershell
+# GUI-only checkpoint: no models or microphone are used.
+.\.venv\Scripts\python.exe backend/ai_oral_examiner_gui_v1.py
+# Integrated checkpoint: same interpreter is used for Foundation V1.
+.\.venv\Scripts\python.exe backend/ai_oral_examiner_gui_integrated_v1.py
+```
+
+Loading/Get Ready/Listening/Thinking/Speaking/Idle states follow Foundation's printed messages. The Session Log contains its combined stdout/stderr, including transcripts and responses, in memory; it is not a saved exam record or a filtered student-facing view. Start is disabled during a run and re-enabled when the process ends. Each start is an independent spoken turn.
+
+This preserved prototype does not cancel its child when the window closes, and a child exiting with an error can still produce the generic completion message; inspect the Session Log for errors. Wait for a turn to finish before closing the GUI, and do not run multiple copies against the same WAV filenames. State detection matches console text and may be confused by matching words in a transcript or response. Robust process cancellation, exit-code handling, structured events, and synchronized lip animation are follow-up work.

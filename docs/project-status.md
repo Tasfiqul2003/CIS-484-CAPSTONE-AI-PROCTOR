@@ -1,4 +1,4 @@
-# Project status — 2026-09-25
+# Project status — 2026-09-28
 
 ## Saved implementation
 
@@ -48,3 +48,13 @@ Client-approved CIS 454 requirements baseline is not supplied. Follow-up limits,
 ## Conflict to resolve
 
 Version 0.1 examiner/follow-up designs prohibit hints and grading during assessment. V2 allows explanations, correction, and adaptation. Preserve both for comparison; do not use v2's conversational behavior as enforcement of assessment rules. V2.1's intended rules also failed several synthetic cases. Human review and application controls remain necessary.
+
+## Foundation V1 Launcher and GUI Avatar Prototype — September 28
+
+The Foundation V1 Python source is unchanged (SHA-256 `71441d63be0f9386bc846129311e614f8110a11a5ffc65996dd8c11b6953be1a`). The GUI-only checkpoint and integrated GUI are preserved separately under backend. The integrated version launches the existing foundation with `sys.executable -u` in a worker thread; a queue carries log/state events to Tkinter's main event loop. It does not import or rewrite the foundation pipeline. A Session Log displays child output, while state changes drive the simple timed mouth animation.
+
+The imported GUI's only behavior adjustments are portable script/model working-directory paths. The BAT launchers were adapted from the original account-specific paths to their checkout location and invoke the existing environment interpreter directly, with missing-environment/model messages. The two requested launchers are included; the extra local standalone-GUI BAT is unnecessary because its one-command startup is documented. Original local source files are untouched. No new folders, virtual environment, model copies, or separate progress-report files were created.
+
+Developer-reported evidence: the original Foundation launcher, GUI-only state/animation prototype, and integrated launcher completed local Windows tests; the avatar transitioned through listening, thinking, speaking, and idle during real voice interaction. Integration checks documented in tests/README.md are synthetic/offline and do not constitute a fresh live-audio run. The Tkinter avatar is separate from the existing web frontend; it is not a final professor/student exam interface.
+
+Current limits: one subprocess/turn per click, no conversation memory, status inference from console substrings, timed mouth movement rather than lip-sync, an in-memory diagnostic log, no close-window child cancellation, and no reliable child failure/completion distinction. No changes to grading, authentication, storage, or the underlying voice/model behavior are claimed.

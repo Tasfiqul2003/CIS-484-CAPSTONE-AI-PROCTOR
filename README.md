@@ -12,6 +12,20 @@ The reference is `backend/ai_oral_examiner_foundation_v1.py`. It processes **one
 
 The preserved September 17 run has **4/19 automated passes and 15/19 failures**. Failures include invented numeric scales, incorrect totals, missed equivalent wording, and paraphrased evidence. See [status](docs/project-status.md) and [test instructions](tests/README.md).
 
+## Model configuration history
+
+V2 remains the project owner's **stable presentation build** and the model selected by the current voice foundation. V3/v4 are separate development models; this update does not switch any application model selection.
+
+| Version | Focus | Role |
+|---|---|---|
+| 1 | Basic rubric evaluator | Preserved baseline |
+| 2 | Conversational oral examiner | Presentation baseline |
+| 2.1 | Rubric/mode experiment | Separate experimental fixture suite |
+| 3 | Adaptive examiner: modes, professor rules, flexible rubrics and purposeful follow-ups | Development |
+| 4 | Adaptive examiner with shorter, more speech-friendly responses and tighter generation settings | Development; speedup not yet measured |
+
+These are Ollama configuration versions, not releases of the whole application. See [model history, v3→v4 comparison and recreation](docs/model-version-history.md) and [v3/v4 test plan](tests/v3-v4-test-plan.md). Qwen3 weights are downloaded separately; the Modelfiles are behavior blueprints.
+
 ## Quick start (Windows)
 
 Install Python 3.10+ and Ollama from their official sites, then open PowerShell in this checkout. Full instructions, prerequisites, and recreation commands: [setup](docs/setup.md).
@@ -42,7 +56,7 @@ The developer reports successful original launcher, GUI-only, and full GUI-plus-
 
 ## Folder layout
 
-- `ollama/`: original, v2, and experimental v2.1 configurations.
+- `ollama/`: original, v2, experimental v2.1, and development v3/v4 configurations.
 - `prompts/`: preserved Version 0.1 prompt designs, historical transcript, reusable inputs.
 - `docs/`: setup, status, requirements, architecture, roadmap, comparison, and original design background.
 - `tests/`: synthetic fixtures, expected outputs, harness, conversation specifications, actual-results template, and one preserved synthetic run.

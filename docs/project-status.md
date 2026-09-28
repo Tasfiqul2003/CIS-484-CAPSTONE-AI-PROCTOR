@@ -58,3 +58,9 @@ The imported GUI's only behavior adjustments are portable script/model working-d
 Developer-reported evidence: the original Foundation launcher, GUI-only state/animation prototype, and integrated launcher completed local Windows tests; the avatar transitioned through listening, thinking, speaking, and idle during real voice interaction. Integration checks documented in tests/README.md are synthetic/offline and do not constitute a fresh live-audio run. The Tkinter avatar is separate from the existing web frontend; it is not a final professor/student exam interface.
 
 Current limits: one subprocess/turn per click, no conversation memory, status inference from console substrings, timed mouth movement rather than lip-sync, an in-memory diagnostic log, no close-window child cancellation, and no reliable child failure/completion distinction. No changes to grading, authentication, storage, or the underlying voice/model behavior are claimed.
+
+## Model documentation update — September 28, 2026
+
+Added unchanged local v3/v4 Modelfiles as separate development configurations. The local API lists both models; installed SYSTEM instructions (after newline normalization) and explicit parameters match the saved files. This is configuration evidence only. The owner reports local testing and selects v2 as the stable presentation/Python API baseline; the repository voice foundation still selects v2. No selection changed here.
+
+V3 adds intended adaptive examiner behavior; v4 adds concise/speech-friendly instructions, 8192 context and a 400-token prediction limit. No v3/v4 behavioral or latency benchmark was run for this update. The old 4/19 rubric result belongs to v2.1 and must not be attributed to either newer version. See [model history](model-version-history.md) for exact settings, recreation, risks and [test plan](../tests/v3-v4-test-plan.md).

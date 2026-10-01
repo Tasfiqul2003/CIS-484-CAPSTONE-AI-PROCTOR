@@ -12,6 +12,7 @@ import QuestionBank from "./pages/professor/QuestionBank";
 import MaterialUpload from "./pages/professor/MaterialUpload";
 import CreateExam from "./pages/professor/CreateExam";
 import ManageExam from "./pages/professor/ManageExam";
+import ExamSubmissions from "./pages/professor/ExamSubmissions";
 
 function App() {
   const path = window.location.pathname;
@@ -70,6 +71,13 @@ function App() {
   }
 
   /* INDIVIDUAL EXAM */
+
+  if (
+  path.startsWith("/professor/exams/") &&
+  path.endsWith("/submissions")
+  ) {
+    return <ExamSubmissions />;
+  }
 
   if (
     path.startsWith("/professor/exams/") &&

@@ -84,14 +84,13 @@ export default function ProfessorDashboard() {
           </h1>
 
           <p>
-            Create and manage your oral examinations,
-            question banks, course materials, and student
-            submissions.
+            Create and manage your oral examinations
+            and review student submissions.
           </p>
 
         </section>
 
-        {/* QUICK ACTIONS */}
+        {/* CREATE EXAM */}
 
         <section className="dashboard-actions">
 
@@ -110,33 +109,8 @@ export default function ProfessorDashboard() {
               </strong>
 
               <p>
-                Create an examination and add questions
-                and course materials.
-              </p>
-            </div>
-
-            <span className="dashboard-action-arrow">
-              →
-            </span>
-
-          </a>
-
-          <a
-            href="/professor/submissions"
-            className="dashboard-action"
-          >
-
-            <span className="dashboard-action-icon">
-              📋
-            </span>
-
-            <div>
-              <strong>
-                Student Submissions
-              </strong>
-
-              <p>
-                Review completed oral examinations.
+                Create an examination and add its
+                questions and course materials.
               </p>
             </div>
 
@@ -243,7 +217,7 @@ export default function ProfessorDashboard() {
 
               </div>
 
-              {/* EXAM OPTIONS */}
+              {/* EXAM ACTIONS */}
 
               <div className="professor-exam-options">
 
@@ -260,49 +234,7 @@ export default function ProfessorDashboard() {
                     </strong>
 
                     <small>
-                      Exam settings and overview
-                    </small>
-                  </div>
-
-                  <span>→</span>
-
-                </a>
-
-                <a
-                  href={`/professor/exams/${exam.id}/questions`}
-                  className="exam-option"
-                >
-
-                  <span>❓</span>
-
-                  <div>
-                    <strong>
-                      Questions
-                    </strong>
-
-                    <small>
-                      View and manage question bank
-                    </small>
-                  </div>
-
-                  <span>→</span>
-
-                </a>
-
-                <a
-                  href={`/professor/exams/${exam.id}/materials`}
-                  className="exam-option"
-                >
-
-                  <span>📚</span>
-
-                  <div>
-                    <strong>
-                      Course Materials
-                    </strong>
-
-                    <small>
-                      Upload and manage materials
+                      Questions, materials, and settings
                     </small>
                   </div>
 
@@ -319,7 +251,7 @@ export default function ProfessorDashboard() {
 
                   <div>
                     <strong>
-                      Submissions
+                      View Submissions
                     </strong>
 
                     <small>

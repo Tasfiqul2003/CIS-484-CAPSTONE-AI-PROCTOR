@@ -64,7 +64,7 @@ export default function Home() {
                 type="button"
                 className="role-card"
                 onClick={() => {
-                  alert("Professor login coming next!");
+                  window.location.href = "/professor/login";
                 }}
               >
                 <div className="role-icon">

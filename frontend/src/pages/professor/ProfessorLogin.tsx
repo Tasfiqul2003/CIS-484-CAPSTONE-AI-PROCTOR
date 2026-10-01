@@ -1,6 +1,22 @@
+import { useState } from "react";
+
 export default function ProfessorLogin() {
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+
+  function handleLogin(event: React.FormEvent) {
+    event.preventDefault();
+
+    if (!username.trim() || !password.trim()) {
+      return;
+    }
+
+    window.location.href = "/professor/dashboard";
+  }
+
   return (
-    <div className="login-page">
+    <div className="professor-login-page">
+
       <header className="simple-header">
         <div className="logo">
           <span className="logo-icon">◉</span>
@@ -8,54 +24,81 @@ export default function ProfessorLogin() {
         </div>
       </header>
 
-      <main className="login-content">
-        <div className="login-card">
-          <div className="login-icon">▣</div>
+      <main className="professor-login-content">
 
-          <p className="eyebrow">PROFESSOR PORTAL</p>
+        <div className="professor-login-card">
 
-          <h1>Welcome back</h1>
+          <div className="login-icon">
+            ◉
+          </div>
 
-          <p className="login-description">
-            Sign in to manage your oral examinations, questions, materials,
-            and student submissions.
+          <p className="eyebrow">
+            PROFESSOR PORTAL
           </p>
 
-          <form
-            onSubmit={(event) => {
-              event.preventDefault();
-              window.location.href = "/professor/dashboard";
-            }}
-          >
-            <label htmlFor="email">Email</label>
+          <h1>
+            Professor Login
+          </h1>
+
+          <p className="login-description">
+            Sign in to create and manage your oral examinations.
+          </p>
+
+          <form onSubmit={handleLogin}>
+
+            <label htmlFor="username">
+              Username
+            </label>
+
             <input
-              id="email"
-              type="email"
-              placeholder="professor@jmu.edu"
-              required
+              id="username"
+              type="text"
+              value={username}
+              onChange={(event) =>
+                setUsername(event.target.value)
+              }
+              placeholder="Enter your username"
             />
 
-            <label htmlFor="password">Password</label>
+            <label htmlFor="password">
+              Password
+            </label>
+
             <input
               id="password"
               type="password"
+              value={password}
+              onChange={(event) =>
+                setPassword(event.target.value)
+              }
               placeholder="Enter your password"
-              required
             />
 
-            <button type="submit" className="login-button">
+            <button
+              type="submit"
+              className="login-button"
+            >
               Sign In
             </button>
+
           </form>
 
-          <button
-            className="back-button"
-            onClick={() => (window.location.href = "/")}
+          <a
+            href="/"
+            className="back-home"
           >
             ← Back to Home
-          </button>
+          </a>
+
         </div>
+
       </main>
+
+      <footer className="home-footer">
+        <p>OralExam AI</p>
+        <p>AI-assisted oral examination platform</p>
+      </footer>
+
     </div>
   );
 }

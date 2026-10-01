@@ -66,22 +66,29 @@ function App() {
      /professor/exams/:id route.
   */
 
-  if (path === "/professor/exams/new") {
-    return <CreateExam />;
-  }
+if (path === "/professor/exams/new") {
+  return <CreateExam />;
+}
 
-  /* INDIVIDUAL EXAM */
-
-  if (
+if (
   path.startsWith("/professor/exams/") &&
-  path.endsWith("/submissions")
+  path.endsWith("/questions")
   ) {
-    return <ExamSubmissions />;
+    return <QuestionBank />;
   }
 
   if (
     path.startsWith("/professor/exams/") &&
-    path.split("/").length === 4
+    path.endsWith("/materials")
+  ) {
+    return <MaterialUpload />;
+  }
+
+  if (
+    path.startsWith("/professor/exams/") &&
+    !path.includes("/questions") &&
+    !path.includes("/materials") &&
+    !path.includes("/submissions")
   ) {
     return <ManageExam />;
   }

@@ -223,7 +223,7 @@ export default function ProfessorDashboard() {
 
                 <a
                   href={`/professor/exams/${exam.id}`}
-                  className="exam-option primary"
+                  className="exam-option"
                 >
 
                   <span>⚙️</span>

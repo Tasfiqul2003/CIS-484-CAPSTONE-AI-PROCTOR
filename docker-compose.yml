@@ -41,6 +41,8 @@ services:
       DATABASE_URL: postgresql+psycopg2://proctor:proctor_dev@db:5432/examdb
       OLLAMA_URL: http://ollama:11434
       OLLAMA_MODEL: llama3.1   # change to your model / Modelfile name
+      AUTH_SECRET_KEY: ${AUTH_SECRET_KEY}
+      ADMIN_BOOTSTRAP_TOKEN: ${ADMIN_BOOTSTRAP_TOKEN}
     depends_on:
       db:
         condition: service_healthy

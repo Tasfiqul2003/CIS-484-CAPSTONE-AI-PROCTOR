@@ -29,3 +29,41 @@ No baseline model comparison, repeat-seed reliability estimate, speech evaluatio
 
 
 Conversation cases in conversation-cases.json are manual specifications, not executed by run_rubrics.py. Copy actual-results-template.md for each future reviewed run. The preserved raw run is synthetic; future result folders are ignored until reviewed.
+
+## Foundation V1 voice checks and manual history
+
+The voice reference is `backend/ai_oral_examiner_foundation_v1.py`. It was copied unchanged from the local Foundation V1 snapshot; the latest root `test_voice_ollama_ttsV2.py` is identical and is not duplicated. Earlier text-only Python V1/V2 files remain on their existing contribution branch.
+
+The following preserved files are manual development programs, not automated unit tests. Their `manual_` names prevent normal unittest/pytest discovery from opening microphones or loading models. Do not import these programs; run them explicitly from the repository root after the [voice setup](../docs/setup.md#foundation-v1-voice-setup).
+
+| Original local filename | Repository location | Purpose |
+|---|---|---|
+| `test_microphoneV1.py` | `tests/development/manual_microphone_v1.py` | Records five seconds to microphone_test.wav |
+| `test_speech_to_textV1.py` | `tests/development/manual_speech_to_text_v1.py` | Transcribes the preceding microphone_test.wav |
+| `test_voice_inputV2.py` | `tests/development/manual_voice_input_v2.py` | Seven-second capture, early recording start, technical vocabulary prompt |
+| `test_voice_ollamaV1.py` | `tests/development/manual_voice_ollama_v1.py` | Voice transcription to an Ollama text response |
+| `test_text_to_speechV1.py` | `tests/development/manual_text_to_speech_v1.py` | Synthesizes ai_voice_test.wav; does not itself play it |
+| `test_voice_ollama_ttsV1.py` | `tests/development/manual_voice_ollama_tts_v1.py` | Earlier complete pipeline; speaks unfiltered model text |
+| `test_voice_ollama_ttsV2.py` / Foundation snapshot | `backend/ai_oral_examiner_foundation_v1.py` | Current single-turn reference with silence detection, JSON extraction, cleanup and phrase filtering |
+
+All seven copied program files retain their source bytes. There is no second copy of the current V2 script or of identical files from the local Python_Ollama_VoiceInput folder. The older, differing V2 copy in that local folder is not the selected reference and remains untouched locally.
+
+`tests/test_voice_foundation.py` uses the standard library to extract the actual cleanup functions and response-to-speech code through Python's AST. It executes those parts with synthetic text and mocked Ollama, file, Piper, and playback calls. It never imports the live voice script. Checks cover: only spoken_response reaching synthesis, cleanup, known reasoning phrases, malformed JSON, missing fields, wrong value types, empty/removed output, and empty transcription. These checks do not prove universal reasoning suppression or audio quality.
+
+Run safe checks:
+
+```powershell
+py -3 -B -m unittest discover -s tests -p "test_*.py" -v
+```
+
+Actual integration checks on September 25, 2026: **14/14 tests passed** (six existing harness tests and eight new voice checks); all seven copied voice programs passed AST syntax parsing. Source SHA-256 comparison confirmed all seven programs are unchanged. The dependency freeze was converted from UTF-16 to UTF-8 for pip/Git portability; package pins are unchanged. No fresh audio capture, playback, inference, dependency installation, or model download was performed. The end-to-end Windows success is developer-reported, not a result of these mocked tests. No student recordings are included.
+
+For a later manual synthetic demo, run the reference from the root and compare the spoken words, transcription, text reply, and audible reply. Try a pause shorter than five seconds, a five-second pause after speech, quiet input, background noise, and no initial speech. Record observed timing/hardware and failures separately; the configured thresholds alone do not prove timing or transcription accuracy. Keep WAV recordings and model/cache files out of Git. The current script overwrites its WAV filenames and does not manage retention automatically.
+
+## GUI wrapper checks — September 28, 2026
+
+`tests/test_gui_integration.py` extracts the integrated GUI class and path settings through AST without creating a Tk window. Six synthetic checks cover relocation to a checkout with spaces, child interpreter/cwd and actual Foundation status markers, queued launch errors, completion/error button reset, stopping mouth animation on Idle, and preventing a second worker while a turn is active. The subprocess, widgets, and timers are mocked; no microphone, audio playback, models, or live child process is used.
+
+Actual results: **20/20 unit tests passed** (the prior 14 plus six GUI checks). Both GUI scripts passed syntax parsing. The standalone GUI source matches its local original; Foundation V1 retains SHA-256 `71441d63be0f9386bc846129311e614f8110a11a5ffc65996dd8c11b6953be1a`. The integrated GUI differs from its local source only in repository-relative script paths and the child's root working directory. Both BAT launchers were invoked from an unrelated working directory and correctly reported the missing repository environment with exit code 1, without starting Python or recording audio. Full launcher success on a configured teammate machine was not re-tested here.
+
+For a later manual GUI check, complete docs/setup.md, run the GUI-only checkpoint and toggle all four state buttons. Then launch the integrated GUI, click Start Voice Interaction, and observe actual loading/countdown/listening/thinking/speaking/idle changes and the Session Log with a synthetic spoken answer. Confirm mouth animation stops and Start is re-enabled. Record live results separately from the offline checks. The original local end-to-end success is developer-reported. Do not import the GUI files as libraries: they start Tk at module level. Closing the window does not currently cancel an active voice subprocess.

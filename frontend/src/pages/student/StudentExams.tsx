@@ -1,3 +1,5 @@
+const examTemplateId = "37031160-d701-4284-b3de-5a00ea8fa8cb";
+
 export default function StudentExams() {
   return (
     <div className="student-exams-page">
@@ -11,57 +13,48 @@ export default function StudentExams() {
       <main className="student-exams-content">
         <div className="student-exams-heading">
           <p className="eyebrow">STUDENT PORTAL</p>
-
           <h1>Your Exams</h1>
-
-          <p>
-            Select an examination below to begin your AI-powered oral exam.
-          </p>
+          <p>Select an examination below to begin your AI-powered oral exam.</p>
         </div>
 
         <div className="exam-list">
           <div className="exam-card">
             <div className="exam-card-top">
               <div className="exam-icon">🎓</div>
-
               <div>
                 <span className="exam-status">AVAILABLE</span>
-                <h2>CIS 484 — Oral Examination</h2>
+                <h2>Databases OralExam (test)</h2>
               </div>
             </div>
 
             <div className="exam-details">
-              <span>10 Questions</span>
+              <span>Adaptive questions</span>
               <span>•</span>
-              <span>Oral Examination</span>
+              <span>Database Systems</span>
             </div>
 
-            <a className="exam-start-button" href="/student/exam">
-              Start Exam
-              <span>→</span>
+            <a
+              className="exam-start-button"
+              href={`/student/exam?templateId=${examTemplateId}`}
+            >
+              Start Exam <span>→</span>
             </a>
           </div>
 
           <div className="exam-card">
             <div className="exam-card-top">
               <div className="exam-icon">📊</div>
-
               <div>
-                <span className="exam-status">AVAILABLE</span>
+                <span className="exam-status">NOT AVAILABLE</span>
                 <h2>COB 300 — Operations</h2>
               </div>
             </div>
 
             <div className="exam-details">
-              <span>8 Questions</span>
+              <span>Not yet connected</span>
               <span>•</span>
-              <span>Oral Examination</span>
+              <span>Operations</span>
             </div>
-
-            <a className="exam-start-button" href="/student/exam">
-              Start Exam
-              <span>→</span>
-            </a>
           </div>
         </div>
       </main>

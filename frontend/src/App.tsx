@@ -13,6 +13,7 @@ import MaterialUpload from "./pages/professor/MaterialUpload";
 import CreateExam from "./pages/professor/CreateExam";
 import ManageExam from "./pages/professor/ManageExam";
 import ExamSubmissions from "./pages/professor/ExamSubmissions";
+import ExamSubmitted from "./pages/student/ExamSubmitted";
 
 function App() {
   const path = window.location.pathname;
@@ -31,6 +32,10 @@ function App() {
 
   if (path === "/student/exams") {
     return <StudentExams />;
+  }
+
+  if (path === "/student/exam/submitted") {
+  return <ExamSubmitted />;
   }
 
   if (path === "/student/exam") {
@@ -82,6 +87,13 @@ if (
     path.endsWith("/materials")
   ) {
     return <MaterialUpload />;
+  }
+
+  if (
+  path.startsWith("/professor/exams/") &&
+  path.endsWith("/submissions")
+  ) {
+    return <ExamSubmissions />;
   }
 
   if (

@@ -1,81 +1,213 @@
 import { useState } from "react";
 
 const questions = [
-  "Tell me about the role of information systems in a business.",
-  "How can information systems improve business decision-making?",
-  "What are some challenges businesses face when implementing new technology?",
-  "How can businesses use data to gain a competitive advantage?",
-  "What is the importance of cybersecurity in a business environment?",
-  "How can technology improve communication within an organization?",
-  "What factors should a business consider when selecting a new information system?",
-  "How can information systems support supply chain operations?",
-  "What are some risks associated with implementing new technology?",
-  "How do information systems contribute to organizational strategy?",
+  "Explain the primary concept covered in this question.",
+  "How would you apply this concept in a real-world situation?",
+  "What are the main challenges associated with this topic?",
+  "Compare two approaches related to this concept.",
+  "Why is this concept important to the course?",
 ];
 
 export default function StudentExam() {
-  const [questionIndex, setQuestionIndex] = useState(0);
-  const [answering, setAnswering] = useState(false);
+  const [currentQuestion, setCurrentQuestion] = useState(0);
+  const [answer, setAnswer] = useState("");
+  const [showConfirmation, setShowConfirmation] = useState(false);
 
-  const question = questions[questionIndex];
-  const isLastQuestion = questionIndex === questions.length - 1;
+  const isLastQuestion =
+    currentQuestion === questions.length - 1;
+
+  const handleNext = () => {
+    if (isLastQuestion) {
+      setShowConfirmation(true);
+      return;
+    }
+
+    setAnswer("");
+    setCurrentQuestion((current) => current + 1);
+  };
+
+  const submitExam = () => {
+    window.location.href = "/student/exam/submitted";
+  };
+
+  if (showConfirmation) {
+    return (
+      <div className="student-exam-page">
+
+        <header className="student-exam-header">
+
+          <div className="student-exam-logo">
+            <span>◉</span>
+            <strong>OralExam AI</strong>
+          </div>
+
+          <div className="student-exam-progress">
+            Exam Complete
+          </div>
+
+        </header>
+
+        <main className="student-confirmation-content">
+
+          <div className="student-confirmation-card">
+
+            <div className="confirmation-icon">
+              !
+            </div>
+
+            <p className="confirmation-eyebrow">
+              FINAL CONFIRMATION
+            </p>
+
+            <h1>
+              Are you ready to submit?
+            </h1>
+
+            <p className="confirmation-message">
+              You have reached the end of your oral examination.
+              Please make sure you have completed all of your
+              responses before submitting.
+            </p>
+
+            <div className="confirmation-summary">
+
+              <div className="confirmation-row">
+                <span>Questions completed</span>
+                <strong>
+                  {questions.length} / {questions.length}
+                </strong>
+              </div>
+
+              <div className="confirmation-row">
+                <span>Current response</span>
+                <strong>
+                  Recorded
+                </strong>
+              </div>
+
+              <div className="confirmation-row">
+                <span>Submission</span>
+                <strong>
+                  Final
+                </strong>
+              </div>
+
+            </div>
+
+            <div className="confirmation-warning">
+              <strong>
+                Once submitted, you cannot return to this exam.
+              </strong>
+
+              <span>
+                Your responses will be saved for your professor
+                to review.
+              </span>
+            </div>
+
+            <div className="confirmation-actions">
+
+              <button
+                type="button"
+                className="confirmation-back-button"
+                onClick={() => setShowConfirmation(false)}
+              >
+                ← Go Back
+              </button>
+
+              <button
+                type="button"
+                className="confirmation-submit-button"
+                onClick={submitExam}
+              >
+                Confirm & Submit
+              </button>
+
+            </div>
+
+          </div>
+
+        </main>
+
+      </div>
+    );
+  }
 
   return (
-    <div className="exam-page">
-      <h1>CIS 484 — Oral Examination</h1>
+    <div className="student-exam-page">
 
-      <p>
-        Question {questionIndex + 1} of {questions.length}
-      </p>
+      <header className="student-exam-header">
 
-      <h2>{question}</h2>
+        <div className="student-exam-logo">
+          <span>◉</span>
+          <strong>OralExam AI</strong>
+        </div>
 
-      <p>
-        When you are ready, answer the question verbally.
-      </p>
+        <div className="student-exam-progress">
+          Question {currentQuestion + 1} of {questions.length}
+        </div>
 
-      <div>
-        AI Avatar
-      </div>
+      </header>
 
-      <div className="answer-status">
-        {!answering ? (
-          <>
-            <p>Waiting for your answer...</p>
+      <main className="student-exam-content">
+
+        <div className="exam-question-card">
+
+          <div className="exam-question-number">
+            QUESTION {currentQuestion + 1}
+          </div>
+
+          <h1>
+            {questions[currentQuestion]}
+          </h1>
+
+          <div className="ai-avatar-container">
+
+            <div className="ai-avatar">
+              AI
+            </div>
+
+            <div>
+              <strong>OralExam AI</strong>
+
+              <p>
+                Take your time and explain your answer clearly.
+              </p>
+            </div>
+
+          </div>
+
+          <textarea
+            className="student-answer-input"
+            value={answer}
+            onChange={(e) => setAnswer(e.target.value)}
+            placeholder="Speak your answer or type your response..."
+          />
+
+          <div className="exam-question-footer">
+
+            <span>
+              {answer.length > 0
+                ? "Response recorded"
+                : "Waiting for response..."}
+            </span>
 
             <button
               type="button"
-              onClick={() => setAnswering(true)}
+              className="exam-next-button"
+              onClick={handleNext}
             >
-              Start Answer
+              {isLastQuestion
+                ? "Finish Exam"
+                : "Next Question →"}
             </button>
-          </>
-        ) : (
-          <>
-            <p>● Answering...</p>
 
-            <button
-              type="button"
-              onClick={() => setAnswering(false)}
-            >
-              Stop Answer
-            </button>
-          </>
-        )}
-      </div>
+          </div>
 
-      {!answering && (
-        <button
-          type="button"
-          onClick={() => {
-            if (!isLastQuestion) {
-              setQuestionIndex(questionIndex + 1);
-            }
-          }}
-        >
-          {isLastQuestion ? "Finish Exam" : "Next Question"}
-        </button>
-      )}
+        </div>
+
+      </main>
+
     </div>
   );
 }

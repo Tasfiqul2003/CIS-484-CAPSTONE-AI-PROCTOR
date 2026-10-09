@@ -17,7 +17,6 @@ OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.1")
 MAX_QUESTIONS = int(os.getenv("MAX_QUESTIONS", "8"))
 
 
-
 SYSTEM_PROMPT = """You are an oral exam proctor. Given the exam rubric, required topics,
 conversation history, and unused bank questions, choose the next step.
 
@@ -26,10 +25,7 @@ Reply ONLY with valid JSON in this exact shape:
 
 Rules:
 - Prefer an unused bank question that covers a required topic.
-- Review the full conversation history before choosing a question.
-- Never repeat an exact or substantially similar question already asked.
-- Use previous answers to identify knowledge gaps and ask a NEW, focused follow-up.
-- Test a different concept or skill when a topic has already been adequately assessed.
+- Otherwise generate one focused follow-up question.
 - Keep the question to one sentence, preferably under 20 words.
 - Set end_exam to true when required topics are covered or the student's level is clear.
 - Keep reasoning to 12 words or fewer.
@@ -218,13 +214,6 @@ def submit_answer(req: AnswerRequest, db: Session = Depends(get_db)):
 
     decision = ask_model(template, history, bank_remaining)
 
-    # Do not let the model end the exam while bank questions remain.
-    if decision.get("end_exam") and bank_remaining:
-        decision["end_exam"] = False
-        decision["bank_question_id"] = bank_remaining[0]["id"]
-        decision["question"] = None
-        decision["reasoning"] = "Continuing with an unused bank question."
-
     if decision.get("end_exam"):
         end_session(db, sid)
         db.commit()
@@ -232,19 +221,14 @@ def submit_answer(req: AnswerRequest, db: Session = Depends(get_db)):
 
     bank_by_id = {b["id"]: b for b in bank_remaining}
     chosen = bank_by_id.get(str(decision.get("bank_question_id")))
-
     if chosen:
         question, source, source_id = chosen["text"], "bank", chosen["id"]
     elif decision.get("question"):
         question, source, source_id = decision["question"], "generated", None
-    elif bank_remaining:
-        # Fallback if the model fails to choose a question.
-        chosen = bank_remaining[0]
-        question, source, source_id = chosen["text"], "bank", chosen["id"]
     else:
         end_session(db, sid)
         db.commit()
-        return {"done": True, "reason": "No further questions available"}
+        return {"done": True, "reason": "Model returned no next question"}
 
     seq = pending["sequence_num"] + 1
     insert_question(db, sid, seq, question, source, source_id,

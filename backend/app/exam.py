@@ -251,3 +251,85 @@ def submit_answer(req: AnswerRequest, db: Session = Depends(get_db)):
                     decision.get("reasoning"))
     db.commit()
     return {"done": False, "sequence_num": seq, "question": question}
+
+
+# Professor exam creation
+from .auth import require_professor
+
+
+class CreateExamRequest(BaseModel):
+    course: str
+    title: str
+    description: str = ""
+    icon: str = "🎙️"
+
+
+@router.post("/templates", status_code=201)
+def create_exam_template(
+    req: CreateExamRequest,
+    account: dict = Depends(require_professor),
+    db: Session = Depends(get_db),
+):
+    professor_id = account.get("professor_id")
+
+    if not professor_id:
+        raise HTTPException(
+            status_code=403,
+            detail="This account is not linked to a professor.",
+        )
+
+    course = req.course.strip()
+    title = req.title.strip()
+
+    if not course or not title:
+        raise HTTPException(
+            status_code=400,
+            detail="Course and exam name are required.",
+        )
+
+    try:
+        exam = db.execute(
+            text("""
+                INSERT INTO exam_templates (
+                    professor_id,
+                    title,
+                    course,
+                    description,
+                    icon,
+                    topic_coverage_required,
+                    rubric
+                )
+                VALUES (
+                    CAST(:professor_id AS uuid),
+                    :title,
+                    :course,
+                    :description,
+                    :icon,
+                    ARRAY[]::text[],
+                    '{}'::jsonb
+                )
+                RETURNING id, title, course, description, icon, created_at
+            """),
+            {
+                "professor_id": str(professor_id),
+                "title": title,
+                "course": course,
+                "description": req.description.strip(),
+                "icon": req.icon,
+            },
+        ).mappings().one()
+
+        db.commit()
+
+        return {
+            "id": str(exam["id"]),
+            "title": exam["title"],
+            "course": exam["course"],
+            "description": exam["description"],
+            "icon": exam["icon"],
+            "created_at": exam["created_at"].isoformat(),
+            "message": "Exam created successfully.",
+        }
+    except Exception:
+        db.rollback()
+        raise

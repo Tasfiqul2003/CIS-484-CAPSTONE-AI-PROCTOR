@@ -22,7 +22,7 @@ export default function ExamSubmitted() {
   return (
     <div className="student-submission-page">
 
-      <div className="submission-card">
+      <div className="student-submission-card">
 
         <div className="submission-success-icon">
           ✓

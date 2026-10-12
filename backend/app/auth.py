@@ -255,6 +255,9 @@ def get_professor_exams(
             SELECT
                 t.id,
                 t.title,
+                t.course,
+                t.description,
+                t.icon,
                 t.created_at,
                 COUNT(DISTINCT q.id) AS question_count,
                 COUNT(DISTINCT s.id) AS submission_count
@@ -264,7 +267,8 @@ def get_professor_exams(
             LEFT JOIN exam_sessions AS s
                 ON s.exam_template_id = t.id
             WHERE t.professor_id = :professor_id
-            GROUP BY t.id, t.title, t.created_at
+            GROUP BY
+                t.id, t.title, t.course, t.description, t.icon, t.created_at
             ORDER BY t.created_at DESC
         """),
         {"professor_id": professor_id},
@@ -274,6 +278,9 @@ def get_professor_exams(
         {
             "id": str(row["id"]),
             "title": row["title"],
+            "course": row["course"],
+            "description": row["description"],
+            "icon": row["icon"],
             "created_at": (
                 row["created_at"].isoformat()
                 if row["created_at"]

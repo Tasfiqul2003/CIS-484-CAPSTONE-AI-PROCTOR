@@ -4529,7 +4529,7 @@ button {
   background: #f5f6f8;
 }
 
-.submission-card {
+.student-submission-card {
   width: 100%;
   max-width: 520px;
 
@@ -4576,7 +4576,7 @@ button {
   letter-spacing: 1px;
 }
 
-.submission-card h1 {
+.student-submission-card h1 {
   margin: 0;
 
   color: #172033;
@@ -4726,11 +4726,11 @@ button {
     padding: 18px;
   }
 
-  .submission-card {
+  .student-submission-card {
     padding: 30px 22px;
   }
 
-  .submission-card h1 {
+  .student-submission-card h1 {
     font-size: 21px;
   }
 
@@ -4946,4 +4946,3 @@ button {
   }
 
 }
-

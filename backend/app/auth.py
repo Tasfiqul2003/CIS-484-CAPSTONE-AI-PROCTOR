@@ -237,6 +237,62 @@ def current_user(account: dict = Depends(get_current_account)):
     }
 
 
+@router.get("/professor/exams")
+def get_professor_exams(
+    account: dict = Depends(require_professor),
+    db: Session = Depends(get_db),
+):
+    professor_id = account["professor_id"]
+
+    if not professor_id:
+        raise HTTPException(
+            status_code=403,
+            detail="This account is not linked to a professor.",
+        )
+
+    rows = db.execute(
+        text("""
+            SELECT
+                t.id,
+                t.title,
+                t.course,
+                t.description,
+                t.icon,
+                t.created_at,
+                COUNT(DISTINCT q.id) AS question_count,
+                COUNT(DISTINCT s.id) AS submission_count
+            FROM exam_templates AS t
+            LEFT JOIN questions AS q
+                ON q.exam_template_id = t.id
+            LEFT JOIN exam_sessions AS s
+                ON s.exam_template_id = t.id
+            WHERE t.professor_id = :professor_id
+            GROUP BY
+                t.id, t.title, t.course, t.description, t.icon, t.created_at
+            ORDER BY t.created_at DESC
+        """),
+        {"professor_id": professor_id},
+    ).mappings().all()
+
+    return [
+        {
+            "id": str(row["id"]),
+            "title": row["title"],
+            "course": row["course"],
+            "description": row["description"],
+            "icon": row["icon"],
+            "created_at": (
+                row["created_at"].isoformat()
+                if row["created_at"]
+                else None
+            ),
+            "question_count": row["question_count"],
+            "submission_count": row["submission_count"],
+        }
+        for row in rows
+    ]
+
+
 @router.post("/logout")
 def logout(response: Response):
     response.delete_cookie(

@@ -309,12 +309,22 @@ OralExam AI backend.
           <span>OralExam AI</span>
         </div>
 
-        <a
-          href="/professor/dashboard"
+        <button
+          type="button"
           className="dashboard-logout"
+          onClick={async () => {
+            try {
+              await fetch("/api/auth/logout", {
+                method: "POST",
+                credentials: "include",
+              });
+            } finally {
+              window.location.href = "/professor/login";
+            }
+          }}
         >
-          Dashboard
-        </a>
+          Log Out
+        </button>
 
       </header>
 

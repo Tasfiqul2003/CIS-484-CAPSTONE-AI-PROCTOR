@@ -45,19 +45,87 @@ export default function CreateExam() {
 
       const data = await response.json().catch(() => ({}));
 
+
+      console.log("Create exam response:", data);
+      console.log("Created exam ID:", data.id);
+
+
       if (!response.ok) {
         throw new Error(
           data.detail || "Unable to create the examination."
         );
       }
 
-      if (questionFile || materials.length > 0) {
-        alert(
-          "Your exam was saved. The selected question bank and course materials have not been uploaded yet."
+
+      // Upload the selected question bank after creating the exam.
+      if (questionFile) {
+        const formData = new FormData();
+        formData.append("file", questionFile);
+
+        const uploadResponse = await fetch(
+          `/api/exam/templates/${data.id}/questions`,
+          {
+            method: "POST",
+            credentials: "include",
+            body: formData,
+          }
         );
+
+        const uploadData = await uploadResponse.json().catch(() => ({}));
+
+        if (!uploadResponse.ok) {
+          throw new Error(
+            `Exam created, but question upload failed: ${
+              uploadData.detail || "Unknown upload error."
+            }`
+          );
+        }
       }
 
+      // Upload each course material separately.
+      for (const material of materials) {
+        const formData = new FormData();
+        formData.append("file", material);
+
+        console.log("Uploading material to exam ID:", data.id);
+
+        const uploadResponse = await fetch(
+          `/api/exam/templates/${data.id}/materials`,
+          {
+            method: "POST",
+            credentials: "include",
+            body: formData,
+          }
+        );
+
+        const uploadData = await uploadResponse.json().catch(() => ({}));
+
+        if (!uploadResponse.ok) {
+          const detail = uploadData.detail;
+
+          const message =
+            typeof detail === "string"
+              ? detail
+              : Array.isArray(detail)
+                ? detail
+                    .map((item: any) =>
+                      item.msg || JSON.stringify(item)
+                    )
+                    .join("; ")
+                : detail && typeof detail === "object"
+                  ? JSON.stringify(detail)
+                  : "Unknown upload error.";
+
+          throw new Error(
+            `Material upload failed for ${material.name}: ${message}`
+          );
+        }
+
+      }
+
+      window.alert("Exam created and selected files uploaded successfully.");
       window.location.href = "/professor/dashboard";
+
     } catch (err) {
       setError(
         err instanceof Error
@@ -76,9 +144,22 @@ export default function CreateExam() {
           <span className="logo-icon">◉</span>
           <span>OralExam AI</span>
         </div>
-        <a href="/professor/dashboard" className="dashboard-logout">
-          Dashboard
-        </a>
+        <button
+          type="button"
+          className="dashboard-logout"
+          onClick={async () => {
+            try {
+              await fetch("/api/auth/logout", {
+                method: "POST",
+                credentials: "include",
+              });
+            } finally {
+              window.location.href = "/professor/login";
+            }
+          }}
+        >
+          Log Out
+        </button>
       </header>
 
       <main className="create-exam-content">
@@ -170,7 +251,7 @@ export default function CreateExam() {
           <label className="create-upload-zone">
             <input
               type="file"
-              accept=".csv,.xlsx,.xls,.txt"
+              accept=".csv,.txt,.docx,.pdf,.pptx"
               onChange={(e) =>
                 setQuestionFile(e.target.files?.[0] || null)
               }
@@ -203,7 +284,7 @@ export default function CreateExam() {
           <label className="create-upload-zone compact">
             <input
               type="file"
-              accept=".pdf,.doc,.docx,.ppt,.pptx,.txt"
+              accept=".pdf,.docx,.pptx,.txt"
               onChange={(e) => {
                 const file = e.target.files?.[0];
                 if (file) {

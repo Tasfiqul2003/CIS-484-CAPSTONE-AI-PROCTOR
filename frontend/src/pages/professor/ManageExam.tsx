@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 
 type Exam = {
-  id: number;
-  name: string;
+  id: string;
+  title: string;
   course: string;
   description?: string;
   icon?: string;
@@ -32,14 +32,6 @@ type ExamSettings = {
   professorReview: boolean;
 };
 
-const defaultExam: Exam = {
-  id: 1,
-  name: "CIS 484 Oral Examination",
-  course: "CIS 484",
-  description: "AI-assisted oral examination",
-  icon: "🎓",
-};
-
 const defaultSettings: ExamSettings = {
   timeLimit: 30,
 
@@ -65,57 +57,97 @@ const defaultSettings: ExamSettings = {
   professorReview: true,
 };
 
+
 export default function ManageExam() {
-  const [exam, setExam] = useState<Exam>(defaultExam);
+  const [exam, setExam] = useState<Exam | null>(null);
 
   const [settings, setSettings] =
     useState<ExamSettings>(defaultSettings);
 
   const [saved, setSaved] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
   useEffect(() => {
-    const savedExams = localStorage.getItem("oralExamExams");
-
-    if (savedExams) {
+    async function loadExam() {
       try {
-        const exams: Exam[] = JSON.parse(savedExams);
-
-        const path = window.location.pathname;
-        const match = path.match(
-          /\/professor\/exams\/(\d+)/
+        const match = window.location.pathname.match(
+          /^\/professor\/exams\/([^/]+)$/
         );
 
-        if (match) {
-          const examId = Number(match[1]);
-
-          const selectedExam = exams.find(
-            (item) => item.id === examId
-          );
-
-          if (selectedExam) {
-            setExam(selectedExam);
-          }
+        if (!match) {
+          throw new Error("Invalid exam URL.");
         }
-      } catch {
-        console.log("Unable to load exam.");
+
+        const examId = match[1];
+
+        const response = await fetch(
+          "/api/auth/professor/exams",
+          { credentials: "include" }
+        );
+
+        if (!response.ok) {
+          throw new Error("Unable to load your examinations.");
+        }
+
+        const exams: Exam[] = await response.json();
+
+        const selectedExam = exams.find(
+          (item) => item.id === examId
+        );
+
+        if (!selectedExam) {
+          throw new Error(
+            "Exam not found, or you do not have permission to access it."
+          );
+        }
+
+        setExam(selectedExam);
+
+        const savedSettings = localStorage.getItem(
+          `oralExamSettings-${window.location.pathname}`
+        );
+
+        if (savedSettings) {
+          setSettings({
+            ...defaultSettings,
+            ...JSON.parse(savedSettings),
+          });
+        }
+      } catch (err) {
+        setError(
+          err instanceof Error
+            ? err.message
+            : "Unable to load the examination."
+        );
+      } finally {
+        setLoading(false);
       }
     }
 
-    const savedSettings = localStorage.getItem(
-      `oralExamSettings-${window.location.pathname}`
-    );
-
-    if (savedSettings) {
-      try {
-        setSettings({
-          ...defaultSettings,
-          ...JSON.parse(savedSettings),
-        });
-      } catch {
-        console.log("Unable to load exam settings.");
-      }
-    }
+    loadExam();
   }, []);
+
+
+  if (loading) {
+  return (
+    <main className="professor-dashboard-content">
+      <p>Loading examination...</p>
+    </main>
+  );
+}
+
+if (error || !exam) {
+  return (
+    <main className="professor-dashboard-content">
+      <p role="alert">
+        {error || "Examination not found."}
+      </p>
+      <a href="/professor/dashboard">Return to Dashboard</a>
+    </main>
+  );
+}
+
 
   const updateSetting = <K extends keyof ExamSettings>(
     key: K,
@@ -152,12 +184,22 @@ export default function ManageExam() {
           <span>OralExam AI</span>
         </div>
 
-        <a
-          href="/professor/dashboard"
+        <button
+          type="button"
           className="dashboard-logout"
+          onClick={async () => {
+            try {
+              await fetch("/api/auth/logout", {
+                method: "POST",
+                credentials: "include",
+              });
+            } finally {
+              window.location.href = "/professor/login";
+            }
+          }}
         >
-          Dashboard
-        </a>
+          Log Out
+        </button>
 
       </header>
 
@@ -165,7 +207,7 @@ export default function ManageExam() {
 
         <a
           href="/professor/dashboard"
-          className="manage-back-link"
+          className="back-to-exam-button"
         >
           ← Back to Dashboard
         </a>
@@ -187,7 +229,7 @@ export default function ManageExam() {
               </p>
 
               <h1>
-                {exam.name}
+               {exam.title}
               </h1>
 
               <p>

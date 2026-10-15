@@ -261,7 +261,19 @@ def get_professor_exams(
                 t.created_at,
                 t.status,
                 COUNT(DISTINCT q.id) AS question_count,
-                COUNT(DISTINCT s.id) AS submission_count
+                COUNT(DISTINCT s.id) AS submission_count,
+                COUNT(DISTINCT s.id) FILTER (
+                    WHERE s.status = 'in_progress'
+                ) AS in_progress_count,
+                COUNT(DISTINCT s.id) FILTER (
+                    WHERE s.status = 'pending_grading'
+                ) AS awaiting_grading_count,
+                COUNT(DISTINCT s.id) FILTER (
+                    WHERE s.status = 'graded'
+                ) AS completed_count,
+                COUNT(DISTINCT s.id) FILTER (
+                    WHERE s.status = 'flagged'
+                ) AS flagged_count
             FROM exam_templates AS t
             LEFT JOIN questions AS q
                 ON q.exam_template_id = t.id
@@ -291,10 +303,13 @@ def get_professor_exams(
             ),
             "question_count": row["question_count"],
             "submission_count": row["submission_count"],
+            "in_progress_count": row["in_progress_count"],
+            "awaiting_grading_count": row["awaiting_grading_count"],
+            "completed_count": row["completed_count"],
+            "flagged_count": row["flagged_count"],
         }
         for row in rows
     ]
-
 
 @router.post("/logout")
 def logout(response: Response):

@@ -15,6 +15,10 @@ type Exam = {
   status: "draft" | "published";
   question_count: number;
   submission_count: number;
+  in_progress_count: number;
+  awaiting_grading_count: number;
+  completed_count: number;
+  flagged_count: number;
 };
 
 function getErrorMessage(data: any, fallback: string): string {
@@ -323,15 +327,35 @@ export default function ProfessorDashboard() {
                       "Manage questions, course materials, and exam settings."}
                   </p>
 
-                  <div className="exam-stats">
-                    <div>
+                  <div className="exam-stats exam-stats-detailed">
+                    <div className="exam-stat">
+                      <span className="exam-stat-label">Questions</span>
                       <strong>{exam.question_count}</strong>
-                      <span>Questions</span>
                     </div>
 
-                    <div>
+                    <div className="exam-stat">
+                      <span className="exam-stat-label">Submissions</span>
                       <strong>{exam.submission_count}</strong>
-                      <span>Submissions</span>
+                    </div>
+
+                    <div className="exam-stat">
+                      <span className="exam-stat-label">Completed</span>
+                      <strong>{exam.completed_count}</strong>
+                    </div>
+
+                    <div className="exam-stat">
+                      <span className="exam-stat-label">In Progress</span>
+                      <strong>{exam.in_progress_count}</strong>
+                    </div>
+
+                    <div className="exam-stat">
+                      <span className="exam-stat-label">Awaiting Grading</span>
+                      <strong>{exam.awaiting_grading_count}</strong>
+                    </div>
+
+                    <div className="exam-stat">
+                      <span className="exam-stat-label">Flagged</span>
+                      <strong>{exam.flagged_count}</strong>
                     </div>
                   </div>
 

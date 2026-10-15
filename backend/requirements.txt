@@ -5,3 +5,7 @@ psycopg2-binary
 httpx
 pwdlib[argon2]
 PyJWT
+python-multipart
+python-docx
+pypdf
+python-pptx

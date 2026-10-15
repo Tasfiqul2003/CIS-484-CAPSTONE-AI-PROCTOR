@@ -187,10 +187,37 @@ export default function MaterialUpload() {
           <span className="logo-icon">◉</span>
           <span>OralExam AI</span>
         </div>
+        <button
+          type="button"
+          className="dashboard-logout"
+          onClick={async () => {
+            try {
+              await fetch("/api/auth/logout", {
+                method: "POST",
+                credentials: "include",
+              });
+            } finally {
+              window.location.href = "/professor/login";
+            }
+          }}
+        >
+          Log Out
+        </button>
       </header>
 
       <main className="material-upload-content">
         <div className="material-heading">
+          <button
+            type="button"
+            className="back-to-exam-button"
+            onClick={() => {
+              window.location.href = examId
+                ? `/professor/exams/${examId}`
+                : "/professor/exams";
+            }}
+          >
+            ← Back to Exam
+          </button>
           <p className="eyebrow">PROFESSOR PORTAL</p>
           <h1>Course Materials</h1>
           <p>

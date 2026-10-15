@@ -144,9 +144,22 @@ export default function CreateExam() {
           <span className="logo-icon">◉</span>
           <span>OralExam AI</span>
         </div>
-        <a href="/professor/dashboard" className="dashboard-logout">
-          Dashboard
-        </a>
+        <button
+          type="button"
+          className="dashboard-logout"
+          onClick={async () => {
+            try {
+              await fetch("/api/auth/logout", {
+                method: "POST",
+                credentials: "include",
+              });
+            } finally {
+              window.location.href = "/professor/login";
+            }
+          }}
+        >
+          Log Out
+        </button>
       </header>
 
       <main className="create-exam-content">

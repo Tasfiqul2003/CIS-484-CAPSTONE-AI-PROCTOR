@@ -170,9 +170,38 @@ export default function QuestionBank() {
           <span className="logo-icon">◉</span>
           <span>OralExam AI</span>
         </div>
+        <button
+          type="button"
+          className="dashboard-logout"
+          onClick={async () => {
+            try {
+              await fetch("/api/auth/logout", {
+                method: "POST",
+                credentials: "include",
+              });
+            } finally {
+              window.location.href = "/professor/login";
+            }
+          }}
+        >
+          Log Out
+        </button>
       </header>
 
       <main className="question-bank-content">
+      <button
+        type="button"
+        className="back-to-exam-button"
+        onClick={() => {
+          window.location.href = examId
+            ? `/professor/exams/${examId}`
+            : "/professor/exams";
+        }}
+      >
+        ← Back to Exam
+      </button>
+
+
         <div className="question-bank-heading">
           <p className="eyebrow">PROFESSOR PORTAL</p>
           <h1>Question Bank</h1>

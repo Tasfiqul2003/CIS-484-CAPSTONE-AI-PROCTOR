@@ -5507,3 +5507,98 @@ button {
     padding: 14px;
   }
 }
+
+/* Back to Exam navigation button */
+.back-to-exam-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 20px;
+  padding: 10px 16px;
+  border: 1px solid #d8dee8;
+  border-radius: 8px;
+  background: #fff;
+  color: #172033;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s;
+}
+
+.back-to-exam-button:hover {
+  border-color: #172033;
+  background: #f8f9fb;
+}
+
+/* Remove underline from back navigation links */
+a.back-to-exam-button {
+  text-decoration: none;
+}
+
+a.back-to-exam-button:hover {
+  text-decoration: none;
+}
+
+/* Professor dashboard logout button */
+button.dashboard-logout {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 9px 16px;
+  border: 1px solid #d8dee8;
+  border-radius: 8px;
+  background: #fff;
+  color: #465166;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    background 0.2s ease,
+    border-color 0.2s ease,
+    color 0.2s ease;
+}
+
+button.dashboard-logout:hover {
+  border-color: #b94a48;
+  background: #fff5f5;
+  color: #a33432;
+}
+
+button.dashboard-logout:focus-visible {
+  outline: 2px solid #172033;
+  outline-offset: 3px;
+}
+
+/* Consistent professor navigation header */
+.professor-dashboard-page .simple-header,
+.material-upload-page .simple-header,
+.question-bank-page .simple-header,
+.professor-exams-page .simple-header,
+.create-exam-page .simple-header,
+.exam-submissions-page .simple-header,
+.manage-exam-page .simple-header {
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.simple-header .dashboard-logout {
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+/* Align professor header logo left and logout button right */
+.professor-dashboard-page .simple-header,
+.material-upload-page .simple-header,
+.question-bank-page .simple-header,
+.professor-exams-page .simple-header,
+.create-exam-page .simple-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.simple-header button.dashboard-logout {
+  margin-left: auto;
+}

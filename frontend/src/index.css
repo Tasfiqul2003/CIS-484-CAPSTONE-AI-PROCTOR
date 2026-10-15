@@ -5602,3 +5602,149 @@ button.dashboard-logout:focus-visible {
 .simple-header button.dashboard-logout {
   margin-left: auto;
 }
+
+
+/* PROFESSOR EXAM CARD ACTIONS - FINAL OVERRIDES */
+.professor-exams-content .exam-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr));
+  gap: 26px;
+  align-items: stretch;
+}
+
+.professor-exams-content .professor-exam-card {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 28px;
+  background: #fff;
+  border: 1px solid #e0e4ea;
+  border-radius: 16px;
+  box-shadow: 0 4px 16px rgba(23, 32, 51, 0.05);
+}
+
+.professor-exams-content .professor-exam-card:hover {
+  box-shadow: 0 9px 24px rgba(23, 32, 51, 0.09);
+}
+
+.professor-exams-content .exam-card-title {
+  margin: 16px 0 12px;
+  color: #172033;
+  font-size: 23px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.professor-exams-content .exam-description {
+  flex: 1;
+  min-height: 45px;
+  margin-bottom: 18px;
+  line-height: 1.6;
+}
+
+.professor-exams-content .exam-stats {
+  display: flex;
+  gap: 35px;
+  margin-top: 10px;
+  padding: 18px;
+  background: #f8f9fb;
+  border: 1px solid #edf0f4;
+  border-radius: 12px;
+}
+
+.professor-exams-content .exam-card-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+  margin-top: 22px;
+  padding-top: 20px;
+  border-top: 1px solid #edf0f4;
+}
+
+.professor-exams-content .exam-card-actions a,
+.professor-exams-content .exam-card-actions button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 52px;
+  padding: 13px 16px;
+  box-sizing: border-box;
+  border: 1px solid #dfe4ea;
+  border-radius: 11px;
+  background: #fff;
+  color: #273247;
+  font-size: 14px;
+  font-weight: 650;
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.professor-exams-content .exam-card-actions a:hover {
+  background: #f5f7fa;
+  border-color: #cbd3de;
+}
+
+.professor-exams-content .exam-card-actions .view-submissions-button {
+  background: #f8f9fb;
+}
+
+.professor-exams-content .exam-card-actions .publication-button.is-draft {
+  color: #fff;
+  background: #26354b;
+  border-color: #26354b;
+}
+
+.professor-exams-content .exam-card-actions .publication-button.is-published {
+  color: #356342;
+  background: #f0f7f1;
+  border-color: #d2e5d6;
+}
+
+.professor-exams-content .exam-card-actions button:disabled {
+  opacity: 0.65;
+  cursor: wait;
+}
+
+@media (max-width: 600px) {
+  .professor-exams-content {
+    padding-right: 18px;
+    padding-left: 18px;
+  }
+
+  .professor-exams-content .professor-exam-card {
+    padding: 21px;
+  }
+}
+
+
+/* Exam card delete action */
+.professor-exams-content .exam-card-actions .delete-exam-button {
+  color: #a52b35;
+  background: #fff7f7;
+  border-color: #f0d0d3;
+}
+
+.professor-exams-content .exam-card-actions .delete-exam-button:hover {
+  color: #842029;
+  background: #fdeced;
+  border-color: #e7b8bd;
+}
+
+.dashboard-exam-button:hover:not(:disabled) {
+  background: #f1f5f9;
+}
+
+.dashboard-exam-button.delete {
+  color: #b42318;
+  border-color: #f0b4ae;
+}
+
+.dashboard-exam-button.delete:hover:not(:disabled) {
+  background: #fff1f0;
+}
+
+.dashboard-exam-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}

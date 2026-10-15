@@ -336,6 +336,169 @@ def create_exam_template(
         db.rollback()
         raise
 
+
+@router.get("/available")
+def get_available_exams(db: Session = Depends(get_db)):
+    rows = db.execute(text("""
+        SELECT id, title, course, description, icon
+        FROM exam_templates
+        WHERE status = 'published'
+        ORDER BY created_at DESC
+    """)).mappings().all()
+
+    return [
+        {
+            "id": str(row["id"]),
+            "title": row["title"],
+            "course": row["course"],
+            "description": row["description"],
+            "icon": row["icon"],
+            "status": "published",
+        }
+        for row in rows
+    ]
+
+
+@router.post("/templates/{exam_template_id}/publish")
+def publish_exam(
+    exam_template_id: UUID,
+    account: dict = Depends(require_professor),
+    db: Session = Depends(get_db),
+):
+    professor_id = account.get("professor_id")
+    if not professor_id:
+        raise HTTPException(403, "This account is not linked to a professor.")
+
+    result = db.execute(text("""
+        UPDATE exam_templates
+        SET status = 'published'
+        WHERE id = CAST(:exam_id AS uuid)
+          AND professor_id = CAST(:professor_id AS uuid)
+        RETURNING id, status
+    """), {
+        "exam_id": str(exam_template_id),
+        "professor_id": str(professor_id),
+    }).mappings().first()
+
+    if not result:
+        db.rollback()
+        raise HTTPException(404, "Exam not found.")
+
+    db.commit()
+    return {"id": str(result["id"]), "status": result["status"]}
+
+
+@router.post("/templates/{exam_template_id}/unpublish")
+def unpublish_exam(
+    exam_template_id: UUID,
+    account: dict = Depends(require_professor),
+    db: Session = Depends(get_db),
+):
+    professor_id = account.get("professor_id")
+    if not professor_id:
+        raise HTTPException(403, "This account is not linked to a professor.")
+
+    result = db.execute(text("""
+        UPDATE exam_templates
+        SET status = 'draft'
+        WHERE id = CAST(:exam_id AS uuid)
+          AND professor_id = CAST(:professor_id AS uuid)
+        RETURNING id, status
+    """), {
+        "exam_id": str(exam_template_id),
+        "professor_id": str(professor_id),
+    }).mappings().first()
+
+    if not result:
+        db.rollback()
+        raise HTTPException(404, "Exam not found.")
+
+    db.commit()
+    return {"id": str(result["id"]), "status": result["status"]}
+
+
+@router.delete("/templates/{exam_template_id}")
+def delete_exam_template(
+    exam_template_id: UUID,
+    account: dict = Depends(require_professor),
+    db: Session = Depends(get_db),
+):
+    professor_id = account.get("professor_id")
+    if not professor_id:
+        raise HTTPException(
+            status_code=403,
+            detail="Professor account required.",
+        )
+
+    params = {
+        "exam_id": str(exam_template_id),
+        "professor_id": str(professor_id),
+    }
+
+    exam = db.execute(
+        text("""
+            SELECT id
+            FROM exam_templates
+            WHERE id = CAST(:exam_id AS uuid)
+              AND professor_id = CAST(:professor_id AS uuid)
+        """),
+        params,
+    ).first()
+
+    if not exam:
+        raise HTTPException(status_code=404, detail="Exam not found.")
+
+    session_count = db.execute(
+        text("""
+            SELECT COUNT(*)
+            FROM exam_sessions
+            WHERE exam_template_id = CAST(:exam_id AS uuid)
+        """),
+        {"exam_id": str(exam_template_id)},
+    ).scalar_one()
+
+    if session_count:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "This exam has student sessions and cannot be deleted. "
+                "Unpublish it instead to preserve student records."
+            ),
+        )
+
+    try:
+        db.execute(
+            text("""
+                DELETE FROM questions
+                WHERE exam_template_id = CAST(:exam_id AS uuid)
+                  AND professor_id = CAST(:professor_id AS uuid)
+            """),
+            params,
+        )
+        db.execute(
+            text("""
+                DELETE FROM course_materials
+                WHERE exam_template_id = CAST(:exam_id AS uuid)
+                  AND professor_id = CAST(:professor_id AS uuid)
+            """),
+            params,
+        )
+        db.execute(
+            text("""
+                DELETE FROM exam_templates
+                WHERE id = CAST(:exam_id AS uuid)
+                  AND professor_id = CAST(:professor_id AS uuid)
+            """),
+            params,
+        )
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+
+    return {"id": str(exam_template_id), "deleted": True}
+
+
 @router.post("/templates/{exam_template_id}/questions")
 async def upload_exam_questions(
     exam_template_id: UUID,

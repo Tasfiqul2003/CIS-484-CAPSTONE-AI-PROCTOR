@@ -8,6 +8,7 @@ type Exam = {
   description: string | null;
   icon: string | null;
   created_at: string | null;
+  status: "draft" | "published";
   question_count: number;
   submission_count: number;
 };
@@ -104,6 +105,72 @@ export default function ProfessorExams() {
 
     initialize();
   }, []);
+
+  async function deleteExam(exam: Exam) {
+    const confirmed = window.confirm(
+      `Delete "${exam.title}"? This cannot be undone. Exams with student sessions cannot be deleted.`
+    );
+
+    if (!confirmed) return;
+
+    setSaving(true);
+    setError("");
+
+    try {
+      const response = await fetch(`/api/exam/templates/${exam.id}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(
+          getErrorMessage(data, "Unable to delete this exam.")
+        );
+      }
+
+      await loadExams();
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Unable to delete this exam."
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function togglePublication(exam: Exam) {
+    setSaving(true);
+    setError("");
+
+    try {
+      const action = exam.status === "published" ? "unpublish" : "publish";
+      const response = await fetch(
+        `/api/exam/templates/${exam.id}/${action}`,
+        {
+          method: "POST",
+          credentials: "include",
+        }
+      );
+
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(
+          getErrorMessage(data, `Unable to ${action} this exam.`)
+        );
+      }
+
+      await loadExams();
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Unable to update exam status."
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
 
   async function createExam() {
     if (!course.trim() || !name.trim()) {
@@ -298,10 +365,12 @@ export default function ProfessorExams() {
               <div className="professor-exam-card" key={exam.id}>
                 <div className="exam-card-top">
                   <span className="exam-course">{exam.course}</span>
-                  <span className="exam-status">Active</span>
+                  <span className="exam-status">
+                    {exam.status === "published" ? "Published" : "Draft"}
+                  </span>
                 </div>
 
-                <h2>
+                <h2 className="exam-card-title">
                   {exam.icon ? `${exam.icon} ` : ""}
                   {exam.title}
                 </h2>
@@ -327,8 +396,39 @@ export default function ProfessorExams() {
                     href={`/professor/exams/${exam.id}`}
                     className="manage-exam-button"
                   >
-                    Manage Exam →
+                    📝 Manage Exam →
                   </a>
+
+                  <a
+                    href={`/professor/exams/${exam.id}/submissions`}
+                    className="view-submissions-button"
+                  >
+                    📊 View Submissions →
+                  </a>
+
+                  <button
+                    type="button"
+                    className={`publication-button ${
+                      exam.status === "published" ? "is-published" : "is-draft"
+                    }`}
+                    onClick={() => togglePublication(exam)}
+                    disabled={saving}
+                  >
+                    {saving
+                      ? "Saving..."
+                      : exam.status === "published"
+                        ? "✓ Published · Make Draft"
+                        : "🚀 Publish Exam"}
+                  </button>
+
+                  <button
+                    type="button"
+                    className="delete-exam-button"
+                    onClick={() => deleteExam(exam)}
+                    disabled={saving}
+                  >
+                    🗑️ Delete Exam
+                  </button>
                 </div>
               </div>
             ))}

@@ -17,6 +17,8 @@ export default function StudentExams() {
           <p>Select an examination below to begin your AI-powered oral exam.</p>
         </div>
 
+        <p className="student-settings-preview-entry"><a href="/student/settings-preview">Student Settings Preview</a> · Try presentation preferences with synthetic content. No exam is started.</p>
+
         <div className="exam-list">
           <div className="exam-card">
             <div className="exam-card-top">

@@ -24,6 +24,7 @@ export default function StudentSettingsPanel({
   const headingRef = useRef<HTMLHeadingElement>(null);
   const ignoreCloseEvent = useRef(false);
   const id = useId();
+  // Required reduced motion stays on; its optional switch is omitted below.
   const forcedReducedMotion = policy.defaults.reducedMotion || browserReducedMotion;
   const reducedMotion = forcedReducedMotion || preferences.reducedMotion;
 
@@ -47,6 +48,7 @@ export default function StudentSettingsPanel({
   function keepTabFocusInPanel(event: KeyboardEvent<HTMLDialogElement>) {
     if (event.key !== "Tab" || event.altKey || event.ctrlKey || event.metaKey) return;
     const dialog = event.currentTarget;
+    // Only visible, enabled controls participate in the dialog's keyboard focus loop.
     const controls = Array.from(dialog.querySelectorAll<HTMLElement>("button, input, select, textarea, a[href], [tabindex]"))
       .filter((element) => element.tabIndex >= 0 && !element.matches(":disabled") && element.getClientRects().length > 0 && window.getComputedStyle(element).visibility !== "hidden");
     const first = controls[0];

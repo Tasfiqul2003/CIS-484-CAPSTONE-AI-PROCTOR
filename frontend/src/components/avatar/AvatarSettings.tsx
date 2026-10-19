@@ -96,6 +96,7 @@ export default function AvatarSettings({ examId }: { examId: string }) {
   const [open, setOpen] = useState(window.location.hash === "#avatar-settings");
   const [identity, setIdentity] = useState<{ id: string; error: string } | null>(null);
   const [identityLoading, setIdentityLoading] = useState(true);
+  // Session identity scopes browser drafts; the API separately checks exam ownership.
   useEffect(() => {
     if (!open) return;
     const controller = new AbortController();
@@ -138,6 +139,7 @@ function SettingsEditor({ examId, instructorId, identityError }: { examId: strin
   const [serverError, setServerError] = useState("");
   const [sharedRevision, setSharedRevision] = useState<number | null>(null);
   const [previewMode, setPreviewMode] = useState<"practice" | "assessed">("practice");
+  // Track edits so a delayed server response cannot replace changes made while it loads.
   const edited = useRef(false);
   const editGeneration = useRef(0);
   const errorRef = useRef<HTMLDivElement>(null);
@@ -158,6 +160,7 @@ function SettingsEditor({ examId, instructorId, identityError }: { examId: strin
     loadExamPolicy(examId, controller.signal).then(record => {
       if (controller.signal.aborted) return;
       setExamPolicy(record);
+      // A local draft takes priority; loading the server revision does not publish that draft.
       if (!initial.settings && !edited.current && record.revision > 0) {
         setSettings(record.settings);
         setBaseline(JSON.stringify(record.settings));
@@ -211,6 +214,7 @@ function SettingsEditor({ examId, instructorId, identityError }: { examId: strin
   const sharePreview = () => {
     if (errors.length || uploadingPhoto || !instructorId) { errorRef.current?.focus(); return; }
     try {
+      // Sharing updates only this browser's preview policy, not the saved server policy.
       const record = createLocalExamPolicyStore().save(examId, instructorId, settings, sharedRevision ?? 0);
       setSharedRevision(record.revision);
       setMessage(`Preview policy revision ${record.revision} shared in this browser. Open previews keep their starting policy until restarted.`);

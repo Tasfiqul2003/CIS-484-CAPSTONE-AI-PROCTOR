@@ -197,6 +197,7 @@ def default_settings() -> AvatarSettings:
 def _ensure_owner(db: Session, exam_id: UUID, account: dict) -> None:
     if not account.get("professor_id"):
         raise HTTPException(403, "This account is not linked to a professor.")
+    # A professor role alone does not grant access to another professor's exam.
     owned = db.execute(
         text("SELECT 1 FROM exam_templates WHERE id = :exam_id AND professor_id = :professor_id"),
         {"exam_id": str(exam_id), "professor_id": str(account["professor_id"])},
@@ -248,6 +249,7 @@ def get_avatar_policy(
         ).mappings().first()
     except SQLAlchemyError as error:
         _database_error(db, error)
+    # Unsaved exams receive revision-zero defaults without inserting a policy row.
     return _response(exam_id, row)
 
 
@@ -270,6 +272,7 @@ def save_avatar_policy(
     }
     try:
         if body.expected_revision == 0:
+            # Revision zero means first save; an existing row must not be overwritten.
             statement = f"""
                 INSERT INTO exam_avatar_policies (exam_template_id, settings, revision, updated_at)
                 SELECT id, {encoded}, 1, :updated_at FROM exam_templates

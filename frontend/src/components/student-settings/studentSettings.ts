@@ -120,6 +120,7 @@ function preferenceKey(examId: string, studentId: string): string {
   if (typeof examId !== 'string' || !examId.trim() || typeof studentId !== 'string' || !studentId.trim()) {
     throw new Error('An exam identifier and student identifier are required for personal preview preferences.')
   }
+  // Keep preview preferences separate by exam and student; these IDs do not authenticate anyone.
   return `oral-exam-student-preview:v1:${JSON.stringify([examId, studentId])}`
 }
 

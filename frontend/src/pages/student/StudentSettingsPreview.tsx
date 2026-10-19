@@ -24,6 +24,7 @@ const ACTIONS: { id: StudentAction; label: string; description: string; response
 ];
 
 function newAttempt() {
+  // These counters belong only to the synthetic preview, never to saved preferences.
   return {
     counts: { repeat: 0, clarification: 0, hint: 0, explanation: 0, correctness: 0 } as Record<StudentAction, number>,
     state: "Idle",
@@ -33,6 +34,7 @@ function newAttempt() {
 
 export default function StudentSettingsPreview() {
   const [configuration] = useState(() => {
+    // Query parameters select an instructor demonstration; they do not authorize student access.
     const query = new URLSearchParams(window.location.search);
     const source = query.get("policySource");
     const examId = query.get("examId") ?? "";
@@ -81,6 +83,7 @@ export default function StudentSettingsPreview() {
     if (!record) return;
     try {
       const next = await readPolicy();
+      // Announce newer rules without replacing the active snapshot until Restart preview.
       setPendingRevision(next.revision > activeRevision.current ? next.revision : null);
       setLoadError("");
     } catch (error) { setLoadError(error instanceof Error ? error.message : "Unable to check for updated permissions. The active preview keeps its starting policy."); }
@@ -99,6 +102,7 @@ export default function StudentSettingsPreview() {
     try { await beginPreview(); } catch { /* Error is displayed below. */ }
     finally { setLoading(false); }
   };
+  // A failed connected preview must show its error rather than silently use sample permissions.
   if (configuration.connected && !record) return <div className="student-settings-preview-page"><main className="student-settings-preview-content">
     <h1>Student settings preview</h1>
     {loading ? <p role="status">Loading exam policy…</p> : <><p className="student-policy-error" role="alert">{loadError}</p><button type="button" onClick={() => void retry()}>Retry policy load</button></>}
@@ -129,6 +133,7 @@ function StudentPreview({ policy, preferenceExamId, onRestart, policyNotice, con
   const launchButton = useRef<HTMLButtonElement>(null);
   const reducedMotion = policy.defaults.reducedMotion || browserReducedMotion || preferences.reducedMotion;
   const dirty = JSON.stringify(preferences) !== baseline;
+  // Hide disallowed actions entirely; allowed actions stay visible when their uses reach zero.
   const availableActions = ACTIONS.filter(action => policy.assistance[action.id].enabled);
   useEffect(() => { setPreferences(current => reconcilePreferences(current, policy)); }, [policy]);
 
@@ -164,6 +169,7 @@ function StudentPreview({ policy, preferenceExamId, onRestart, policyNotice, con
     requestAnimationFrame(() => launchButton.current?.focus());
   };
   const requestAssistance = (action: typeof ACTIONS[number]) => {
+    // Check the latest count inside the updater so queued clicks cannot exceed the preview limit.
     setAttempt(current => {
       const allowance = policy.assistance[action.id];
       if (!allowance.enabled || current.counts[action.id] >= allowance.limit) return current;
@@ -177,6 +183,7 @@ function StudentPreview({ policy, preferenceExamId, onRestart, policyNotice, con
   const restart = async () => {
     setRestarting(true);
     try {
+      // Refresh permissions before clearing usage; a failed load preserves the active attempt.
       const nextPolicy = onRestart ? await onRestart() : policy;
       setPreferences(current => reconcilePreferences(current, nextPolicy));
       setAttempt(newAttempt());

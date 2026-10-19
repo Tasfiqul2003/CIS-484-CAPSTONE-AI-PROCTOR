@@ -4,6 +4,7 @@ import StudentVerification from "./pages/student/StudentVerification";
 import FaceVerification from "./pages/student/FaceVerification";
 import StudentExams from "./pages/student/StudentExams";
 import StudentExam from "./pages/student/StudentExam";
+import StudentSettingsPreview from "./pages/student/StudentSettingsPreview";
 
 import ProfessorLogin from "./pages/professor/ProfessorLogin";
 import ProfessorDashboard from "./pages/professor/ProfessorDashboard";
@@ -32,6 +33,10 @@ function App() {
 
   if (path === "/student/exams") {
     return <StudentExams />;
+  }
+
+  if (path === "/student/settings-preview") {
+    return <StudentSettingsPreview />;
   }
 
   if (path === "/student/exam/submitted") {

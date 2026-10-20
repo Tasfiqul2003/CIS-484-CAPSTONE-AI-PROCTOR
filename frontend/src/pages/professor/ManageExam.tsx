@@ -1,5 +1,6 @@
 import RosterUpload from "../../components/RosterUpload";
 import { useEffect, useState } from "react";
+import AvatarSettings from "../../components/avatar/AvatarSettings";
 
 type Exam = {
   id: string;
@@ -20,7 +21,6 @@ type ExamSettings = {
   questionCount: number;
   followUpQuestions: boolean;
   maxFollowUps: number;
-  difficulty: string;
   allowRephrase: boolean;
   allowHints: boolean;
 
@@ -45,7 +45,6 @@ const defaultSettings: ExamSettings = {
   questionCount: 10,
   followUpQuestions: true,
   maxFollowUps: 2,
-  difficulty: "Adaptive",
   allowRephrase: true,
   allowHints: false,
 
@@ -66,6 +65,7 @@ export default function ManageExam() {
     useState<ExamSettings>(defaultSettings);
 
   const [saved, setSaved] = useState(false);
+  const [settingsError, setSettingsError] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -160,13 +160,33 @@ if (error || !exam) {
     }));
 
     setSaved(false);
+    setSettingsError("");
   };
 
   const saveSettings = () => {
-    localStorage.setItem(
-      `oralExamSettings-${window.location.pathname}`,
-      JSON.stringify(settings)
-    );
+    if (settings.followUpQuestions && (!Number.isInteger(settings.maxFollowUps) || settings.maxFollowUps < 1 || settings.maxFollowUps > 4)) {
+      setSettingsError("Maximum Follow-Ups Per Question must be a whole number from 1 to 4.");
+      document.getElementById("legacy-max-followups")?.focus();
+      return;
+    }
+    // Older local drafts may contain the removed page-level difficulty field.
+    // Keep the stored draft untouched on load, and omit that field on the next save.
+    const { difficulty: _removedDifficulty, ...retainedSettings } = settings as ExamSettings & { difficulty?: unknown };
+    const nextSettings = {
+      ...retainedSettings,
+      maxFollowUps: Number.isInteger(settings.maxFollowUps) && settings.maxFollowUps >= 1 && settings.maxFollowUps <= 4 ? settings.maxFollowUps : defaultSettings.maxFollowUps,
+    };
+    try {
+      localStorage.setItem(
+        `oralExamSettings-${window.location.pathname}`,
+        JSON.stringify(nextSettings)
+      );
+    } catch {
+      setSettingsError("Unable to save these settings in browser storage.");
+      return;
+    }
+    setSettings(nextSettings);
+    setSettingsError("");
 
     setSaved(true);
 
@@ -321,6 +341,7 @@ if (error || !exam) {
         </section>
 
         <RosterUpload examId={exam.id} />
+        <AvatarSettings examId={exam.id} />
 
         {/* SETTINGS */}
 
@@ -649,41 +670,12 @@ if (error || !exam) {
 
               </label>
 
-              <label className="settings-field">
-
-                <span>
-                  Difficulty
-                </span>
-
-                <select
-                  value={settings.difficulty}
-                  onChange={(e) =>
-                    updateSetting(
-                      "difficulty",
-                      e.target.value
-                    )
-                  }
-                >
-                  <option value="Easy">
-                    Easy
-                  </option>
-
-                  <option value="Medium">
-                    Medium
-                  </option>
-
-                  <option value="Hard">
-                    Hard
-                  </option>
-
-                  <option value="Adaptive">
-                    Adaptive
-                  </option>
-                </select>
-
-              </label>
-
             </div>
+
+            <p className="settings-notice avatar-question-bank-note">
+              Question difficulty is set by the professor in the{" "}
+              <a href={`/professor/exams/${exam.id}/questions`}>Question Bank</a>.
+            </p>
 
             <div className="settings-toggle-list">
 
@@ -719,41 +711,35 @@ if (error || !exam) {
 
                 <label className="settings-field nested-setting">
 
-                  <span>
+                  <span id="legacy-followup-label">
                     Maximum Follow-Ups Per Question
                   </span>
 
-                  <select
-                    value={settings.maxFollowUps}
+                  <input
+                    id="legacy-max-followups"
+                    type="number"
+                    min="1"
+                    max="4"
+                    step="1"
+                    value={Number.isFinite(settings.maxFollowUps) ? settings.maxFollowUps : ""}
+                    aria-labelledby="legacy-followup-label"
+                    aria-describedby="legacy-followup-help"
+                    aria-invalid={settings.followUpQuestions && (!Number.isInteger(settings.maxFollowUps) || settings.maxFollowUps < 1 || settings.maxFollowUps > 4)}
                     onChange={(e) =>
                       updateSetting(
                         "maxFollowUps",
-                        Number(e.target.value)
+                        e.target.valueAsNumber
                       )
                     }
-                  >
+                  />
 
-                    <option value={1}>
-                      1
-                    </option>
-
-                    <option value={2}>
-                      2
-                    </option>
-
-                    <option value={3}>
-                      3
-                    </option>
-
-                    <option value={4}>
-                      4
-                    </option>
-
-                  </select>
+                  <small id="legacy-followup-help">Enter a whole number from 1 to 4.</small>
 
                 </label>
 
               )}
+
+              {settingsError && <p id="legacy-followup-error" role="alert">{settingsError}</p>}
 
               <label className="settings-toggle">
 

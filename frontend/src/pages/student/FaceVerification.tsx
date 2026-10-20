@@ -1,47 +1,54 @@
 export default function FaceVerification() {
-  const params = new URLSearchParams(window.location.search);
-  const templateId = params.get("templateId") || "";
-  const studentId = params.get("studentId") || "";
+  const studentId = sessionStorage.getItem("oralexam_student_id") || "";
+  const studentName = sessionStorage.getItem("oralexam_student_name") || "";
 
-  function continueToExam() {
-    if (!templateId || !studentId) {
-      window.location.href = "/student/exams";
+  function continueToPortal() {
+    if (!studentId || !sessionStorage.getItem("oralexam_student_eid")) {
+      window.location.href = "/student/verification";
       return;
     }
 
-    const query = new URLSearchParams({
-      templateId,
-      studentId,
-    });
-
-    window.location.href = `/student/exam?${query.toString()}`;
+    // Prototype only: this flag represents acknowledgement of the placeholder,
+    // not successful biometric or camera verification.
+    sessionStorage.setItem("oralexam_face_check_passed", "true");
+    window.location.href = "/student/exams";
   }
 
-  if (!templateId || !studentId) {
+  if (!studentId) {
     return (
       <main className="face-page">
-        <h1>Verification information missing</h1>
-        <p>Please select an exam and verify your EID first.</p>
-        <a href="/student/exams">Return to My Exams</a>
+        <h1>Student verification required</h1>
+        <p>Please swipe your JACard before continuing.</p>
+        <button type="button" onClick={() => { window.location.href = "/student/verification"; }}>
+          Start Verification
+        </button>
       </main>
     );
   }
 
   return (
     <div className="face-page">
-      <h1>Face Verification</h1>
-      <p>Your EID has been checked against the selected exam roster.</p>
-
-      <h2>Position your face in the camera</h2>
-      <div className="camera-preview">Camera Preview</div>
-      <p>
-        Face recognition has not been implemented yet. This screen is a
-        placeholder and does not verify a face.
-      </p>
-
-      <button type="button" onClick={continueToExam}>
-        Continue to Exam →
-      </button>
+      <header className="simple-header">
+        <div className="logo"><span className="logo-icon">◉</span><span>OralExam AI</span></div>
+      </header>
+      <main className="verification-content">
+        <div className="verification-card">
+          <p className="eyebrow">STEP 2 OF 3</p>
+          <h1>Video / Face Check</h1>
+          <p>Welcome, {studentName}. Please position yourself in front of the camera.</p>
+          <div className="camera-preview">Camera preview is not connected</div>
+          <p role="note">
+            Prototype limitation: camera capture and facial identity matching
+            are not implemented. Continuing does not verify your face.
+          </p>
+          <button type="button" className="continue-button" onClick={continueToPortal}>
+            Continue to Exam Portal →
+          </button>
+          <button type="button" className="back-button" onClick={() => { window.location.href = "/"; }}>
+            Cancel and Return Home
+          </button>
+        </div>
+      </main>
     </div>
   );
 }

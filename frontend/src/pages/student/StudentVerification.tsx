@@ -1,136 +1,92 @@
 import { useState } from "react";
+import JACardScanner from "../../components/JACardScanner";
 
-type VerificationResult = {
-  verified: boolean;
-  student_id: string;
+type Student = {
+  id: string;
   name: string;
   eid: string;
-  exam_template_id: string;
+};
+
+type LookupResponse = {
+  student: Student;
+  exams: Array<{ id: string; status: string }>;
 };
 
 export default function StudentVerification() {
-  const params = new URLSearchParams(window.location.search);
-  const examTemplateId = params.get("templateId") || "";
-
-  const [eid, setEid] = useState("");
-  const [student, setStudent] = useState<VerificationResult | null>(null);
+  const [student, setStudent] = useState<Student | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
-  async function simulateCardSwipe() {
-    if (!examTemplateId) {
-      setError("No exam was selected. Return to the exam list and select an exam.");
-      return;
-    }
-
-    if (!eid.trim()) {
-      setError("Enter your JMU EID before simulating the card swipe.");
-      return;
-    }
-
+  async function handleCardSwipe(eid: string) {
     setBusy(true);
     setError("");
     setStudent(null);
 
     try {
-      const response = await fetch("/api/exam/verify-eid", {
+      const response = await fetch("/api/exam/student/available", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({
-          eid: eid.trim(),
-          exam_template_id: examTemplateId,
-        }),
+        body: JSON.stringify({ eid }),
       });
-
       const data = await response.json().catch(() => ({}));
 
       if (!response.ok) {
-        throw new Error(
-          data.detail || `Verification failed (${response.status}).`
-        );
+        throw new Error(data.detail || `Card verification failed (${response.status}).`);
       }
 
-      setStudent(data as VerificationResult);
+      const result = data as LookupResponse;
+      sessionStorage.setItem("oralexam_student_eid", result.student.eid);
+      sessionStorage.setItem("oralexam_student_id", result.student.id);
+      sessionStorage.setItem("oralexam_student_name", result.student.name);
+      sessionStorage.removeItem("oralexam_face_check_passed");
+      sessionStorage.removeItem("oralexam_exam_session_id");
+      setStudent(result.student);
     } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Unable to verify your JMU EID."
-      );
+      setError(err instanceof Error ? err.message : "Unable to verify this card.");
     } finally {
       setBusy(false);
     }
   }
 
-  function continueToFaceVerification() {
+  function continueToFaceCheck() {
     if (!student) return;
+    window.location.href = "/student/face-verification";
+  }
 
-    const query = new URLSearchParams({
-      templateId: student.exam_template_id,
-      studentId: student.student_id,
-    });
-
-    window.location.href = `/student/face-verification?${query.toString()}`;
+  function restart() {
+    setStudent(null);
+    setError("");
+    sessionStorage.removeItem("oralexam_student_eid");
+    sessionStorage.removeItem("oralexam_student_id");
+    sessionStorage.removeItem("oralexam_student_name");
+    sessionStorage.removeItem("oralexam_face_check_passed");
   }
 
   return (
     <div className="verification-page">
       <header className="simple-header">
-        <div className="logo">
-          <span className="logo-icon">◉</span>
-          <span>OralExam AI</span>
-        </div>
+        <div className="logo"><span className="logo-icon">◉</span><span>OralExam AI</span></div>
       </header>
 
       <main className="verification-content">
         <div className="verification-card">
           <div className="verification-icon">💳</div>
-
           <p className="eyebrow">STUDENT VERIFICATION</p>
           <h1>Verify your identity</h1>
 
           {!student ? (
             <>
               <p className="verification-description">
-                Enter your JMU EID, then simulate swiping your JACard. Your EID
-                must be on the roster for the selected, published exam.
+                Swipe your JACard to look up your student record.
               </p>
-
-              <label className="settings-field">
-                <span>JMU EID</span>
-                <input
-                  type="text"
-                  autoComplete="username"
-                  value={eid}
-                  onChange={(event) => setEid(event.target.value)}
-                  placeholder="Enter your EID"
-                  disabled={busy}
-                />
-              </label>
-
-              <div className="jacard-placeholder">
-                <div className="card-icon">💳</div>
-                <h2>Swipe your JACard</h2>
-                <p>
-                  {busy
-                    ? "Checking the exam roster..."
-                    : "Ready to simulate a card swipe"}
-                </p>
-
-                <button
-                  type="button"
-                  onClick={simulateCardSwipe}
-                  disabled={busy}
-                >
-                  {busy ? "Verifying..." : "Simulate JACard Swipe"}
-                </button>
-              </div>
+              <JACardScanner onSwipe={handleCardSwipe} busy={busy} />
             </>
           ) : (
             <>
               <p className="verification-description">
-                The EID matched a student on this exam's roster.
+                We found the following student record. Confirm that this information is yours.
               </p>
-
               <div className="student-identity">
                 <div className="student-avatar">👤</div>
                 <div className="student-details">
@@ -138,34 +94,22 @@ export default function StudentVerification() {
                   <h2>{student.name}</h2>
                   <p>JMU EID: {student.eid}</p>
                 </div>
-                <div className="verified-badge">✓ Verified</div>
+                <div className="verified-badge">✓ EID Matched</div>
               </div>
 
               <div className="verification-warning">
-                <strong>Continue to the next step</strong>
+                <strong>Next: video check</strong>
                 <p>
-                  The EID check succeeded. The next page is currently a
-                  face-verification placeholder.
+                  The next screen is a prototype placeholder. It does not
+                  perform actual facial recognition yet.
                 </p>
               </div>
 
-              <button
-                type="button"
-                className="continue-button"
-                onClick={continueToFaceVerification}
-              >
-                Continue to Face Verification →
+              <button type="button" className="continue-button" onClick={continueToFaceCheck}>
+                Confirm Identity & Continue →
               </button>
-
-              <button
-                type="button"
-                className="back-button"
-                onClick={() => {
-                  setStudent(null);
-                  setError("");
-                }}
-              >
-                Use a different EID
+              <button type="button" className="back-button" onClick={restart}>
+                This isn't me / Scan another card
               </button>
             </>
           )}
@@ -175,11 +119,9 @@ export default function StudentVerification() {
           <button
             type="button"
             className="back-button"
-            onClick={() => {
-              window.location.href = "/student/exams";
-            }}
+            onClick={() => { window.location.href = "/"; }}
           >
-            ← Back to Exams
+            ← Return Home
           </button>
         </div>
       </main>

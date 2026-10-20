@@ -55,11 +55,13 @@ export default function StudentExam() {
     const examTemplateId = params.get("templateId");
     const studentId = params.get("studentId");
 
-    if (!examTemplateId || !studentId) {
-      const query = examTemplateId
-        ? `?templateId=${encodeURIComponent(examTemplateId)}`
-        : "";
-      window.location.href = `/student/verification${query}`;
+    if (
+      !examTemplateId ||
+      !studentId ||
+      sessionStorage.getItem("oralexam_face_check_passed") !== "true" ||
+      sessionStorage.getItem("oralexam_student_id") !== studentId
+    ) {
+      window.location.href = "/student/verification";
       return;
     }
 
@@ -69,6 +71,7 @@ export default function StudentExam() {
     })
       .then((result) => {
         setSessionId(result.session_id);
+        sessionStorage.setItem("oralexam_exam_session_id", result.session_id);
         setQuestion(result.question);
         setQuestionNumber(result.sequence_num);
       })

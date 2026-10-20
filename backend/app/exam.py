@@ -137,6 +137,9 @@ def start_exam(req: StartRequest, db: Session = Depends(get_db)):
     if not template:
         raise HTTPException(404, "Exam template not found")
 
+    if template.get("status") != "published":
+        raise HTTPException(403, "This exam is not currently published.")
+
     student = db.execute(
         text("SELECT id FROM students WHERE id = CAST(:s AS uuid)"),
         {"s": str(req.student_id)},
@@ -383,6 +386,73 @@ def create_exam_template(
     except Exception:
         db.rollback()
         raise
+
+
+class StudentAvailableExamsRequest(BaseModel):
+    eid: str
+
+
+@router.post("/student/available")
+def get_student_available_exams(
+    request: StudentAvailableExamsRequest,
+    db: Session = Depends(get_db),
+):
+    eid = request.eid.strip()
+
+    if not eid:
+        raise HTTPException(400, "Enter your JMU EID.")
+
+    student = db.execute(
+        text("""
+            SELECT id, name, eid
+            FROM students
+            WHERE lower(btrim(eid)) = lower(:eid)
+            LIMIT 1
+        """),
+        {"eid": eid},
+    ).mappings().first()
+
+    if not student:
+        raise HTTPException(404, "No student was found for that EID.")
+
+    exams = db.execute(
+        text("""
+            SELECT
+                t.id,
+                t.title,
+                t.course,
+                t.description,
+                t.icon,
+                t.time_limit_minutes
+            FROM exam_roster AS r
+            JOIN exam_templates AS t
+              ON t.id = r.exam_template_id
+            WHERE r.student_id = CAST(:student_id AS uuid)
+              AND t.status = 'published'
+            ORDER BY t.created_at DESC
+        """),
+        {"student_id": str(student["id"])},
+    ).mappings().all()
+
+    return {
+        "student": {
+            "id": str(student["id"]),
+            "name": student["name"],
+            "eid": student["eid"],
+        },
+        "exams": [
+            {
+                "id": str(exam["id"]),
+                "title": exam["title"],
+                "course": exam["course"],
+                "description": exam["description"],
+                "icon": exam["icon"],
+                "time_limit_minutes": exam["time_limit_minutes"],
+                "status": "published",
+            }
+            for exam in exams
+        ],
+    }
 
 
 @router.get("/available")
@@ -1548,3 +1618,47 @@ def verify_exam_eid(
         "eid": student["eid"],
         "exam_template_id": str(request.exam_template_id),
     }
+
+
+class StudentFeedbackRequest(BaseModel):
+    session_id: UUID
+    feedback: str = ""
+
+
+@router.post("/feedback")
+def save_student_feedback(
+    request: StudentFeedbackRequest,
+    db: Session = Depends(get_db),
+):
+    feedback = request.feedback.strip()
+    if len(feedback) > 4000:
+        raise HTTPException(400, "Feedback must be 4,000 characters or fewer.")
+
+    session = db.execute(
+        text("""
+            SELECT id, status
+            FROM exam_sessions
+            WHERE id = CAST(:session_id AS uuid)
+        """),
+        {"session_id": str(request.session_id)},
+    ).mappings().first()
+
+    if not session:
+        raise HTTPException(404, "Exam session not found.")
+
+    if session["status"] not in ("pending_grading", "flagged", "graded"):
+        raise HTTPException(409, "Feedback can only be submitted after the exam has ended.")
+
+    db.execute(
+        text("""
+            UPDATE exam_sessions
+            SET student_feedback = :feedback
+            WHERE id = CAST(:session_id AS uuid)
+        """),
+        {
+            "session_id": str(request.session_id),
+            "feedback": feedback or None,
+        },
+    )
+    db.commit()
+    return {"saved": True, "message": "Thank you for your feedback."}

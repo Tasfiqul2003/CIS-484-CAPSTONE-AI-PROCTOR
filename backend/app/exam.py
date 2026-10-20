@@ -144,6 +144,26 @@ def start_exam(req: StartRequest, db: Session = Depends(get_db)):
     if not student:
         raise HTTPException(404, "Student not found")
 
+    # A student must be on this exam's roster before a session can start.
+    roster_match = db.execute(
+        text("""
+            SELECT 1
+            FROM exam_roster
+            WHERE student_id = CAST(:student_id AS uuid)
+              AND exam_template_id = CAST(:exam_id AS uuid)
+        """),
+        {
+            "student_id": str(req.student_id),
+            "exam_id": str(req.exam_template_id),
+        },
+    ).first()
+
+    if not roster_match:
+        raise HTTPException(
+            403,
+            "This student is not authorized for this exam roster.",
+        )
+
     session_id = str(db.execute(
         text("""INSERT INTO exam_sessions (student_id, exam_template_id)
                 VALUES (CAST(:s AS uuid), CAST(:t AS uuid)) RETURNING id"""),
@@ -1209,3 +1229,235 @@ def delete_exam_material(
 
     db.commit()
     return {"message": "Course material deleted successfully."}
+
+
+# ----- Exam roster and JACard EID verification -----
+
+from .auth import require_professor
+
+
+class VerifyEIDRequest(BaseModel):
+    eid: str
+    exam_template_id: UUID
+
+
+@router.post("/templates/{exam_template_id}/roster")
+async def upload_exam_roster(
+    exam_template_id: UUID,
+    file: UploadFile = File(...),
+    account: dict = Depends(require_professor),
+    db: Session = Depends(get_db),
+):
+    exam = db.execute(
+        text("""
+            SELECT id
+            FROM exam_templates
+            WHERE id = CAST(:exam_id AS uuid)
+              AND professor_id = CAST(:professor_id AS uuid)
+        """),
+        {
+            "exam_id": str(exam_template_id),
+            "professor_id": account["professor_id"],
+        },
+    ).first()
+
+    if not exam:
+        raise HTTPException(
+            status_code=404,
+            detail="Exam not found or you do not own this exam.",
+        )
+
+    if not file.filename or not file.filename.lower().endswith(".csv"):
+        raise HTTPException(400, "Upload a CSV file.")
+
+    try:
+        contents = (await file.read()).decode("utf-8-sig")
+    except UnicodeDecodeError:
+        raise HTTPException(400, "The CSV must use UTF-8 encoding.")
+
+    reader = csv.DictReader(io.StringIO(contents))
+    headers = {
+        (header or "").strip().lower()
+        for header in (reader.fieldnames or [])
+    }
+
+    if not {"name", "email", "eid"}.issubset(headers):
+        raise HTTPException(
+            400,
+            "CSV headers must include name,email,eid.",
+        )
+
+    # Normalize column names and validate the entire file before writing.
+    normalized_rows = []
+    seen_emails = set()
+    seen_eids = set()
+
+    for line_number, row in enumerate(reader, start=2):
+        normalized = {
+            (key or "").strip().lower(): (value or "").strip()
+            for key, value in row.items()
+        }
+
+        name = normalized.get("name", "")
+        email = normalized.get("email", "").lower()
+        eid = normalized.get("eid", "").strip()
+
+        if not name or not email or not eid:
+            raise HTTPException(
+                400,
+                f"Row {line_number}: name, email, and eid are required.",
+            )
+
+        if "@" not in email:
+            raise HTTPException(
+                400,
+                f"Row {line_number}: invalid email address.",
+            )
+
+        if email in seen_emails or eid in seen_eids:
+            raise HTTPException(
+                400,
+                f"Row {line_number}: duplicate email or EID in the CSV.",
+            )
+
+        seen_emails.add(email)
+        seen_eids.add(eid)
+        normalized_rows.append({
+            "name": name,
+            "email": email,
+            "eid": eid,
+        })
+
+    if not normalized_rows:
+        raise HTTPException(400, "The CSV contains no students.")
+
+    added = 0
+    updated = 0
+
+    try:
+        for row in normalized_rows:
+            by_email = db.execute(
+                text("""
+                    SELECT id, eid
+                    FROM students
+                    WHERE LOWER(email) = :email
+                """),
+                {"email": row["email"]},
+            ).mappings().first()
+
+            by_eid = db.execute(
+                text("""
+                    SELECT id, email
+                    FROM students
+                    WHERE eid = :eid
+                """),
+                {"eid": row["eid"]},
+            ).mappings().first()
+
+            if by_eid and (
+                not by_email or str(by_eid["id"]) != str(by_email["id"])
+            ):
+                raise HTTPException(
+                    409,
+                    f"EID {row['eid']} is already assigned to another student.",
+                )
+
+            if by_email:
+                db.execute(
+                    text("""
+                        UPDATE students
+                        SET name = :name, eid = :eid
+                        WHERE id = CAST(:student_id AS uuid)
+                    """),
+                    {
+                        **row,
+                        "student_id": str(by_email["id"]),
+                    },
+                )
+                student_id = by_email["id"]
+                updated += 1
+            else:
+                student_id = db.execute(
+                    text("""
+                        INSERT INTO students (name, email, eid)
+                        VALUES (:name, :email, :eid)
+                        RETURNING id
+                    """),
+                    row,
+                ).scalar_one()
+                added += 1
+
+            db.execute(
+                text("""
+                    INSERT INTO exam_roster (exam_template_id, student_id)
+                    VALUES (
+                        CAST(:exam_id AS uuid),
+                        CAST(:student_id AS uuid)
+                    )
+                    ON CONFLICT (exam_template_id, student_id) DO NOTHING
+                """),
+                {
+                    "exam_id": str(exam_template_id),
+                    "student_id": str(student_id),
+                },
+            )
+
+        db.commit()
+
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception:
+        db.rollback()
+        raise HTTPException(
+            500,
+            "Roster upload failed. No changes were saved.",
+        )
+
+    return {
+        "message": "Roster uploaded successfully.",
+        "rows_processed": len(normalized_rows),
+        "students_added": added,
+        "students_updated": updated,
+    }
+
+
+@router.post("/verify-eid")
+def verify_exam_eid(
+    request: VerifyEIDRequest,
+    db: Session = Depends(get_db),
+):
+    eid = request.eid.strip()
+
+    if not eid:
+        raise HTTPException(400, "Enter your JMU EID.")
+
+    student = db.execute(
+        text("""
+            SELECT s.id, s.name, s.eid
+            FROM students AS s
+            JOIN exam_roster AS r ON r.student_id = s.id
+            JOIN exam_templates AS t ON t.id = r.exam_template_id
+            WHERE s.eid = :eid
+              AND t.id = CAST(:exam_id AS uuid)
+              AND t.status = 'published'
+        """),
+        {
+            "eid": eid,
+            "exam_id": str(request.exam_template_id),
+        },
+    ).mappings().first()
+
+    if not student:
+        raise HTTPException(
+            403,
+            "This EID is not on the roster for this published exam.",
+        )
+
+    return {
+        "verified": True,
+        "student_id": str(student["id"]),
+        "name": student["name"],
+        "eid": student["eid"],
+        "exam_template_id": str(request.exam_template_id),
+    }

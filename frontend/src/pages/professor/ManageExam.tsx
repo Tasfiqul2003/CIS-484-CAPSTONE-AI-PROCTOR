@@ -1,3 +1,4 @@
+import RosterUpload from "../../components/RosterUpload";
 import { useEffect, useState } from "react";
 
 type Exam = {
@@ -318,6 +319,8 @@ if (error || !exam) {
           </a>
 
         </section>
+
+        <RosterUpload examId={exam.id} />
 
         {/* SETTINGS */}
 

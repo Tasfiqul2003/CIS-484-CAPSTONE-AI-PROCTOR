@@ -35,7 +35,7 @@ export default function StudentExams() {
 
             <a
               className="exam-start-button"
-              href={`/student/exam?templateId=${examTemplateId}`}
+              href={`/student/verification?templateId=${examTemplateId}`}
             >
               Start Exam <span>→</span>
             </a>

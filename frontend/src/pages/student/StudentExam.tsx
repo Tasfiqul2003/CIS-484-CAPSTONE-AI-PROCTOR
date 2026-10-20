@@ -1,7 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 
-const studentId = "6dd26f70-d6a2-4a0f-8ce5-76ab35f16f29";
-const defaultTemplateId = "37031160-d701-4284-b3de-5a00ea8fa8cb";
 
 type StartResponse = {
   session_id: string;
@@ -54,8 +52,16 @@ export default function StudentExam() {
     started.current = true;
 
     const params = new URLSearchParams(window.location.search);
-    const examTemplateId =
-      params.get("templateId") || defaultTemplateId;
+    const examTemplateId = params.get("templateId");
+    const studentId = params.get("studentId");
+
+    if (!examTemplateId || !studentId) {
+      const query = examTemplateId
+        ? `?templateId=${encodeURIComponent(examTemplateId)}`
+        : "";
+      window.location.href = `/student/verification${query}`;
+      return;
+    }
 
     apiRequest<StartResponse>("/exam/start", {
       student_id: studentId,

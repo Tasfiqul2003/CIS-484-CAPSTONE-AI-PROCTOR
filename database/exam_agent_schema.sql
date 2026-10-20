@@ -70,7 +70,8 @@ CREATE TABLE exam_sessions (
     video_file_ref TEXT,                 -- path/URL to stored video (object storage, not this DB)
     transcript_file_ref TEXT,            -- path/URL to full transcript file
     started_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    ended_at TIMESTAMPTZ
+    ended_at TIMESTAMPTZ,
+    student_feedback TEXT
 );
 
 -- ------------------------------------------------------------

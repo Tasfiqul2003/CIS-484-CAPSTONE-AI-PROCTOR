@@ -49,6 +49,7 @@ export default function MaterialUpload() {
   const [materials, setMaterials] = useState<Material[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [processingMaterialId, setProcessingMaterialId] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [preview, setPreview] = useState<MaterialPreview | null>(null);
 
@@ -145,6 +146,35 @@ export default function MaterialUpload() {
           ? err.message
           : "Unable to preview material."
       );
+    }
+  }
+
+  async function processMaterial(material: Material) {
+    if (!examId) return;
+
+    setProcessingMaterialId(material.id);
+    setError("");
+
+    try {
+      const response = await fetch(
+        `/api/exam/templates/${examId}/materials/${material.id}/summary`,
+        {
+          method: "POST",
+          credentials: "include",
+        }
+      );
+
+      await readResponse(response);
+      await loadMaterials();
+      await previewMaterial(material);
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Unable to process course material."
+      );
+    } finally {
+      setProcessingMaterialId(null);
     }
   }
 
@@ -295,6 +325,18 @@ export default function MaterialUpload() {
                       {new Date(material.created_at).toLocaleDateString()}
                     </p>
                   </div>
+
+                  <button
+                    type="button"
+                    disabled={processingMaterialId === material.id}
+                    onClick={() => void processMaterial(material)}
+                  >
+                    {processingMaterialId === material.id
+                      ? "Processing..."
+                      : material.has_summary
+                        ? "Reprocess Summary"
+                        : "Process Summary"}
+                  </button>
 
                   <button
                     type="button"

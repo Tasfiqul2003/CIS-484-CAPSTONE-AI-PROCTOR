@@ -1,147 +1,130 @@
 import { useState } from "react";
+import JACardScanner from "../../components/JACardScanner";
+
+type Student = {
+  id: string;
+  name: string;
+  eid: string;
+};
+
+type LookupResponse = {
+  student: Student;
+  exams: Array<{ id: string; status: string }>;
+};
 
 export default function StudentVerification() {
-  const [cardDetected, setCardDetected] = useState(false);
+  const [student, setStudent] = useState<Student | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
 
-  function simulateCardSwipe() {
-    setCardDetected(true);
+  async function handleCardSwipe(eid: string) {
+    setBusy(true);
+    setError("");
+    setStudent(null);
+
+    try {
+      const response = await fetch("/api/exam/student/available", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ eid }),
+      });
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(data.detail || `Card verification failed (${response.status}).`);
+      }
+
+      const result = data as LookupResponse;
+      sessionStorage.setItem("oralexam_student_eid", result.student.eid);
+      sessionStorage.setItem("oralexam_student_id", result.student.id);
+      sessionStorage.setItem("oralexam_student_name", result.student.name);
+      sessionStorage.removeItem("oralexam_face_check_passed");
+      sessionStorage.removeItem("oralexam_exam_session_id");
+      setStudent(result.student);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to verify this card.");
+    } finally {
+      setBusy(false);
+    }
   }
 
-  function goHome() {
-    window.location.href = "/";
-  }
-
-  function continueToFaceVerification() {
+  function continueToFaceCheck() {
+    if (!student) return;
     window.location.href = "/student/face-verification";
+  }
+
+  function restart() {
+    setStudent(null);
+    setError("");
+    sessionStorage.removeItem("oralexam_student_eid");
+    sessionStorage.removeItem("oralexam_student_id");
+    sessionStorage.removeItem("oralexam_student_name");
+    sessionStorage.removeItem("oralexam_face_check_passed");
   }
 
   return (
     <div className="verification-page">
-
       <header className="simple-header">
-        <div className="logo">
-          <span className="logo-icon">◉</span>
-          <span>OralExam AI</span>
-        </div>
+        <div className="logo"><span className="logo-icon">◉</span><span>OralExam AI</span></div>
       </header>
 
       <main className="verification-content">
-
         <div className="verification-card">
+          <div className="verification-icon">💳</div>
+          <p className="eyebrow">STUDENT VERIFICATION</p>
+          <h1>Verify your identity</h1>
 
-          <div className="verification-icon">
-            💳
-          </div>
-
-          <p className="eyebrow">
-            STUDENT VERIFICATION
-          </p>
-
-          <h1>
-            Verify your identity
-          </h1>
-
-          {!cardDetected ? (
+          {!student ? (
             <>
               <p className="verification-description">
-                Swipe your JACard to verify your identity before accessing
-                your exams.
+                Swipe your JACard to look up your student record.
               </p>
-
-              <div
-                className="jacard-placeholder"
-                onClick={simulateCardSwipe}
-              >
-                <div className="card-icon">
-                  💳
-                </div>
-
-                <h2>
-                  Swipe your JACard
-                </h2>
-
-                <p>
-                  Waiting for card...
-                </p>
-
-                <button
-                  type="button"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    simulateCardSwipe();
-                  }}
-                >
-                  Simulate JACard Swipe
-                </button>
-              </div>
-
-              <p className="verification-note">
-                Your JACard is used to make sure you are taking your own exam.
-              </p>
+              <JACardScanner onSwipe={handleCardSwipe} busy={busy} />
             </>
           ) : (
             <>
               <p className="verification-description">
-                JACard detected. We found the following student account.
+                We found the following student record. Confirm that this information is yours.
               </p>
-
               <div className="student-identity">
-
-                <div className="student-avatar">
-                  👤
-                </div>
-
+                <div className="student-avatar">👤</div>
                 <div className="student-details">
-                  <p className="student-label">
-                    STUDENT
-                  </p>
-
-                  <h2>
-                    Kayleigh Moore
-                  </h2>
-
-                  <p>
-                    JMU ID: 00000000
-                  </p>
+                  <p className="student-label">STUDENT</p>
+                  <h2>{student.name}</h2>
+                  <p>JMU EID: {student.eid}</p>
                 </div>
-
-                <div className="verified-badge">
-                  ✓ Verified
-                </div>
-
+                <div className="verified-badge">✓ EID Matched</div>
               </div>
 
               <div className="verification-warning">
-                <strong>Identity verification required</strong>
-
+                <strong>Next: video check</strong>
                 <p>
-                  You will need to verify your face before accessing your
-                  examinations.
+                  The next screen is a prototype placeholder. It does not
+                  perform actual facial recognition yet.
                 </p>
               </div>
 
-              <button
-                type="button"
-                className="continue-button"
-                onClick={continueToFaceVerification}
-              >
-                Continue to Face Verification →
+              <button type="button" className="continue-button" onClick={continueToFaceCheck}>
+                Confirm Identity & Continue →
+              </button>
+              <button type="button" className="back-button" onClick={restart}>
+                This isn't me / Scan another card
               </button>
             </>
           )}
 
+          {error && <p role="alert" className="exam-error">{error}</p>}
+
           <button
             type="button"
             className="back-button"
-            onClick={goHome}
+            onClick={() => { window.location.href = "/"; }}
           >
-            ← Back to Home
+            ← Return Home
           </button>
-
         </div>
-
       </main>
-
     </div>
   );
 }

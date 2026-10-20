@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 type Props = {
   examId: string;
@@ -118,6 +118,11 @@ export default function RosterUpload({ examId }: Props) {
   const [error, setError] = useState("");
   const [result, setResult] = useState<UploadResult | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [savedRoster, setSavedRoster] = useState<RosterRow[]>([]);
+  const [loadingSaved, setLoadingSaved] = useState(true);
+  const [savedRosterError, setSavedRosterError] = useState("");
+  const [deleting, setDeleting] = useState(false);
+  const [deleteMessage, setDeleteMessage] = useState("");
 
   async function handleFileChange(
     event: React.ChangeEvent<HTMLInputElement>
@@ -149,6 +154,89 @@ export default function RosterUpload({ examId }: Props) {
       );
     } finally {
       setReading(false);
+    }
+  }
+
+  async function loadSavedRoster() {
+    setLoadingSaved(true);
+    setSavedRosterError("");
+
+    try {
+      const response = await fetch(
+        `/api/exam/templates/${encodeURIComponent(examId)}/roster`,
+        { method: "GET", credentials: "include" }
+      );
+      const data = await response.json().catch(() => []);
+
+      if (!response.ok) {
+        throw new Error(
+          typeof data.detail === "string"
+            ? data.detail
+            : `Unable to load saved roster (${response.status}).`
+        );
+      }
+
+      if (!Array.isArray(data)) {
+        throw new Error("The server returned an invalid roster response.");
+      }
+
+      setSavedRoster(data as RosterRow[]);
+    } catch (err) {
+      setSavedRosterError(
+        err instanceof Error ? err.message : "Unable to load saved roster."
+      );
+    } finally {
+      setLoadingSaved(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadSavedRoster();
+  }, [examId]);
+
+  async function deleteRoster() {
+    if (deleting || busy) return;
+
+    const confirmed = window.confirm(
+      "Delete all roster entries for this exam? Student records and their access to other exams will remain."
+    );
+    if (!confirmed) return;
+
+    setDeleting(true);
+    setSavedRosterError("");
+    setDeleteMessage("");
+    setError("");
+
+    try {
+      const response = await fetch(
+        `/api/exam/templates/${encodeURIComponent(examId)}/roster`,
+        { method: "DELETE", credentials: "include" }
+      );
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(
+          typeof data.detail === "string"
+            ? data.detail
+            : `Roster deletion failed (${response.status}).`
+        );
+      }
+
+      setSavedRoster([]);
+      setFile(null);
+      setRoster([]);
+      setResult(null);
+      setMessage("");
+      setPreviewOpen(false);
+      setDeleteMessage(
+        `Roster deleted successfully. ${data.students_removed ?? 0} entries removed.`
+      );
+    } catch (err) {
+      setSavedRosterError(
+        err instanceof Error ? err.message : "Unable to delete roster."
+      );
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -185,6 +273,7 @@ export default function RosterUpload({ examId }: Props) {
 
       setResult(data as UploadResult);
       setMessage("Roster uploaded successfully.");
+      await loadSavedRoster();
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Unable to upload the roster."
@@ -266,6 +355,64 @@ export default function RosterUpload({ examId }: Props) {
         </div>
       )}
 
+      {!file && (
+        <div className="roster-saved-panel">
+          <div className="roster-saved-heading">
+            <strong>Saved roster for this exam</strong>
+            <span>
+              {loadingSaved
+                ? "Loading..."
+                : `${savedRoster.length} student${savedRoster.length === 1 ? "" : "s"}`}
+            </span>
+          </div>
+
+          {savedRosterError && (
+            <div className="roster-alert roster-alert-error" role="alert">
+              <span>{savedRosterError}</span>
+              <button type="button" onClick={() => void loadSavedRoster()}>
+                Retry
+              </button>
+            </div>
+          )}
+
+          {!loadingSaved && !savedRosterError && savedRoster.length > 0 && (
+            <button
+              type="button"
+              className="roster-preview-button"
+              onClick={() => setPreviewOpen(true)}
+            >
+              Preview saved roster <span aria-hidden="true">↗</span>
+            </button>
+          )}
+
+          {!loadingSaved && !savedRosterError && savedRoster.length === 0 && (
+            <p className="roster-saved-empty">No students saved to this exam yet.</p>
+          )}
+        </div>
+      )}
+
+      {savedRoster.length > 0 && (
+        <div className="roster-delete-row">
+          <span>
+            {savedRoster.length} saved student{savedRoster.length === 1 ? "" : "s"}
+          </span>
+          <button
+            type="button"
+            className="roster-delete-button"
+            disabled={deleting || busy || loadingSaved}
+            onClick={() => void deleteRoster()}
+          >
+            {deleting ? "Deleting roster..." : "Delete roster"}
+          </button>
+        </div>
+      )}
+
+      {deleteMessage && (
+        <div className="roster-alert roster-alert-success" role="status">
+          {deleteMessage}
+        </div>
+      )}
+
       <div className="roster-actions">
         <button
           type="button"
@@ -323,7 +470,7 @@ export default function RosterUpload({ examId }: Props) {
                   {result ? "Uploaded Student Roster" : "Review Students"}
                 </h2>
                 <p className="roster-modal-subtitle">
-                  {file?.name ?? "Roster CSV"} · {roster.length} students
+                  {file?.name ?? "Saved roster"} · {(file ? roster : savedRoster).length} students
                 </p>
               </div>
 
@@ -343,7 +490,9 @@ export default function RosterUpload({ examId }: Props) {
                 <p>
                   {result
                     ? "This roster was accepted by the server."
-                    : "CSV format checks passed. Upload the roster to save these students for this exam."}
+                    : file
+                      ? "CSV format checks passed. Upload the roster to save these students for this exam."
+                      : "These students are saved to this exam and are loaded from the server."}
                 </p>
               </div>
 
@@ -358,7 +507,7 @@ export default function RosterUpload({ examId }: Props) {
                     </tr>
                   </thead>
                   <tbody>
-                    {roster.map((student, index) => (
+                    {(file ? roster : savedRoster).map((student, index) => (
                       <tr key={`${student.eid}-${index}`}>
                         <td>{index + 1}</td>
                         <td className="roster-student-name">{student.name}</td>
@@ -381,7 +530,7 @@ export default function RosterUpload({ examId }: Props) {
               >
                 Close Preview
               </button>
-              {!result && (
+              {file && !result && (
                 <button
                   type="button"
                   disabled={busy || reading || !!error || roster.length === 0}

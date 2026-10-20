@@ -1241,6 +1241,93 @@ class VerifyEIDRequest(BaseModel):
     exam_template_id: UUID
 
 
+@router.delete("/templates/{exam_template_id}/roster")
+def delete_exam_roster(
+    exam_template_id: UUID,
+    account: dict = Depends(require_professor),
+    db: Session = Depends(get_db),
+):
+    exam = db.execute(
+        text("""
+            SELECT id
+            FROM exam_templates
+            WHERE id = CAST(:exam_id AS uuid)
+              AND professor_id = CAST(:professor_id AS uuid)
+        """),
+        {
+            "exam_id": str(exam_template_id),
+            "professor_id": account["professor_id"],
+        },
+    ).first()
+
+    if not exam:
+        raise HTTPException(
+            status_code=404,
+            detail="Exam not found or you do not own this exam.",
+        )
+
+    try:
+        result = db.execute(
+            text("""
+                DELETE FROM exam_roster
+                WHERE exam_template_id = CAST(:exam_id AS uuid)
+            """),
+            {"exam_id": str(exam_template_id)},
+        )
+        deleted_count = result.rowcount
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail="Unable to delete this exam roster.",
+        )
+
+    return {
+        "message": "Exam roster deleted successfully.",
+        "students_removed": deleted_count,
+    }
+
+
+@router.get("/templates/{exam_template_id}/roster")
+def get_exam_roster(
+    exam_template_id: UUID,
+    account: dict = Depends(require_professor),
+    db: Session = Depends(get_db),
+):
+    exam = db.execute(
+        text("""
+            SELECT id
+            FROM exam_templates
+            WHERE id = CAST(:exam_id AS uuid)
+              AND professor_id = CAST(:professor_id AS uuid)
+        """),
+        {
+            "exam_id": str(exam_template_id),
+            "professor_id": account["professor_id"],
+        },
+    ).first()
+
+    if not exam:
+        raise HTTPException(
+            status_code=404,
+            detail="Exam not found or you do not own this exam.",
+        )
+
+    rows = db.execute(
+        text("""
+            SELECT s.name, s.email, s.eid
+            FROM exam_roster AS r
+            JOIN students AS s ON s.id = r.student_id
+            WHERE r.exam_template_id = CAST(:exam_id AS uuid)
+            ORDER BY lower(s.name), lower(s.email)
+        """),
+        {"exam_id": str(exam_template_id)},
+    ).mappings().all()
+
+    return [dict(row) for row in rows]
+
+
 @router.post("/templates/{exam_template_id}/roster")
 async def upload_exam_roster(
     exam_template_id: UUID,

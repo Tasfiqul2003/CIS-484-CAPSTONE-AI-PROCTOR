@@ -6279,3 +6279,135 @@ button.dashboard-logout:focus-visible {
     align-items: flex-start;
   }
 }
+
+/* Persisted roster status */
+
+.roster-saved-label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 18px 0 0;
+  color: #267044;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.roster-saved-label > span {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #e7f7ed;
+}
+
+
+/* Persisted roster status */
+
+.roster-saved-label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 18px 0 0;
+  color: #267044;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.roster-saved-label > span {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #e7f7ed;
+}
+
+
+.roster-saved-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.roster-saved-controls .roster-saved-label {
+  margin: 0;
+}
+
+.roster-delete-button {
+  border: 1px solid #dc6262;
+  border-radius: 8px;
+  padding: 9px 13px;
+  background: transparent;
+  color: #b42323;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.roster-delete-button:hover:not(:disabled) {
+  background: #fff0f0;
+}
+
+.roster-delete-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+
+.roster-saved-panel {
+  margin-top: 18px;
+  padding: 16px;
+  border: 1px solid var(--border-color, #dedede);
+  border-radius: 10px;
+}
+
+.roster-saved-heading,
+.roster-delete-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.roster-saved-heading span,
+.roster-saved-empty {
+  font-size: 13px;
+  opacity: 0.8;
+}
+
+.roster-delete-row {
+  margin-top: 12px;
+}
+
+.roster-delete-row > span {
+  font-size: 13px;
+  opacity: 0.8;
+}
+
+.roster-delete-button {
+  border: 1px solid #c84a4a;
+  border-radius: 8px;
+  padding: 9px 13px;
+  background: transparent;
+  color: #b42323;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.roster-delete-button:hover:not(:disabled) {
+  background: #fff0f0;
+}
+
+.roster-delete-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+

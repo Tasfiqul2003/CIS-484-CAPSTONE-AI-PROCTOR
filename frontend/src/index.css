@@ -5907,3 +5907,507 @@ button.dashboard-logout:focus-visible {
     font-size: 22px;
   }
 }
+
+/* Student roster upload and preview */
+
+.roster-section {
+  margin-top: 24px;
+}
+
+.roster-format-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  margin: 20px 0;
+  padding: 17px;
+  border: 1px solid #e0e4ea;
+  border-radius: 10px;
+  background: #f8f9fb;
+}
+
+.roster-format-icon {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  border-radius: 9px;
+  background: #e8edf7;
+  color: #263c63;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.roster-format-card strong {
+  display: block;
+  margin-bottom: 5px;
+  color: #172033;
+  font-size: 14px;
+}
+
+.roster-format-card p {
+  margin: 0;
+  color: #687386;
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.roster-format-card code {
+  padding: 3px 6px;
+  border-radius: 5px;
+  background: #e9edf3;
+  color: #263c63;
+  font-size: 12px;
+}
+
+.roster-file-field {
+  display: block;
+  margin-top: 18px;
+}
+
+.roster-file-field > span {
+  display: block;
+  margin-bottom: 9px;
+  color: #172033;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.roster-file-field input[type="file"] {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  padding: 12px;
+  border: 1px dashed #c9d0dc;
+  border-radius: 9px;
+  background: #fff;
+  color: #465166;
+  font: inherit;
+  font-size: 13px;
+}
+
+.roster-selected-file {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 14px;
+  padding: 13px 15px;
+  border: 1px solid #e0e4ea;
+  border-radius: 9px;
+  background: #fff;
+}
+
+.roster-file-symbol {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  flex-shrink: 0;
+  border-radius: 8px;
+  background: #f0f3f8;
+  color: #344866;
+  font-size: 20px;
+}
+
+.roster-selected-file-info {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.roster-selected-file-info strong {
+  overflow-wrap: anywhere;
+  color: #172033;
+  font-size: 13px;
+}
+
+.roster-selected-file-info span {
+  color: #687386;
+  font-size: 12px;
+}
+
+.roster-valid-mark {
+  display: grid;
+  place-items: center;
+  width: 25px;
+  height: 25px;
+  border-radius: 50%;
+  background: #e7f7ed;
+  color: #187344;
+  font-weight: 800;
+}
+
+.roster-preview-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-top: 16px;
+  padding: 16px;
+  border: 1px solid #dfe5ef;
+  border-radius: 10px;
+  background: #f8faff;
+}
+
+.roster-preview-summary > div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.roster-summary-number {
+  color: #172033;
+  font-size: 25px;
+  font-weight: 750;
+}
+
+.roster-summary-label {
+  color: #687386;
+  font-size: 12px;
+}
+
+.roster-preview-button {
+  padding: 9px 12px;
+  border: 1px solid #d4dce8;
+  border-radius: 7px;
+  background: #fff;
+  color: #243957;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.roster-preview-button:hover {
+  border-color: #9caec8;
+  background: #f1f5fb;
+}
+
+.roster-actions {
+  margin-top: 18px;
+}
+
+.roster-actions .settings-save-button:disabled,
+.roster-preview-footer button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.roster-alert {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin-top: 16px;
+  padding: 15px 16px;
+  border: 1px solid;
+  border-radius: 9px;
+  font-size: 13px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.roster-alert-error {
+  border-color: #f0c7c7;
+  background: #fff7f7;
+  color: #912d2d;
+}
+
+.roster-alert-success {
+  border-color: #b9e3c7;
+  background: #f2fbf5;
+  color: #205d38;
+}
+
+.roster-alert-success .roster-preview-button {
+  align-self: flex-start;
+  margin-top: 5px;
+  color: #205d38;
+}
+
+.roster-preview-modal {
+  max-width: 1000px;
+}
+
+.roster-modal-subtitle {
+  margin: 8px 0 0;
+  color: #687386;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.roster-preview-body {
+  min-height: 140px;
+}
+
+.roster-preview-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 20px;
+  padding: 13px 15px;
+  border: 1px solid #dce8df;
+  border-radius: 9px;
+  background: #f5faf6;
+}
+
+.roster-preview-note > span {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 23px;
+  height: 23px;
+  border-radius: 50%;
+  background: #dff2e5;
+  color: #207343;
+  font-weight: 800;
+}
+
+.roster-preview-note p {
+  margin: 2px 0 0;
+  color: #385746;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.roster-table-wrap {
+  width: 100%;
+  max-height: 45vh;
+  overflow: auto;
+  border: 1px solid #e0e4ea;
+  border-radius: 9px;
+}
+
+.roster-preview-table {
+  width: 100%;
+  border-collapse: collapse;
+  color: #465166;
+  font-size: 13px;
+  text-align: left;
+}
+
+.roster-preview-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 13px 15px;
+  border-bottom: 1px solid #e0e4ea;
+  background: #f5f7fa;
+  color: #596579;
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: 0.045em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.roster-preview-table td {
+  padding: 13px 15px;
+  border-bottom: 1px solid #edf0f4;
+  overflow-wrap: anywhere;
+}
+
+.roster-preview-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.roster-preview-table tbody tr:hover {
+  background: #f8faff;
+}
+
+.roster-preview-table td:first-child {
+  width: 42px;
+  color: #8791a1;
+  font-variant-numeric: tabular-nums;
+}
+
+.roster-preview-table .roster-student-name {
+  color: #172033;
+  font-weight: 650;
+}
+
+.roster-preview-table code {
+  padding: 4px 7px;
+  border-radius: 5px;
+  background: #f0f3f8;
+  color: #344866;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.roster-preview-footer {
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.roster-preview-footer .roster-secondary-button {
+  border-color: #d7dce5;
+  background: #fff;
+  color: #344054;
+}
+
+.roster-preview-footer .roster-secondary-button:hover {
+  background: #f1f3f7;
+}
+
+@media (max-width: 650px) {
+  .roster-preview-modal {
+    max-height: 90vh;
+  }
+
+  .roster-preview-modal .question-preview-header,
+  .roster-preview-modal .question-preview-body {
+    padding: 18px;
+  }
+
+  .roster-table-wrap {
+    max-height: 50vh;
+  }
+
+  .roster-preview-table {
+    font-size: 12px;
+  }
+
+  .roster-preview-table th,
+  .roster-preview-table td {
+    padding: 10px;
+  }
+
+  .roster-preview-summary {
+    align-items: flex-start;
+  }
+}
+
+/* Persisted roster status */
+
+.roster-saved-label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 18px 0 0;
+  color: #267044;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.roster-saved-label > span {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #e7f7ed;
+}
+
+
+/* Persisted roster status */
+
+.roster-saved-label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 18px 0 0;
+  color: #267044;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.roster-saved-label > span {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #e7f7ed;
+}
+
+
+.roster-saved-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.roster-saved-controls .roster-saved-label {
+  margin: 0;
+}
+
+.roster-delete-button {
+  border: 1px solid #dc6262;
+  border-radius: 8px;
+  padding: 9px 13px;
+  background: transparent;
+  color: #b42323;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.roster-delete-button:hover:not(:disabled) {
+  background: #fff0f0;
+}
+
+.roster-delete-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+
+.roster-saved-panel {
+  margin-top: 18px;
+  padding: 16px;
+  border: 1px solid var(--border-color, #dedede);
+  border-radius: 10px;
+}
+
+.roster-saved-heading,
+.roster-delete-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.roster-saved-heading span,
+.roster-saved-empty {
+  font-size: 13px;
+  opacity: 0.8;
+}
+
+.roster-delete-row {
+  margin-top: 12px;
+}
+
+.roster-delete-row > span {
+  font-size: 13px;
+  opacity: 0.8;
+}
+
+.roster-delete-button {
+  border: 1px solid #c84a4a;
+  border-radius: 8px;
+  padding: 9px 13px;
+  background: transparent;
+  color: #b42323;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.roster-delete-button:hover:not(:disabled) {
+  background: #fff0f0;
+}
+
+.roster-delete-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+

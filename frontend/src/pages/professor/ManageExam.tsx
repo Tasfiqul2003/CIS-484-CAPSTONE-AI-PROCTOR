@@ -1,3 +1,4 @@
+import RosterUpload from "../../components/RosterUpload";
 import { useEffect, useState } from "react";
 import AvatarSettings from "../../components/avatar/AvatarSettings";
 
@@ -339,6 +340,7 @@ if (error || !exam) {
 
         </section>
 
+        <RosterUpload examId={exam.id} />
         <AvatarSettings examId={exam.id} />
 
         {/* SETTINGS */}

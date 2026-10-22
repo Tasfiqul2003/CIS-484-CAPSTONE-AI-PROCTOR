@@ -1,0 +1,689 @@
+/* Frontend-only avatar settings. Keep these rules inside this feature. */
+.professor-dashboard-page .avatar-question-bank-note {
+  display: block;
+  color: #687386;
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.professor-dashboard-page .avatar-question-bank-note a {
+  color: #6d28d9;
+}
+
+.professor-dashboard-page #legacy-max-followups {
+  max-width: 150px;
+}
+
+.professor-dashboard-page #legacy-followup-help {
+  color: #687386;
+  font-size: 9px;
+}
+
+.professor-dashboard-page #legacy-followup-error {
+  padding: 10px 14px;
+  color: #7d2828;
+  background: #fff3f3;
+  font-size: 10px;
+}
+
+.avatar-settings,
+.avatar-settings * {
+  box-sizing: border-box;
+  min-width: 0;
+}
+
+.avatar-settings {
+  margin: 24px 0 30px;
+  overflow-wrap: anywhere;
+  color: #172033;
+  font-family: inherit;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.avatar-settings .avatar-settings-header,
+.avatar-settings .avatar-section,
+.avatar-settings .avatar-notice,
+.avatar-settings .avatar-preview {
+  padding: 24px 28px;
+  border: 1px solid #dfe4ea;
+  border-radius: 14px;
+  background: #fff;
+}
+
+.avatar-settings .avatar-settings-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.avatar-settings .avatar-settings-header > div:first-child {
+  flex: 1 1 280px;
+}
+
+.avatar-settings h2,
+.avatar-settings h3,
+.avatar-settings h4,
+.avatar-settings legend {
+  margin: 0 0 8px;
+  color: #172033;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.avatar-settings h2 { font-size: 20px; }
+.avatar-settings h3 { font-size: 14px; }
+.avatar-settings h4 { font-size: 1.05em; }
+.avatar-settings p { margin: 0 0 10px; }
+.avatar-settings p:last-child { margin-bottom: 0; }
+
+.avatar-settings .avatar-kicker {
+  margin-bottom: 5px;
+  color: #687386;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .7px;
+  text-transform: uppercase;
+}
+
+.avatar-settings .avatar-settings-actions,
+.avatar-settings .avatar-tabs,
+.avatar-settings .avatar-state-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.avatar-settings .avatar-settings-actions {
+  margin: 20px 0;
+}
+
+.avatar-settings button,
+.avatar-settings .avatar-tabs a {
+  min-height: 40px;
+  max-width: 100%;
+  padding: 10px 15px;
+  border: 1px solid #d8c7f0;
+  border-radius: 8px;
+  background: #fff;
+  color: #5b21b6;
+  font: inherit;
+  font-weight: 650;
+  line-height: 1.35;
+  text-align: center;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.avatar-settings button:hover:not(:disabled),
+.avatar-settings .avatar-tabs a:hover {
+  border-color: #8b5cc2;
+  background: #f5f0ff;
+}
+
+.avatar-settings button.primary,
+.avatar-settings button[type="submit"],
+.avatar-settings button[aria-pressed="true"],
+.avatar-settings .avatar-tabs [aria-selected="true"] {
+  border-color: #6d28d9;
+  background: #6d28d9;
+  color: #fff;
+}
+
+.avatar-settings button.primary:hover:not(:disabled),
+.avatar-settings button[type="submit"]:hover:not(:disabled),
+.avatar-settings button[aria-pressed="true"]:hover:not(:disabled) {
+  background: #5b21b6;
+}
+
+.avatar-settings :is(button, input, select, a, [tabindex]):focus-visible {
+  outline: 3px solid #7c3aed;
+  outline-offset: 3px;
+}
+
+.avatar-settings h3[tabindex="-1"]:focus {
+  outline: 3px solid #7c3aed;
+  outline-offset: 4px;
+}
+
+.avatar-settings :is(button, input, select):disabled {
+  border-color: #dfe4ea;
+  background: #f1f3f6;
+  color: #687386;
+  cursor: not-allowed;
+  opacity: 1;
+}
+
+.avatar-settings .avatar-notice {
+  margin: 0 0 18px;
+  border-left: 4px solid #8b5cc2;
+  background: #f5f0ff;
+  color: #582b83;
+}
+
+.avatar-settings .avatar-section {
+  margin: 0 0 18px;
+}
+
+.avatar-settings .avatar-section > h3,
+.avatar-settings .avatar-section > legend {
+  margin-bottom: 10px;
+}
+
+.avatar-settings .avatar-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 20px;
+  margin-top: 18px;
+}
+
+.avatar-settings .avatar-field {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.avatar-settings .avatar-photo-upload {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin-top: 10px;
+}
+
+.avatar-settings .avatar-photo-upload > label {
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.avatar-settings input[type="file"] {
+  padding: 6px;
+}
+
+.avatar-settings input[type="file"]::file-selector-button {
+  margin-right: 8px;
+  padding: 6px 8px;
+  border: 1px solid #d8c7f0;
+  border-radius: 6px;
+  background: #f5f0ff;
+  color: #5b21b6;
+  font: inherit;
+  cursor: pointer;
+}
+
+.avatar-settings .avatar-photo-selection {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.avatar-settings .avatar-photo-selection img {
+  width: 72px;
+  height: 72px;
+  border: 1px solid #d8c7f0;
+  border-radius: 8px;
+  object-fit: cover;
+}
+
+.avatar-settings .avatar-time-entry {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(85px, .65fr);
+  gap: 12px;
+}
+
+.avatar-settings #avatar-speed-value {
+  color: #5b21b6;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.avatar-settings .avatar-field > label,
+.avatar-settings .avatar-field > span,
+.avatar-settings .avatar-field > legend {
+  color: #273247;
+  font-weight: 600;
+}
+
+.avatar-settings :is(input:not([type="checkbox"]), select) {
+  width: 100%;
+  min-height: 40px;
+  padding: 10px 12px;
+  border: 1px solid #dfe4ea;
+  border-radius: 8px;
+  background: #fff;
+  color: #172033;
+  font: inherit;
+}
+
+.avatar-settings input[type="range"] {
+  padding: 8px 0;
+  accent-color: #6d28d9;
+}
+
+.avatar-settings input[type="checkbox"] {
+  width: 19px;
+  height: 19px;
+  flex: 0 0 19px;
+  margin: 1px 0 0;
+  accent-color: #6d28d9;
+}
+
+.avatar-settings .avatar-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 5px 0;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.avatar-settings div.avatar-check {
+  flex-direction: column;
+  gap: 5px;
+}
+
+.avatar-settings div.avatar-check > label,
+.avatar-settings .avatar-choice-list > label {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.avatar-settings fieldset > .avatar-field + .avatar-field,
+.avatar-settings fieldset > .avatar-field + .avatar-check {
+  margin-top: 16px;
+}
+
+.avatar-settings .avatar-help {
+  margin: 0;
+  color: #687386;
+  font-size: .9em;
+  line-height: 1.55;
+}
+
+.avatar-settings .avatar-policy {
+  margin: 16px 0 0;
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: #f8f9fb;
+  color: #687386;
+  font-size: inherit;
+}
+
+.avatar-settings .avatar-error {
+  margin: 14px 0;
+  padding: 13px 15px;
+  border: 1px solid #d69c9c;
+  border-left: 4px solid #a63d3d;
+  border-radius: 8px;
+  background: #fff3f3;
+  color: #7d2828;
+}
+
+.avatar-settings .avatar-error ul {
+  margin: 8px 0 0;
+  padding-left: 22px;
+}
+
+.avatar-settings [aria-invalid="true"] {
+  border-color: #a63d3d;
+}
+
+.avatar-settings .avatar-status {
+  align-self: center;
+  padding: 6px 11px;
+  border-radius: 16px;
+  background: #f5f0ff;
+  color: #582b83;
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.avatar-settings .avatar-choice-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  padding: 10px 12px;
+  border: 1px solid #dfe4ea;
+  border-radius: 8px;
+  background: #fafbfc;
+}
+
+.avatar-settings fieldset {
+  min-inline-size: 0;
+}
+
+.avatar-settings .avatar-section fieldset,
+.avatar-settings .avatar-policy-group {
+  margin: 18px 0 0;
+  padding: 16px;
+  border: 1px solid #e3e7ec;
+  border-radius: 10px;
+}
+
+.avatar-settings fieldset legend {
+  max-width: 100%;
+  padding: 0 5px;
+  font-size: 1em;
+}
+
+.avatar-settings .avatar-preview {
+  margin-top: 24px;
+  border-color: #d8c7f0;
+  background: #faf8ff;
+}
+
+.avatar-settings .avatar-preview > .avatar-settings-header {
+  padding: 0 0 18px;
+  border: 0;
+  border-bottom: 1px solid #e8def5;
+  border-radius: 0;
+  background: transparent;
+}
+
+.avatar-settings .avatar-preview > .avatar-settings-header h3 {
+  font-size: 20px;
+}
+
+/* Match the adjacent Exam Settings form; student text-size choices stay relative. */
+.avatar-settings form .avatar-section > p {
+  color: #687386;
+  font-size: 10px;
+}
+
+.avatar-settings form .avatar-field > label,
+.avatar-settings form fieldset legend,
+.avatar-settings form .avatar-choice-list,
+.avatar-settings form .avatar-choice-list > label {
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.avatar-settings form :is(input:not([type="checkbox"]), select) {
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.avatar-settings form .avatar-check {
+  font-size: 11px;
+}
+
+.avatar-settings form .avatar-check > label {
+  font-weight: 700;
+}
+
+.avatar-settings form .avatar-help {
+  font-size: 9px;
+  font-weight: 400;
+}
+
+.avatar-settings > .avatar-settings-header button,
+.avatar-settings form button,
+.avatar-settings .avatar-preview > .avatar-settings-header button,
+.avatar-settings .avatar-simulation button {
+  font-size: 10px;
+}
+
+.avatar-settings a {
+  color: #6d28d9;
+}
+
+.avatar-settings a:hover,
+.avatar-settings a:visited {
+  color: #5b21b6;
+}
+
+.avatar-settings .avatar-simulation {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 14px;
+  margin: 0 0 22px;
+  padding: 16px;
+  border: 1px dashed #a78bca;
+  border-radius: 10px;
+  background: #f5f0ff;
+}
+
+.avatar-settings .avatar-simulation .avatar-field {
+  width: min(100%, 320px);
+}
+
+.avatar-settings .avatar-student-surface {
+  overflow: hidden;
+  border: 1px solid #e3e7ec;
+  border-radius: 12px;
+  background: #fff;
+  line-height: 1.55;
+}
+
+.avatar-settings .avatar-stage {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 18px;
+  padding: 24px;
+  border-bottom: 1px solid #e3e7ec;
+  background: #f5f0ff;
+}
+
+.avatar-settings .avatar-stage > div:nth-child(2) {
+  flex: 1 1 200px;
+}
+
+.avatar-settings .avatar-stage p {
+  margin: 5px 0 0;
+  color: #687386;
+  font-size: .85em;
+}
+
+.avatar-settings .avatar-background-library {
+  background-color: #f0eee8;
+  background-image: repeating-linear-gradient(90deg, transparent 0 26px, rgba(151, 137, 103, .10) 26px 29px);
+}
+
+.avatar-settings .avatar-figure {
+  width: 100px;
+  height: 100px;
+  flex: 0 0 100px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #d8c7f0;
+  border-radius: 50%;
+  background: #fff;
+  color: #7e22ce;
+}
+
+.avatar-settings .avatar-figure svg {
+  width: 80px;
+  height: 80px;
+  fill: #e9d5ff;
+  stroke: #7e22ce;
+  stroke-width: 2.5;
+}
+
+.avatar-settings .avatar-figure .avatar-photo {
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  object-fit: cover;
+}
+
+.avatar-settings .avatar-stage-custom-background {
+  background-size: cover;
+  background-position: center;
+}
+
+.avatar-settings .avatar-stage-custom-background > div:nth-child(2) {
+  padding: 10px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, .94);
+}
+
+.avatar-settings .avatar-geometric-mark {
+  width: 55px;
+  height: 55px;
+  border: 3px solid #7e22ce;
+  border-radius: 12px;
+  background: #e9d5ff;
+  transform: rotate(45deg);
+}
+
+.avatar-settings .avatar-state-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 10px;
+  border: 1px solid #d8c7f0;
+  border-radius: 20px;
+  background: #fff;
+  color: #5b21b6;
+  font-size: .8em;
+  font-weight: 700;
+}
+
+.avatar-settings .avatar-state-error {
+  border-color: #c88585;
+  color: #8c3030;
+}
+
+.avatar-settings .avatar-student-section {
+  padding: 22px 24px;
+  border-bottom: 1px solid #e7eaee;
+}
+
+.avatar-settings .avatar-student-section:last-child {
+  border-bottom: 0;
+}
+
+.avatar-settings .avatar-question {
+  margin: 14px 0;
+  color: #172033;
+  font-size: 1.15em;
+  font-weight: 600;
+}
+
+.avatar-settings .avatar-sample-answer {
+  color: #687386;
+  font-size: .9em;
+}
+
+.avatar-settings .avatar-assistance-list {
+  margin-top: 16px;
+  border: 1px solid #e3e7ec;
+  border-radius: 10px;
+}
+
+.avatar-settings .avatar-assistance-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px;
+  border-bottom: 1px solid #e7eaee;
+}
+
+.avatar-settings .avatar-assistance-item:last-child {
+  border-bottom: 0;
+}
+
+.avatar-settings .avatar-assistance-item > div {
+  flex: 1 1 250px;
+}
+
+.avatar-settings .avatar-assistance-item strong {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.avatar-settings .avatar-assistance-item .avatar-help + .avatar-help {
+  margin-top: 5px;
+}
+
+.avatar-settings .avatar-assistance-item button {
+  flex: 0 1 230px;
+  font-size: .88em;
+}
+
+.avatar-settings .avatar-response {
+  min-height: 82px;
+  margin-top: 16px;
+  padding: 16px;
+  border: 1px solid #d8c7f0;
+  border-radius: 9px;
+  background: #f5f0ff;
+  color: #582b83;
+}
+
+.avatar-settings .avatar-response strong {
+  display: block;
+  margin-bottom: 6px;
+}
+
+.avatar-settings .avatar-summary-list {
+  margin: 12px 0;
+  padding-left: 22px;
+}
+
+.avatar-settings .avatar-summary-list li + li {
+  margin-top: 6px;
+}
+
+.avatar-settings .avatar-stage-animated:is([data-state="speaking"], [data-state="thinking"]) .avatar-figure {
+  animation: avatar-preview-breathe 1.7s ease-in-out infinite;
+}
+
+@keyframes avatar-preview-breathe {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-3px); }
+}
+
+@media (max-width: 700px) {
+  .avatar-settings .avatar-grid { grid-template-columns: minmax(0, 1fr); }
+  .avatar-settings .avatar-settings-header,
+  .avatar-settings .avatar-section,
+  .avatar-settings .avatar-notice,
+  .avatar-settings .avatar-preview { padding: 20px 18px; }
+  .avatar-settings .avatar-settings-header > div:first-child { flex-basis: 100%; }
+  .avatar-settings .avatar-stage,
+  .avatar-settings .avatar-student-section { padding: 18px; }
+  .avatar-settings .avatar-assistance-item button { flex-basis: 100%; }
+}
+
+@media (max-width: 400px) {
+  .avatar-settings .avatar-settings-actions { align-items: stretch; }
+  .avatar-settings .avatar-settings-actions > button { width: 100%; }
+  .avatar-settings .avatar-preview { padding: 16px 12px; }
+  .avatar-settings .avatar-stage,
+  .avatar-settings .avatar-student-section { padding: 14px; }
+  .avatar-settings .avatar-simulation { padding: 12px; }
+  .avatar-settings .avatar-figure { width: 80px; height: 80px; flex-basis: 80px; }
+  .avatar-settings .avatar-state-controls { gap: 7px; }
+  .avatar-settings .avatar-state-controls button { flex: 1 1 42%; padding: 9px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .avatar-settings *,
+  .avatar-settings *::before,
+  .avatar-settings *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+.avatar-settings .avatar-motion-reduced *,
+.avatar-settings .avatar-motion-reduced *::before,
+.avatar-settings .avatar-motion-reduced *::after {
+  animation: none !important;
+  transition: none !important;
+}

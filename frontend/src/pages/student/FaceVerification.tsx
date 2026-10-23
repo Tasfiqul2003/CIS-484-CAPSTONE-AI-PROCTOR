@@ -1,3 +1,4 @@
+import OralExamMark from "../../components/brand/OralExamMark";
 export default function FaceVerification() {
   const studentId = sessionStorage.getItem("oralexam_student_id") || "";
   const studentName = sessionStorage.getItem("oralexam_student_name") || "";
@@ -29,7 +30,7 @@ export default function FaceVerification() {
   return (
     <div className="face-page">
       <header className="simple-header">
-        <div className="logo"><span className="logo-icon">◉</span><span>OralExam AI</span></div>
+        <div className="logo"><span className="logo-icon" aria-hidden="true"><OralExamMark size={34} /></span><span>OralExam AI</span></div>
       </header>
       <main className="verification-content">
         <div className="verification-card">

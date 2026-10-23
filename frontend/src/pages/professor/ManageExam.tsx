@@ -1,6 +1,7 @@
 import RosterUpload from "../../components/RosterUpload";
 import { useEffect, useState } from "react";
 import AvatarSettings from "../../components/avatar/AvatarSettings";
+import OralExamMark from "../../components/brand/OralExamMark";
 
 type Exam = {
   id: string;
@@ -201,7 +202,7 @@ if (error || !exam) {
       <header className="simple-header">
 
         <div className="logo">
-          <span className="logo-icon">◉</span>
+          <span className="logo-icon" aria-hidden="true"><OralExamMark size={34} /></span>
           <span>OralExam AI</span>
         </div>
 

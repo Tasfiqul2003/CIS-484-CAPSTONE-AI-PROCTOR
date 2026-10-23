@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import OralExamMark from "../../components/brand/OralExamMark";
 
 type Student = {
   id: string;
@@ -122,7 +123,7 @@ export default function StudentExams() {
   return (
     <div className="student-exams-page">
       <header className="simple-header">
-        <div className="logo"><span className="logo-icon">◉</span><span>OralExam AI</span></div>
+        <div className="logo"><span className="logo-icon" aria-hidden="true"><OralExamMark size={34} /></span><span>OralExam AI</span></div>
       </header>
 
       <main className="student-exams-content">

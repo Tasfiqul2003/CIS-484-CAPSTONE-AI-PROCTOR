@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import OralExamMark from "../../components/brand/OralExamMark";
 
 type Professor = {
   username: string;
@@ -224,30 +225,56 @@ export default function ProfessorDashboard() {
       .pop()
       ?.replace(/^./, (letter) => letter.toUpperCase()) || "Professor";
 
+  const publishedCount = exams.filter(
+    (exam) => exam.status === "published"
+  ).length;
+  const draftCount = exams.filter(
+    (exam) => exam.status === "draft"
+  ).length;
+  const submissionCount = exams.reduce(
+    (total, exam) => total + exam.submission_count,
+    0
+  );
+  const awaitingGradingCount = exams.reduce(
+    (total, exam) => total + exam.awaiting_grading_count,
+    0
+  );
+
   return (
     <div className="professor-dashboard-page">
       <header className="simple-header">
-        <div className="logo">
-          <span className="logo-icon">◉</span>
-          <span>OralExam AI</span>
-        </div>
+        <a className="logo dashboard-brand" href="/professor/dashboard">
+          <span className="logo-icon" aria-hidden="true">
+            <OralExamMark size={34} />
+          </span>
+          <span className="dashboard-brand-copy">
+            <strong>OralExam <span>AI</span></strong>
+            <small>PROFESSOR WORKSPACE</small>
+          </span>
+        </a>
 
-        <button
-          type="button"
-          className="dashboard-logout"
-          onClick={handleLogout}
-        >
-          Log Out
-        </button>
+        <div className="dashboard-header-right">
+          <span className="dashboard-role-label">
+            <span className="dashboard-role-dot" />
+            Professor Workspace
+          </span>
+          <button
+            type="button"
+            className="dashboard-logout"
+            onClick={handleLogout}
+          >
+            <span>Log out</span>
+          </button>
+        </div>
       </header>
 
       <main className="professor-dashboard-content">
         <section className="dashboard-welcome">
           <p className="eyebrow">PROFESSOR PORTAL</p>
-          <h1>Welcome, Professor {professorName}</h1>
+          <h1>Welcome back, {professorName}.</h1>
           <p>
-            Create and manage your oral examinations and review student
-            submissions.
+            Your oral examinations, student activity, and grading
+            workflow — all in one place.
           </p>
         </section>
 
@@ -257,27 +284,79 @@ export default function ProfessorDashboard() {
           </p>
         )}
 
+        <section className="dashboard-overview" aria-label="Exam overview">
+          <div className="dashboard-overview-heading">
+            <div>
+              <p className="eyebrow">AT A GLANCE</p>
+              <h2>Your overview</h2>
+            </div>
+            <span className="dashboard-overview-context">
+              Based on your examinations
+            </span>
+          </div>
+
+          <div className="dashboard-overview-grid">
+            <article className="dashboard-overview-card">
+              <span className="dashboard-overview-icon overview-icon-purple" aria-hidden="true">
+                <span>▤</span>
+              </span>
+              <div className="dashboard-overview-label">Total examinations</div>
+              <strong>{exams.length}</strong>
+              <span className="dashboard-overview-detail">Created in your workspace</span>
+            </article>
+
+            <article className="dashboard-overview-card">
+              <span className="dashboard-overview-icon overview-icon-green" aria-hidden="true">
+                <span>✓</span>
+              </span>
+              <div className="dashboard-overview-label">Published</div>
+              <strong>{publishedCount}</strong>
+              <span className="dashboard-overview-detail">Available to students</span>
+            </article>
+
+            <article className="dashboard-overview-card">
+              <span className="dashboard-overview-icon overview-icon-amber" aria-hidden="true">
+                <span>◷</span>
+              </span>
+              <div className="dashboard-overview-label">Drafts</div>
+              <strong>{draftCount}</strong>
+              <span className="dashboard-overview-detail">Still being prepared</span>
+            </article>
+
+            <article className="dashboard-overview-card">
+              <span className="dashboard-overview-icon overview-icon-blue" aria-hidden="true">
+                <span>▥</span>
+              </span>
+              <div className="dashboard-overview-label">Awaiting grading</div>
+              <strong>{awaitingGradingCount}</strong>
+              <span className="dashboard-overview-detail">
+                {submissionCount} total submission{submissionCount === 1 ? "" : "s"}
+              </span>
+            </article>
+          </div>
+        </section>
+
         <section className="dashboard-actions">
           <a
             href="/professor/exams/new"
             className="dashboard-action primary"
           >
-            <span className="dashboard-action-icon">+</span>
+            <span className="dashboard-action-icon" aria-hidden="true">+</span>
             <div>
-              <strong>Create New Exam</strong>
+              <strong>Create a new examination</strong>
               <p>
-                Create an examination and add its questions and course
-                materials.
+                Start an oral assessment, add questions, and upload
+                course materials.
               </p>
             </div>
-            <span className="dashboard-action-arrow">→</span>
+            <span className="dashboard-action-arrow" aria-hidden="true">→</span>
           </a>
         </section>
 
         <div className="dashboard-section-heading">
           <div>
-            <p className="eyebrow">YOUR EXAMINATIONS</p>
-            <h2>My Exams</h2>
+            <p className="eyebrow">EXAM MANAGEMENT</p>
+            <h2>Your examinations</h2>
           </div>
           <span>
             {exams.length} exam{exams.length === 1 ? "" : "s"}

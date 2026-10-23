@@ -1,5 +1,6 @@
 
 import { useCallback, useEffect, useState } from "react";
+import OralExamMark from "../../components/brand/OralExamMark";
 
 type Question = {
   id: string;
@@ -167,7 +168,7 @@ export default function QuestionBank() {
     <div className="question-bank-page">
       <header className="simple-header">
         <div className="logo">
-          <span className="logo-icon">◉</span>
+          <span className="logo-icon" aria-hidden="true"><OralExamMark size={34} /></span>
           <span>OralExam AI</span>
         </div>
         <button

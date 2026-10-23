@@ -6,6 +6,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from .db import get_db
+from .auth import require_professor
 
 router = APIRouter(prefix="/exam", tags=["review"])
 
@@ -22,14 +23,31 @@ class ReviewRequest(BaseModel):
 
 
 @router.put("/{session_id}/grades")
-def confirm_grades(session_id: UUID, req: ReviewRequest, db: Session = Depends(get_db)):
+def confirm_grades(
+    session_id: UUID,
+    req: ReviewRequest,
+    account: dict = Depends(require_professor),
+    db: Session = Depends(get_db),
+):
     sid = str(session_id)
 
     session = db.execute(
-        text("SELECT status FROM exam_sessions WHERE id = CAST(:sid AS uuid)"),
+        text("""
+            SELECT s.status, t.professor_id AS exam_professor_id
+            FROM exam_sessions AS s
+            JOIN exam_templates AS t ON t.id = s.exam_template_id
+            WHERE s.id = CAST(:sid AS uuid)
+        """),
         {"sid": sid},
     ).mappings().first()
     if not session:
+        raise HTTPException(404, "Session not found")
+
+    professor_id = account.get("professor_id")
+    if (
+        not professor_id
+        or str(session["exam_professor_id"]) != str(professor_id)
+    ):
         raise HTTPException(404, "Session not found")
     if session["status"] not in ("pending_grading", "flagged", "graded"):
         raise HTTPException(409, f"Session is {session['status']}, not ready for review")
@@ -49,7 +67,7 @@ def confirm_grades(session_id: UUID, req: ReviewRequest, db: Session = Depends(g
         row = by_name.get(u.rubric_criterion.strip().lower())
         if not row:
             raise HTTPException(422, f"Unknown criterion: {u.rubric_criterion}")
-        if str(row["professor_id"]) != str(req.professor_id):
+        if str(row["professor_id"]) != str(professor_id):
             raise HTTPException(403, "Not the professor who owns this exam")
 
         score = u.score

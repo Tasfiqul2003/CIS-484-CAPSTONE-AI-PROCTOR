@@ -3,11 +3,11 @@ import {
   BookOpenCheck,
   GraduationCap,
   Mic2,
-  PanelsTopLeft,
   ShieldCheck,
   Sparkles,
   UserRound,
 } from "lucide-react";
+import OralExamMark from "../components/brand/OralExamMark";
 
 export default function Home() {
   return (
@@ -15,7 +15,7 @@ export default function Home() {
       <header className="home-header">
         <a className="logo" href="/" aria-label="OralExam AI home">
           <span className="logo-icon" aria-hidden="true">
-            <PanelsTopLeft size={19} strokeWidth={2.1} />
+            <OralExamMark size={34} />
           </span>
           <span>OralExam AI</span>
         </a>

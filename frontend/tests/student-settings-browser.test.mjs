@@ -140,17 +140,10 @@ async function activeFocusDetails() {
   });
 }
 
-await check('Student entry link opens the isolated preview without starting an exam', async () => {
-  await page.goto(`${baseUrl}/student/exams`, { waitUntil: 'domcontentloaded', timeout: 30000 });
-  const entry = page.getByRole('link', { name: 'Student Settings Preview', exact: true });
-  await entry.waitFor({ timeout: 30000 });
-  assert.equal(await entry.getAttribute('href'), '/student/settings-preview');
-  await entry.focus();
-  await Promise.all([
-    page.waitForURL(`${baseUrl}/student/settings-preview`, { waitUntil: 'domcontentloaded', timeout: 30000 }),
-    entry.press('Enter', { timeout: 30000 }),
-  ]);
-  await page.locator('.student-settings-preview-page').waitFor({ timeout: 30000 });
+await check('Direct student preview entry opens without starting an exam', async () => {
+  // The roster/verification integration now protects /student/exams and removed
+  // its former public preview link. The standalone synthetic route remains public.
+  await visitPreview();
   assert.equal(new URL(page.url()).pathname, '/student/settings-preview');
   assert.match(await page.locator('main').innerText(), /preview/i);
   assert.equal(await page.locator('.student-demo-question h2').innerText(), QUESTION);

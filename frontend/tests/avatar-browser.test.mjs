@@ -78,6 +78,7 @@ await context.route('**/*', async (route) => {
     return respond([{ id: 'synthetic-question', question_text: 'Describe a synthetic topic.', topic: 'Synthetic topic', difficulty: 2, created_at: '2026-10-15T12:00:00Z' }]);
   }
   if (/^\/api\/exam\/templates\/synthetic-exam-[ab]\/materials$/.test(url.pathname)) return respond([]);
+  if (/^\/api\/exam\/templates\/synthetic-exam-[ab]\/roster$/.test(url.pathname)) return respond([]);
   unknownApi.push(url.pathname);
   return respond({ detail: 'Unconfigured synthetic read fixture.' }, 404);
 });
@@ -96,11 +97,17 @@ async function check(name, run) {
 
 const field = (name) => page.getByLabel(name, { exact: true });
 const button = (name) => page.getByRole('button', { name, exact: true }).first();
+async function ensureAvatarEditor() {
+  const toggle = button('Avatar & Interaction Settings');
+  await toggle.waitFor();
+  if (await toggle.getAttribute('aria-expanded') === 'false') await toggle.click();
+  await field('Default avatar').waitFor();
+}
 async function openSettings(exam = 'a') {
   await page.goto(`${baseUrl}/professor/exams/synthetic-exam-${exam}`);
   await page.getByRole('heading', { name: `Synthetic Avatar Exam ${exam.toUpperCase()}`, exact: true }).waitFor();
-  await button('Avatar & Interaction Settings').click();
-  await field('Default avatar').waitFor();
+  await page.getByRole('link', { name: /Avatar & Interaction Settings/ }).click();
+  await ensureAvatarEditor();
 }
 async function settingsStorage() {
   return page.evaluate(() => Object.fromEntries(Object.entries(localStorage).filter(([key]) => /avatar/i.test(key))));
@@ -114,8 +121,7 @@ async function currentDraft(exam = 'a', instructorId = instructor) {
 async function saveAndReload() {
   await button('Save Local Draft').click();
   await page.reload();
-  await button('Avatar & Interaction Settings').click();
-  await field('Default avatar').waitFor();
+  await ensureAvatarEditor();
 }
 async function syntheticPhoto() {
   const dataUrl = await page.evaluate(() => {
@@ -153,8 +159,8 @@ await check('Open settings through dashboard and exam management', async () => {
   await page.goto(`${baseUrl}/professor/dashboard`);
   const card = page.locator('article').filter({ has: page.getByRole('heading', { name: 'Synthetic Avatar Exam A', exact: true }) });
   await card.getByRole('link', { name: 'Manage Exam', exact: true }).click();
-  await button('Avatar & Interaction Settings').click();
-  await field('Default avatar').waitFor();
+  await page.getByRole('link', { name: /Avatar & Interaction Settings/ }).click();
+  await ensureAvatarEditor();
   assert.match(await page.locator('.avatar-settings').innerText(), /exam permissions/i);
   assert.match(await page.locator('.avatar-settings').innerText(), /live exam delivery is not connected yet/i);
   return { screenshot: await screenshot('avatar-settings-desktop.png') };
@@ -228,7 +234,7 @@ await check('Save/reload and scoped exam and instructor drafts', async () => {
   await field('Default speaking speed').fill('1.2');
   await button('Save Local Draft').click();
   await page.reload();
-  await button('Avatar & Interaction Settings').click();
+  await ensureAvatarEditor();
   assert.equal(await field('Default speaking speed').inputValue(), '1.2');
   await openSettings('b');
   assert.equal(await field('Default speaking speed').inputValue(), '1');
@@ -251,7 +257,7 @@ await check('Reset to defaults and reload', async () => {
   assert.equal(await field('Default speaking speed').inputValue(), '1');
   await button('Save Local Draft').click();
   await page.reload();
-  await button('Avatar & Interaction Settings').click();
+  await ensureAvatarEditor();
   assert.equal(await field('Default speaking speed').inputValue(), '1');
 });
 
@@ -381,20 +387,20 @@ await check('Invalid, oversized, and undecodable local photos are rejected', asy
 });
 
 await check('Legacy follow-up number input preserves integer limits', async () => {
-  await openSettings();
+  await page.goto(`${baseUrl}/professor/exams/synthetic-exam-a/settings/ai-questioning`);
   const limit = field('Maximum Follow-Ups Per Question');
   assert.equal(await limit.getAttribute('type'), 'number');
   assert.equal(await limit.getAttribute('min'), '1');
   assert.equal(await limit.getAttribute('max'), '4');
   await limit.fill('3');
   await button('Save Settings').click();
-  const saved = await page.evaluate(() => localStorage.getItem(`oralExamSettings-${window.location.pathname}`));
+  const saved = await page.evaluate(() => localStorage.getItem('oralExamSettings-/professor/exams/synthetic-exam-a'));
   assert.equal(JSON.parse(saved).maxFollowUps, 3);
   for (const invalid of ['', '-1', '0', '1.5', '5']) {
     await limit.fill(invalid);
     await button('Save Settings').click();
-    assert.equal(await page.evaluate(() => localStorage.getItem(`oralExamSettings-${window.location.pathname}`)), saved);
-    assert(await page.locator('#legacy-followup-error').isVisible());
+    assert.equal(await page.evaluate(() => localStorage.getItem('oralExamSettings-/professor/exams/synthetic-exam-a')), saved);
+    assert(await page.locator('#category-settings-error').isVisible());
   }
   await limit.fill('2');
   await button('Save Settings').click();
@@ -601,6 +607,7 @@ await check('Synthetic assistance policies, counters, states, and focus', async 
 
 await check('Existing question, material, and dashboard navigation', async () => {
   await openSettings();
+  await page.getByRole('link', { name: /Back to Manage Exam/ }).click();
   await page.getByRole('link', { name: /View Question Bank/ }).click();
   await page.getByRole('heading', { name: 'Question Bank', exact: true }).waitFor();
   await page.getByRole('button', { name: /Back to Exam/ }).click();

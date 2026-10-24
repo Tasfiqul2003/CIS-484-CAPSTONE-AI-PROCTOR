@@ -4,7 +4,11 @@ This guide explains the new and updated features in plain language. Indented bul
 
 ## Manage Exam
 
-- **Avatar & Interaction Settings** - Open this section to set the avatar's appearance, student choices, and help allowances for an exam.
+Manage Exam is an overview with the selected exam's information, the existing Question Bank and Course Materials links, and six compact settings cards. Each card opens a dedicated category page with a **Back to Manage Exam** link. The existing roster controls remain on the overview.
+
+Unsaved edits trigger the browser's leave-page prompt. Cancel to keep editing, or save before navigating. Existing `#avatar-settings` bookmarks open the dedicated avatar page.
+
+- **Avatar & Interaction Settings** - Open this page to set the avatar's appearance, student choices, and help allowances for an exam. All its subsections stay together.
   - **Save and share exam permissions**
     - **Save Exam Policy** - Save the current rules to the server for this exam. Professor sign-in and ownership are required. Server setup must be completed first.
     - **Load Saved Exam Policy** - Bring the server's saved rules into the editor. If you type while loading is underway, your newer edits are kept.
@@ -56,12 +60,16 @@ This guide explains the new and updated features in plain language. Indented bul
       - **Response window** - Enter the allowed response duration, from 10 seconds to 10 minutes.
       - **Response window unit** - Choose Seconds or Minutes. Changing units preserves the same duration.
     - **Question Bank and Course Materials links** - Open the existing places for professor-authored questions, difficulty, teaching materials, and rubrics.
-    - **Separate settings** - These policy values do not currently synchronize with the older Exam Settings section or change live exam delivery.
-- **Exam Settings**
+    - **Separate settings** - These policy values do not currently synchronize with the other settings categories or change live exam delivery.
+- **Other settings pages** - Each category keeps its existing controls and **Save Settings** action. These are browser-local exam drafts; saving one category preserves the saved values in the others.
+  - **Time & Scheduling** - Set the standard time limit.
+  - **ODS Accommodations** - Configure extended time, breaks, reduced distraction, and assistive technology features.
   - **AI Questioning**
     - **Follow-Up Questions**
       - **Maximum Follow-Ups Per Question** - Changed from a dropdown to a typed whole number from 1 to 4.
     - **Question difficulty** - The separate difficulty selector was removed. Professors set difficulty in Question Bank.
+  - **Recording & Transcript** - Choose video, audio, and transcript options.
+  - **AI Results** - Configure recommended grades, feedback, and professor review.
   - **Two follow-up fields currently exist** - This older 1-to-4 field is separate from the new 0-to-5 policy field under Avatar & Interaction Settings. They are not linked yet.
 
 ## Instructor draft simulation
@@ -76,10 +84,10 @@ This guide explains the new and updated features in plain language. Indented bul
   - **Professor-set exam behavior** - Review a summary of follow-ups, order, and timing.
   - **Close Student Preview** - Return to the editor. This simulation does not use a microphone, camera, AI model, or actual speech service.
 
-## Student Exams
+## Student settings preview
 
-- **Student Settings Preview** - Opens the page titled Your exam, your presentation preferences.
-  - **Which rules are shown** - Opening this link from Student Exams uses a fixed sample. Opening a shared or saved preview link from Manage Exam uses the selected instructor policy.
+- **Student Settings Preview** - The standalone `/student/settings-preview` route opens the page titled Your exam, your presentation preferences. The current Student Exams verification flow does not expose the earlier public preview link.
+  - **Which rules are shown** - Opening the standalone route uses a fixed sample. Opening a shared or saved preview link from the Avatar & Interaction Settings page uses the selected instructor policy.
   - **Student settings** - Opens the settings panel.
     - **Comfort and accessibility**
       - **Volume** - Set 0% to 100%. Audio is simulated in this preview.

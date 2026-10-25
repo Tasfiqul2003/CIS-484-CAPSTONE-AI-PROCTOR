@@ -9,6 +9,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from .db import get_db
+from .auth import require_professor
 
 router = APIRouter(prefix="/exam", tags=["grading"])
 
@@ -45,7 +46,11 @@ def criterion_max(c: dict) -> float:
 
 
 @router.post("/grade")
-def grade_session(req: GradeRequest, db: Session = Depends(get_db)):
+def grade_session(
+    req: GradeRequest,
+    account: dict = Depends(require_professor),
+    db: Session = Depends(get_db),
+):
     sid = str(req.session_id)
 
     session = db.execute(
@@ -58,6 +63,14 @@ def grade_session(req: GradeRequest, db: Session = Depends(get_db)):
     ).mappings().first()
     if not session:
         raise HTTPException(404, "Session not found")
+
+    professor_id = account.get("professor_id")
+    if (
+        not professor_id
+        or str(session["professor_id"]) != str(professor_id)
+    ):
+        raise HTTPException(404, "Session not found")
+
     if session["status"] not in ("pending_grading", "flagged"):
         raise HTTPException(409, f"Session is {session['status']}, not ready for grading")
 
@@ -168,20 +181,39 @@ def log_integrity_event(req: IntegrityEventRequest, db: Session = Depends(get_db
 
 
 @router.get("/{session_id}/report")
-def session_report(session_id: UUID, db: Session = Depends(get_db)):
+def session_report(
+    session_id: UUID,
+    account: dict = Depends(require_professor),
+    db: Session = Depends(get_db),
+):
     sid = str(session_id)
     session = db.execute(
-        text("SELECT * FROM exam_sessions WHERE id = CAST(:sid AS uuid)"),
+        text("""
+            SELECT s.*, t.professor_id AS exam_professor_id
+            FROM exam_sessions AS s
+            JOIN exam_templates AS t ON t.id = s.exam_template_id
+            WHERE s.id = CAST(:sid AS uuid)
+        """),
         {"sid": sid},
     ).mappings().first()
     if not session:
         raise HTTPException(404, "Session not found")
 
+    professor_id = account.get("professor_id")
+    if (
+        not professor_id
+        or str(session["exam_professor_id"]) != str(professor_id)
+    ):
+        raise HTTPException(404, "Session not found")
+
+    session_data = dict(session)
+    session_data.pop("exam_professor_id", None)
+
     def rows(sql):
         return [dict(r) for r in db.execute(text(sql), {"sid": sid}).mappings().all()]
 
     return {
-        "session": dict(session),
+        "session": session_data,
         "interactions": rows("""SELECT sequence_num, question_source, question_text,
                                        student_answer_transcript, model_reasoning
                                 FROM interactions

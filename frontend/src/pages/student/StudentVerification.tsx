@@ -1,5 +1,6 @@
 import { useState } from "react";
 import JACardScanner from "../../components/JACardScanner";
+import OralExamMark from "../../components/brand/OralExamMark";
 
 type Student = {
   id: string;
@@ -66,7 +67,7 @@ export default function StudentVerification() {
   return (
     <div className="verification-page">
       <header className="simple-header">
-        <div className="logo"><span className="logo-icon">◉</span><span>OralExam AI</span></div>
+        <div className="logo"><span className="logo-icon" aria-hidden="true"><OralExamMark size={34} /></span><span>OralExam AI</span></div>
       </header>
 
       <main className="verification-content">

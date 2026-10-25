@@ -11,6 +11,7 @@ import {
 } from "../../components/student-settings/studentSettings";
 import { createLocalExamPolicyStore, loadExamPolicy, snapshotPolicy, toStudentPolicy, type ExamPolicy } from "../../components/avatar/examPolicy";
 import "./StudentSettingsPreview.css";
+import OralExamMark from "../../components/brand/OralExamMark";
 
 const EXAM_ID = "synthetic-settings-exam";
 const STUDENT_ID = "synthetic-settings-student";
@@ -195,7 +196,7 @@ function StudentPreview({ policy, preferenceExamId, onRestart, policyNotice, con
 
   return <div className="student-settings-preview-page">
     <header className="simple-header">
-      <div className="logo"><span className="logo-icon" aria-hidden="true">◉</span><span>OralExam AI</span></div>
+      <div className="logo"><span className="logo-icon" aria-hidden="true"><OralExamMark size={34} /></span><span>OralExam AI</span></div>
       <a href="/student/exams">Back to Exams</a>
     </header>
     <main className="student-settings-preview-content">

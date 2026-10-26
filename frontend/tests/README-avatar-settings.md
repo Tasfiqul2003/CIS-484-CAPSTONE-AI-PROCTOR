@@ -1,6 +1,6 @@
 # Avatar settings and exam policy checks
 
-Manage Exam now has separate **Save Local Draft**, **Share Preview Policy**, and **Save Exam Policy** actions. Browser sharing explicitly connects to `/student/settings-preview?examId=...&instructorId=...&policySource=local`. Saved-policy previews use `policySource=server` and require professor sign-in; there is no unauthenticated student policy endpoint. The plain `/student/settings-preview` route retains the independent fixed demonstration.
+Manage Exam links to a dedicated **Avatar & Interaction Settings** page with separate **Save Local Draft**, **Share Preview Policy**, and **Save Exam Policy** actions. Browser sharing explicitly connects to `/student/settings-preview?examId=...&instructorId=...&policySource=local`. Saved-policy previews use `policySource=server` and require professor sign-in; there is no unauthenticated student policy endpoint. The plain `/student/settings-preview` route retains the independent fixed demonstration.
 
 Server setup: apply `database/migrations/006_exam_avatar_policy.sql` through the project's database migration process, then restart the backend so its new router is registered. This task prepares the migration but does not apply it to the existing PostgreSQL database. The professor-only GET/PUT endpoint is `/exam/templates/{exam_id}/avatar-policy`; PUT accepts `{settings, expected_revision}`. Stale revisions return 409. Unmigrated policy storage returns 503. Browser failures never silently fall back to local rules.
 

@@ -122,6 +122,7 @@ await context.route('**/*', async (route) => {
     return respond([{ id: 'synthetic-policy-question', question_text: 'Synthetic topic?', topic: 'Synthetic', difficulty: 2, created_at: '2026-10-15T12:00:00Z' }]);
   }
   if (request.method() === 'GET' && /^\/api\/exam\/templates\/[^/]+\/materials$/.test(url.pathname)) return respond([]);
+  if (request.method() === 'GET' && /^\/api\/exam\/templates\/[^/]+\/roster$/.test(url.pathname)) return respond([]);
   unexpectedApi.push(details);
   return respond({ detail: 'The synthetic policy integration test blocks this endpoint.' }, 403);
 });

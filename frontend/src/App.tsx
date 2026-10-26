@@ -13,6 +13,8 @@ import QuestionBank from "./pages/professor/QuestionBank";
 import MaterialUpload from "./pages/professor/MaterialUpload";
 import CreateExam from "./pages/professor/CreateExam";
 import ManageExam from "./pages/professor/ManageExam";
+import ExamSettingsPage, { LegacyAvatarSettingsRedirect } from "./pages/professor/ExamSettingsPage";
+import { examSettingsCategories } from "./pages/professor/examSettingsNavigation";
 import ExamSubmissions from "./pages/professor/ExamSubmissions";
 import ExamSubmitted from "./pages/student/ExamSubmitted";
 
@@ -79,6 +81,20 @@ function App() {
 if (path === "/professor/exams/new") {
   return <CreateExam />;
 }
+
+  // Specific settings pages must precede the general Manage Exam route.
+  const settingsRoute = path.match(/^\/professor\/exams\/([^/]+)\/settings\/([^/]+)\/?$/);
+  const settingsCategory = examSettingsCategories.find(item => item.slug === settingsRoute?.[2]);
+  if (settingsRoute && settingsCategory) {
+    return <ExamSettingsPage examId={settingsRoute[1]} category={settingsCategory.slug} />;
+  }
+
+  // Preserve bookmarks from the original inline avatar editor.
+  const legacyAvatar = path.match(/^\/professor\/exams\/([^/]+)\/avatar-settings\/?$/)
+    ?? (window.location.hash === "#avatar-settings" ? path.match(/^\/professor\/exams\/([^/]+)\/?$/) : null);
+  if (legacyAvatar) {
+    return <LegacyAvatarSettingsRedirect examId={legacyAvatar[1]} />;
+  }
 
 if (
   path.startsWith("/professor/exams/") &&

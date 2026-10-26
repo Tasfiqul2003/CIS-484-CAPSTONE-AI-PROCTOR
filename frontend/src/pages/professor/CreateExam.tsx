@@ -1,4 +1,5 @@
 import { useState } from "react";
+import OralExamMark from "../../components/brand/OralExamMark";
 
 const examIcons = [
   { icon: "🎙️", name: "Oral Exam" },
@@ -141,7 +142,7 @@ export default function CreateExam() {
     <div className="create-exam-page">
       <header className="simple-header">
         <div className="logo">
-          <span className="logo-icon">◉</span>
+          <span className="logo-icon" aria-hidden="true"><OralExamMark size={34} /></span>
           <span>OralExam AI</span>
         </div>
         <button

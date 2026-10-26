@@ -3,13 +3,14 @@ import os
 from uuid import UUID
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Header
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from .db import get_db
 from .auth import require_professor
+from .student_auth import read_student_token
 
 router = APIRouter(prefix="/exam", tags=["grading"])
 
@@ -159,14 +160,34 @@ def grade_session(
 
 
 @router.post("/integrity")
-def log_integrity_event(req: IntegrityEventRequest, db: Session = Depends(get_db)):
+def log_integrity_event(
+    req: IntegrityEventRequest,
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+):
     sid = str(req.session_id)
-    exists = db.execute(
-        text("SELECT 1 FROM exam_sessions WHERE id = CAST(:sid AS uuid)"),
+    claims = read_student_token(
+        authorization,
+        expected_purpose="student_session",
+    )
+    if claims.get("session_id") != sid:
+        raise HTTPException(403, "Student token does not match this session.")
+
+    session = db.execute(
+        text("""
+            SELECT student_id, exam_template_id
+            FROM exam_sessions
+            WHERE id = CAST(:sid AS uuid)
+        """),
         {"sid": sid},
-    ).first()
-    if not exists:
+    ).mappings().first()
+    if not session:
         raise HTTPException(404, "Session not found")
+    if (
+        claims.get("sub") != str(session["student_id"])
+        or claims.get("exam_template_id") != str(session["exam_template_id"])
+    ):
+        raise HTTPException(403, "Student token does not match this exam session.")
 
     event_id = db.execute(
         text("""INSERT INTO integrity_events

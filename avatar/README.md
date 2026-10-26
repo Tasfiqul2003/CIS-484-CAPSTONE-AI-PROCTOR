@@ -54,5 +54,14 @@ placeholder audio and video. `python test_followups.py qwen3:4b-instruct` checks
 
 ## Licenses of the pieces
 
-faster-whisper (MIT), Qwen3 (Apache-2.0), Chatterbox (MIT), SoulX-FlashHead (Apache-2.0 as published by its authors;
-confirm before redistributing). Confirm each license yourself before the team relies on this list.
+- faster-whisper (MIT) and its Systran small model (MIT)
+- Qwen3 (Apache-2.0)
+- Chatterbox (MIT). It adds a PerTh watermark to generated audio.
+- SoulX-FlashHead code (Apache-2.0)
+
+**Open question: FlashHead Lite.** Its weights include the LTX-Video 0.9 VAE, which the authors list
+under Open-RAIL-M and say must not be relicensed. The LTX 0.9 license text we read limits use to
+academic or research purposes, and it prohibits publishing AI-generated content without a
+disclaimer that it is machine-generated. Whether classroom use at JMU fits has not been decided.
+FlashHead Pro uses a different encoder (Wan 2.1) and is described as fully Apache-2.0. We have not
+tested whether Pro fits on a 16 GB GPU. Get Dr. Babik's or JMU's confirmation before relying on Lite.

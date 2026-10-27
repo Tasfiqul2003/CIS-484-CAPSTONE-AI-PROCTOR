@@ -1,11 +1,12 @@
 import json
 
 import httpx
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Header, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy import text
 
 from .db import open_session
+from .student_auth import read_student_token
 from .exam import (
     MAX_QUESTIONS,
     OLLAMA_MODEL,
@@ -70,19 +71,24 @@ def decide(plan, bank_remaining):
         raise HTTPException(502, f"Ollama decision call failed: {e}")
 
 
-def plan_turn(req: AnswerRequest) -> dict:
+def plan_turn(req: AnswerRequest, claims: dict) -> dict:
     """Validate and decide. Writes nothing; HTTP errors are raised before streaming starts."""
     sid = str(req.session_id)
     db = open_session()
     try:
         session = db.execute(
-            text("""SELECT s.status, s.exam_template_id,
+            text("""SELECT s.status, s.student_id, s.exam_template_id,
                            EXTRACT(EPOCH FROM (now() - s.started_at)) / 60 AS elapsed_min
                     FROM exam_sessions s WHERE s.id = CAST(:sid AS uuid)"""),
             {"sid": sid},
         ).mappings().first()
         if not session:
             raise HTTPException(404, "Session not found")
+        if (
+            claims.get("sub") != str(session["student_id"])
+            or claims.get("exam_template_id") != str(session["exam_template_id"])
+        ):
+            raise HTTPException(403, "Student token does not match this exam session.")
         if session["status"] != "in_progress":
             raise HTTPException(409, f"Session is {session['status']}")
 
@@ -259,8 +265,18 @@ def event_stream(plan):
 
 
 @router.post("/answer/stream")
-def answer_stream(req: AnswerRequest):
-    plan = plan_turn(req)  # 404/409/502 come back as normal HTTP errors
+def answer_stream(
+    req: AnswerRequest,
+    authorization: str | None = Header(default=None),
+):
+    claims = read_student_token(
+        authorization,
+        expected_purpose="student_session",
+    )
+    if claims.get("session_id") != str(req.session_id):
+        raise HTTPException(403, "Student token does not match this session.")
+
+    plan = plan_turn(req, claims)  # Validate before streaming starts
     return StreamingResponse(
         event_stream(plan),
         media_type="text/event-stream",

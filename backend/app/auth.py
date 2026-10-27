@@ -1,6 +1,9 @@
 import hmac
 import os
 import re
+import threading
+import time
+from collections import defaultdict, deque
 from datetime import datetime, timedelta, timezone
 
 import jwt
@@ -191,12 +194,56 @@ def bootstrap_admin(
     }
 
 
+# Per-process login throttling. Multi-worker deployments need shared storage
+# or rate limiting at a trusted reverse proxy.
+LOGIN_RATE_LIMIT = 5
+LOGIN_RATE_WINDOW_SECONDS = 60
+_login_failures = defaultdict(deque)
+_login_failures_lock = threading.Lock()
+
+
+def _prune_login_failures(client_ip: str, now: float) -> deque:
+    attempts = _login_failures[client_ip]
+    while attempts and now - attempts[0] >= LOGIN_RATE_WINDOW_SECONDS:
+        attempts.popleft()
+    return attempts
+
+
+def _check_login_rate_limit(client_ip: str) -> None:
+    now = time.monotonic()
+    with _login_failures_lock:
+        attempts = _prune_login_failures(client_ip, now)
+        if len(attempts) >= LOGIN_RATE_LIMIT:
+            retry_after = max(
+                1, int(LOGIN_RATE_WINDOW_SECONDS - (now - attempts[0]))
+            )
+            raise HTTPException(
+                status_code=429,
+                detail="Too many failed login attempts. Try again shortly.",
+                headers={"Retry-After": str(retry_after)},
+            )
+
+
+def _record_failed_login(client_ip: str) -> None:
+    now = time.monotonic()
+    with _login_failures_lock:
+        _prune_login_failures(client_ip, now).append(now)
+
+
+def _clear_login_failures(client_ip: str) -> None:
+    with _login_failures_lock:
+        _login_failures.pop(client_ip, None)
+
+
 @router.post("/login")
 def login(
     body: LoginRequest,
+    request: Request,
     response: Response,
     db: Session = Depends(get_db),
 ):
+    client_ip = request.client.host if request.client else "unknown"
+    _check_login_rate_limit(client_ip)
     username = body.username.strip().lower()
 
     account = db.execute(
@@ -214,8 +261,10 @@ def login(
         or not account["is_active"]
         or not password_hash.verify(body.password, account["password_hash"])
     ):
+        _record_failed_login(client_ip)
         raise HTTPException(status_code=401, detail="Invalid username or password.")
 
+    _clear_login_failures(client_ip)
     set_session_cookie(response, dict(account))
 
     return {

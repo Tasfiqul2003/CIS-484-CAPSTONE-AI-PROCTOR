@@ -51,7 +51,7 @@ class FakeDB:
 
 
 def make_client(monkeypatch):
-    monkeypatch.setenv("AUTH_SECRET_KEY", "test-only-stream-secret")
+    monkeypatch.setenv("AUTH_SECRET_KEY", "test-only-stream-secret-key-at-least-32-bytes")
     db = FakeDB()
     monkeypatch.setattr(stream, "open_session", lambda: db)
 

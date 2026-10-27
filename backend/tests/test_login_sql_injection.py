@@ -91,3 +91,47 @@ def test_sql_injection_password_cannot_bypass_login():
     assert response.status_code == 401
     assert response.json()["detail"] == "Invalid username or password."
     assert "oralexam_session" not in response.cookies
+
+
+
+def test_login_rate_limit_blocks_repeated_failures():
+    from backend.app import auth as auth_module
+
+    with auth_module._login_failures_lock:
+        auth_module._login_failures.clear()
+
+    client = make_client(FakeDB())
+    payload = {"username": "unknown-user", "password": "wrong-password"}
+
+    for _ in range(auth_module.LOGIN_RATE_LIMIT):
+        assert client.post("/auth/login", json=payload).status_code == 401
+
+    response = client.post("/auth/login", json=payload)
+    assert response.status_code == 429
+    assert "Retry-After" in response.headers
+
+    with auth_module._login_failures_lock:
+        auth_module._login_failures.clear()
+
+
+def test_login_rate_limit_expires_old_attempts(monkeypatch):
+    from backend.app import auth as auth_module
+
+    with auth_module._login_failures_lock:
+        auth_module._login_failures.clear()
+
+    now = [1000.0]
+    monkeypatch.setattr(auth_module.time, "monotonic", lambda: now[0])
+    client = make_client(FakeDB())
+    payload = {"username": "unknown-user", "password": "wrong-password"}
+
+    for _ in range(auth_module.LOGIN_RATE_LIMIT):
+        assert client.post("/auth/login", json=payload).status_code == 401
+
+    assert client.post("/auth/login", json=payload).status_code == 429
+
+    now[0] += auth_module.LOGIN_RATE_WINDOW_SECONDS + 1
+    assert client.post("/auth/login", json=payload).status_code == 401
+
+    with auth_module._login_failures_lock:
+        auth_module._login_failures.clear()

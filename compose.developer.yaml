@@ -1,0 +1,65 @@
+# Standalone laptop stack. Do not merge with docker-compose.yml: that file
+# reserves an NVIDIA GPU and uses the team's existing database volume.
+name: oralexam-developer
+
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: proctor
+      POSTGRES_PASSWORD: ${DEVELOPER_POSTGRES_PASSWORD:?The developer launcher must supply a database password}
+      POSTGRES_DB: oralexam_developer
+    ports:
+      - "127.0.0.1:55432:5432"
+    volumes:
+      - developer_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  migrate:
+    build: ./backend
+    image: oralexam-developer-backend
+    environment:
+      DATABASE_URL: ${DEVELOPER_DATABASE_URL:?The developer launcher must supply the encoded database URL}
+      DEVELOPER_MIGRATIONS: "1"
+    volumes:
+      - ./database:/developer/database:ro
+      - ./scripts:/developer/scripts:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    command: ["python", "/developer/scripts/developer_migrate.py"]
+
+  backend:
+    build: ./backend
+    image: oralexam-developer-backend
+    environment:
+      DATABASE_URL: ${DEVELOPER_DATABASE_URL:?The developer launcher must supply the encoded database URL}
+      AUTH_SECRET_KEY: ${DEVELOPER_AUTH_SECRET_KEY:?The developer launcher must supply an authentication secret}
+      ADMIN_BOOTSTRAP_TOKEN: ${DEVELOPER_ADMIN_BOOTSTRAP_TOKEN:?The developer launcher must supply a bootstrap token}
+      AUTH_COOKIE_SECURE: "false"
+      OLLAMA_URL: ${DEVELOPER_OLLAMA_URL:-http://host.docker.internal:11434}
+      OLLAMA_MODEL: ${DEVELOPER_OLLAMA_MODEL:-cybros-v2}
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - ./backend/app:/app/app:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/db', timeout=3)"]
+      interval: 3s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  developer_pgdata:

@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 
 from backend.app.db import get_db
 from backend.app.exam import router as exam_router
+from backend.app.student_auth import issue_student_token
 
 STUDENT_ID = "10000000-0000-4000-8000-000000000001"
 EXAM_ID = "20000000-0000-4000-8000-000000000001"
@@ -90,14 +91,21 @@ def make_client(scenario):
     return TestClient(app), app, fake_db
 
 
-def test_start_exam_rejects_student_not_on_exam_roster():
+def test_start_exam_rejects_student_not_on_exam_roster(monkeypatch):
+    monkeypatch.setenv("AUTH_SECRET_KEY", "test-only-secret-for-roster-tests")
     client, app, db = make_client("start_unrostered")
     try:
+        student_token = issue_student_token(
+            student_id=STUDENT_ID,
+            exam_template_id=EXAM_ID,
+            purpose="student_exam",
+        )
         response = client.post(
             "/exam/start",
             json={
                 "student_id": STUDENT_ID,
                 "exam_template_id": EXAM_ID,
+                "student_token": student_token,
             },
         )
 

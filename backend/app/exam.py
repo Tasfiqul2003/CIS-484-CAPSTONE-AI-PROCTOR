@@ -5,10 +5,11 @@ import csv
 import io
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, File, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, File, UploadFile, Header
 from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.orm import Session
+from .student_auth import issue_student_token, read_student_token
 
 from .db import get_db
 
@@ -45,6 +46,7 @@ Rules:
 class StartRequest(BaseModel):
     student_id: UUID
     exam_template_id: UUID
+    student_token: str
 
 
 class AnswerRequest(BaseModel):
@@ -99,7 +101,7 @@ def ask_model(template, history, bank_remaining, course_material_summaries=None)
                     {"role": "user", "content": json.dumps(payload, default=str)},
                 ],
             },
-            timeout=180,
+            timeout=45,
         )
         r.raise_for_status()
         return json.loads(r.json()["message"]["content"])
@@ -130,6 +132,16 @@ def insert_question(db, session_id, seq, question_text, source, source_id, reaso
 
 @router.post("/start")
 def start_exam(req: StartRequest, db: Session = Depends(get_db)):
+    claims = read_student_token(
+        f"Bearer {req.student_token}",
+        expected_purpose="student_exam",
+    )
+    if (
+        claims.get("sub") != str(req.student_id)
+        or claims.get("exam_template_id") != str(req.exam_template_id)
+    ):
+        raise HTTPException(403, "Student token does not match this exam.")
+
     template = db.execute(
         text("SELECT * FROM exam_templates WHERE id = CAST(:t AS uuid)"),
         {"t": str(req.exam_template_id)},
@@ -196,21 +208,48 @@ def start_exam(req: StartRequest, db: Session = Depends(get_db)):
                         decision.get("reasoning"))
 
     db.commit()
-    return {"session_id": session_id, "sequence_num": 1, "question": question}
+    session_token = issue_student_token(
+        student_id=str(req.student_id),
+        exam_template_id=str(req.exam_template_id),
+        purpose="student_session",
+        session_id=session_id,
+        minutes=180,
+    )
+    return {
+        "session_id": session_id,
+        "sequence_num": 1,
+        "question": question,
+        "session_token": session_token,
+    }
 
 
 @router.post("/answer")
-def submit_answer(req: AnswerRequest, db: Session = Depends(get_db)):
+def submit_answer(
+    req: AnswerRequest,
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+):
     sid = str(req.session_id)
+    claims = read_student_token(
+        authorization,
+        expected_purpose="student_session",
+    )
+    if claims.get("session_id") != sid:
+        raise HTTPException(403, "Student token does not match this session.")
 
     session = db.execute(
-        text("""SELECT s.status, s.exam_template_id,
+        text("""SELECT s.status, s.student_id, s.exam_template_id,
                        EXTRACT(EPOCH FROM (now() - s.started_at)) / 60 AS elapsed_min
                 FROM exam_sessions s WHERE s.id = CAST(:sid AS uuid)"""),
         {"sid": sid},
     ).mappings().first()
     if not session:
         raise HTTPException(404, "Session not found")
+    if (
+        claims.get("sub") != str(session["student_id"])
+        or claims.get("exam_template_id") != str(session["exam_template_id"])
+    ):
+        raise HTTPException(403, "Student token does not match this exam session.")
     if session["status"] != "in_progress":
         raise HTTPException(409, f"Session is {session['status']}")
 
@@ -269,7 +308,20 @@ def submit_answer(req: AnswerRequest, db: Session = Depends(get_db)):
     summaries = load_exam_material_summaries(
         db, session["exam_template_id"]
     )
-    decision = ask_model(template, history, bank_remaining, summaries)
+    try:
+        decision = ask_model(template, history, bank_remaining, summaries)
+    except HTTPException:
+        if not bank_remaining:
+            raise
+
+        # Keep the exam moving if AI generation fails.
+        # The normal selection logic below will use this unused bank question.
+        decision = {
+            "end_exam": False,
+            "bank_question_id": bank_remaining[0]["id"],
+            "question": None,
+            "reasoning": "Using an unused bank question because AI generation failed.",
+        }
 
     # Do not let the model end the exam while bank questions remain.
     if decision.get("end_exam") and bank_remaining:
@@ -308,6 +360,62 @@ def submit_answer(req: AnswerRequest, db: Session = Depends(get_db)):
 
 # Professor exam creation
 from .auth import require_professor
+
+
+@router.get("/submissions")
+def list_exam_submissions(
+    account: dict = Depends(require_professor),
+    db: Session = Depends(get_db),
+):
+    """List exam sessions belonging only to the signed-in professor."""
+    professor_id = account.get("professor_id")
+    if not professor_id:
+        raise HTTPException(
+            status_code=403,
+            detail="This account is not linked to a professor.",
+        )
+
+    rows = db.execute(
+        text("""
+            SELECT
+                s.id AS session_id,
+                s.status,
+                s.started_at,
+                s.ended_at,
+                st.name AS student_name,
+                st.eid AS student_eid,
+                t.id AS exam_template_id,
+                t.title AS exam_title,
+                t.course
+            FROM exam_sessions AS s
+            JOIN exam_templates AS t
+              ON t.id = s.exam_template_id
+            JOIN students AS st
+              ON st.id = s.student_id
+            WHERE t.professor_id = CAST(:professor_id AS uuid)
+            ORDER BY COALESCE(s.ended_at, s.started_at) DESC NULLS LAST
+        """),
+        {"professor_id": str(professor_id)},
+    ).mappings().all()
+
+    def iso(value):
+        return value.isoformat() if value is not None else None
+
+    return [
+        {
+            "id": str(row["session_id"]),
+            "status": row["status"],
+            "studentName": row["student_name"] or "Unknown student",
+            "studentId": row["student_eid"] or "Not available",
+            "examId": str(row["exam_template_id"]),
+            "examName": row["exam_title"],
+            "course": row["course"] or "Course not specified",
+            "startedAt": iso(row["started_at"]),
+            "submittedAt": iso(row["ended_at"]),
+        }
+        for row in rows
+    ]
+
 
 
 class CreateExamRequest(BaseModel):
@@ -1611,12 +1719,20 @@ def verify_exam_eid(
             "This EID is not on the roster for this published exam.",
         )
 
+    student_token = issue_student_token(
+        student_id=str(student["id"]),
+        exam_template_id=str(request.exam_template_id),
+        purpose="student_exam",
+        minutes=15,
+    )
+
     return {
         "verified": True,
         "student_id": str(student["id"]),
         "name": student["name"],
         "eid": student["eid"],
         "exam_template_id": str(request.exam_template_id),
+        "student_token": student_token,
     }
 
 
@@ -1628,15 +1744,23 @@ class StudentFeedbackRequest(BaseModel):
 @router.post("/feedback")
 def save_student_feedback(
     request: StudentFeedbackRequest,
+    authorization: str | None = Header(default=None),
     db: Session = Depends(get_db),
 ):
+    claims = read_student_token(
+        authorization,
+        expected_purpose="student_session",
+    )
+    if claims.get("session_id") != str(request.session_id):
+        raise HTTPException(403, "Student token does not match this session.")
+
     feedback = request.feedback.strip()
     if len(feedback) > 4000:
         raise HTTPException(400, "Feedback must be 4,000 characters or fewer.")
 
     session = db.execute(
         text("""
-            SELECT id, status
+            SELECT id, status, student_id, exam_template_id
             FROM exam_sessions
             WHERE id = CAST(:session_id AS uuid)
         """),
@@ -1645,6 +1769,11 @@ def save_student_feedback(
 
     if not session:
         raise HTTPException(404, "Exam session not found.")
+    if (
+        claims.get("sub") != str(session["student_id"])
+        or claims.get("exam_template_id") != str(session["exam_template_id"])
+    ):
+        raise HTTPException(403, "Student token does not match this exam session.")
 
     if session["status"] not in ("pending_grading", "flagged", "graded"):
         raise HTTPException(409, "Feedback can only be submitted after the exam has ended.")

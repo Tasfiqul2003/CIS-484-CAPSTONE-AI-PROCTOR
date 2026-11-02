@@ -1,0 +1,13 @@
+# Professor photos, voice samples, student transcripts and generated media are private and must never be committed.
+profiles/
+sessions/
+avatar_media/
+*.jpg
+*.jpeg
+*.png
+*.wav
+*.mp3
+*.m4a
+*.mp4
+*.webm
+*.log

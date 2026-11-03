@@ -1,873 +1,321 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import {
+  AlertCircle,
+  ArrowLeft,
+  Clock3,
+  GraduationCap,
+  LoaderCircle,
+  RefreshCw,
+  Users,
+} from "lucide-react";
 import OralExamMark from "../../components/brand/OralExamMark";
 
-type Submission = {
-  id: number;
-  studentName: string;
-  studentId: string;
-  examName: string;
-  course: string;
-  submittedAt: string;
-  status: string;
-  transcript: string;
-  recommendedGrade: string;
-  video: string;
+type StudentProgress = {
+  student_id: string;
+  student_name: string;
+  email: string;
+  eid: string | null;
+  session_id: string | null;
+  status: string | null;
+  started_at: string | null;
+  ended_at: string | null;
 };
 
-type DownloadState = {
-  transcript: boolean;
-  grade: boolean;
-  video: boolean;
-};
+function formatDate(value: string | null) {
+  if (!value) return "—";
 
-const sampleSubmissions: Submission[] = [
-  {
-    id: 1,
-    studentName: "Alex Johnson",
-    studentId: "800123456",
-    examName: "Oral Examination",
-    course: "CIS 484",
-    submittedAt: "September 30, 2026 at 2:34 PM",
-    status: "Submitted",
-    transcript: "alex-johnson-cis484-transcript.txt",
-    recommendedGrade: "alex-johnson-cis484-grade.txt",
-    video: "alex-johnson-cis484-video.mp4",
-  },
-  {
-    id: 2,
-    studentName: "Jordan Smith",
-    studentId: "800123457",
-    examName: "Oral Examination",
-    course: "CIS 484",
-    submittedAt: "September 30, 2026 at 3:12 PM",
-    status: "Submitted",
-    transcript: "jordan-smith-cis484-transcript.txt",
-    recommendedGrade: "jordan-smith-cis484-grade.txt",
-    video: "jordan-smith-cis484-video.mp4",
-  },
-];
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
 
-const emptyDownloadState = (): DownloadState => ({
-  transcript: false,
-  grade: false,
-  video: false,
-});
+  return date.toLocaleString([], {
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
+}
+
+function getStatus(student: StudentProgress) {
+  if (!student.session_id || !student.status) {
+    return "Not started";
+  }
+
+  return student.status
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function statusClass(student: StudentProgress) {
+  if (!student.session_id || !student.status) {
+    return "progress-status status-not-started";
+  }
+
+  switch (student.status) {
+    case "in_progress":
+      return "progress-status status-in-progress";
+    case "pending_grading":
+      return "progress-status status-pending";
+    case "graded":
+      return "progress-status status-graded";
+    case "flagged":
+      return "progress-status status-flagged";
+    case "abandoned":
+      return "progress-status status-abandoned";
+    default:
+      return "progress-status status-unknown";
+  }
+}
 
 export default function ExamSubmissions() {
-  const [submissions, setSubmissions] = useState<Submission[]>([]);
-  const [downloads, setDownloads] = useState<
-    Record<number, DownloadState>
-  >({});
+  const examId = window.location.pathname
+    .split("/")
+    .filter(Boolean)
+    .at(-2);
+
+  const [students, setStudents] = useState<StudentProgress[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState("");
+
+  const loadProgress = useCallback(async (manual = false) => {
+    if (!examId) {
+      setError("The exam ID is missing from the page URL.");
+      setLoading(false);
+      return;
+    }
+
+    if (manual) {
+      setRefreshing(true);
+    } else {
+      setLoading(true);
+    }
+
+    setError("");
+
+    try {
+      const response = await fetch(
+        `/api/exam/templates/${encodeURIComponent(examId)}/progress`,
+        { credentials: "include" },
+      );
+
+      if (!response.ok) {
+        let message = "Unable to load exam progress.";
+
+        try {
+          const body = await response.json();
+          if (typeof body.detail === "string") {
+            message = body.detail;
+          }
+        } catch {
+          // Keep the fallback message if the response isn't JSON.
+        }
+
+        throw new Error(message);
+      }
+
+      const data: unknown = await response.json();
+
+      if (!Array.isArray(data)) {
+        throw new Error("The server returned an unexpected progress response.");
+      }
+
+      setStudents(data as StudentProgress[]);
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "An unexpected error occurred while loading progress.",
+      );
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [examId]);
 
   useEffect(() => {
-    const saved = localStorage.getItem("oralExamSubmissions");
+    void loadProgress();
+  }, [loadProgress]);
 
-    if (!saved) {
-      setSubmissions(sampleSubmissions);
-    } else {
-      try {
-        const savedSubmissions = JSON.parse(saved);
-
-        setSubmissions([
-          ...sampleSubmissions,
-          ...savedSubmissions,
-        ]);
-      } catch {
-        setSubmissions(sampleSubmissions);
-      }
-    }
-
-    const savedDownloads =
-      localStorage.getItem("oralExamDownloads");
-
-    if (savedDownloads) {
-      try {
-        setDownloads(JSON.parse(savedDownloads));
-      } catch {
-        setDownloads({});
-      }
-    }
-  }, []);
-
-  const saveDownloads = (
-    updated: Record<number, DownloadState>
-  ) => {
-    setDownloads(updated);
-
-    localStorage.setItem(
-      "oralExamDownloads",
-      JSON.stringify(updated)
-    );
+  const counts = {
+    total: students.length,
+    notStarted: students.filter(
+      (student) => !student.session_id || !student.status,
+    ).length,
+    inProgress: students.filter(
+      (student) => student.status === "in_progress",
+    ).length,
+    awaitingReview: students.filter(
+      (student) => student.status === "pending_grading",
+    ).length,
+    completed: students.filter(
+      (student) => student.status === "graded",
+    ).length,
+    flagged: students.filter(
+      (student) => student.status === "flagged",
+    ).length,
   };
-
-  const createFile = (
-    submission: Submission,
-    type: "transcript" | "grade" | "video"
-  ) => {
-    let filename = "";
-    let content = "";
-
-    if (type === "transcript") {
-      filename = submission.transcript;
-
-      content = `
-OralExam AI
-============================
-
-Student: ${submission.studentName}
-Student ID: ${submission.studentId}
-Course: ${submission.course}
-Exam: ${submission.examName}
-
-Submitted:
-${submission.submittedAt}
-
-============================
-
-Transcript will be generated
-by the OralExam AI backend.
-`;
-    }
-
-    if (type === "grade") {
-      filename = submission.recommendedGrade;
-
-      content = `
-OralExam AI
-============================
-
-Student: ${submission.studentName}
-Student ID: ${submission.studentId}
-Course: ${submission.course}
-Exam: ${submission.examName}
-
-Recommended Grade
-============================
-
-The recommended grade will be
-generated by the OralExam AI backend.
-
-Professor review is required before
-the grade is finalized.
-`;
-    }
-
-    if (type === "video") {
-      filename = submission.video;
-
-      content = `
-OralExam AI
-
-Video placeholder for:
-
-Student: ${submission.studentName}
-Student ID: ${submission.studentId}
-Exam: ${submission.examName}
-
-The actual examination video will
-be generated and stored by the
-OralExam AI backend.
-`;
-    }
-
-    const blob = new Blob(
-      [content],
-      { type: "text/plain" }
-    );
-
-    const url = URL.createObjectURL(blob);
-
-    const link = document.createElement("a");
-
-    link.href = url;
-    link.download = filename;
-
-    document.body.appendChild(link);
-
-    link.click();
-
-    document.body.removeChild(link);
-
-    URL.revokeObjectURL(url);
-  };
-
-  const downloadFile = (
-    submission: Submission,
-    type: "transcript" | "grade" | "video"
-  ) => {
-    createFile(submission, type);
-
-    const current =
-      downloads[submission.id] || emptyDownloadState();
-
-    const updated = {
-      ...downloads,
-      [submission.id]: {
-        ...current,
-        [type]: true,
-      },
-    };
-
-    saveDownloads(updated);
-  };
-
-  const downloadAllMaterials = () => {
-    submissions.forEach((submission, index) => {
-      setTimeout(() => {
-        downloadFile(submission, "transcript");
-
-        setTimeout(() => {
-          downloadFile(submission, "grade");
-        }, 150);
-
-        setTimeout(() => {
-          downloadFile(submission, "video");
-        }, 300);
-      }, index * 500);
-    });
-  };
-
-  const downloadAllTranscripts = () => {
-    submissions.forEach((submission, index) => {
-      setTimeout(() => {
-        downloadFile(submission, "transcript");
-      }, index * 300);
-    });
-  };
-
-  const downloadAllVideos = () => {
-    submissions.forEach((submission, index) => {
-      setTimeout(() => {
-        downloadFile(submission, "video");
-      }, index * 300);
-    });
-  };
-
-  const downloadAllGrades = () => {
-    submissions.forEach((submission, index) => {
-      setTimeout(() => {
-        downloadFile(submission, "grade");
-      }, index * 300);
-    });
-  };
-
-  const isDownloaded = (
-    id: number,
-    type: "transcript" | "grade" | "video"
-  ) => {
-    return downloads[id]?.[type] === true;
-  };
-
-  const totalFiles = submissions.length * 3;
-
-  const downloadedFiles = submissions.reduce(
-    (total, submission) => {
-      const state = downloads[submission.id];
-
-      if (!state) {
-        return total;
-      }
-
-      return (
-        total +
-        (state.transcript ? 1 : 0) +
-        (state.grade ? 1 : 0) +
-        (state.video ? 1 : 0)
-      );
-    },
-    0
-  );
-
-  const allDownloaded =
-    totalFiles > 0 &&
-    downloadedFiles === totalFiles;
-
-  const allTranscriptsDownloaded =
-    submissions.length > 0 &&
-    submissions.every((submission) =>
-      isDownloaded(submission.id, "transcript")
-    );
-
-  const allVideosDownloaded =
-    submissions.length > 0 &&
-    submissions.every((submission) =>
-      isDownloaded(submission.id, "video")
-    );
-
-  const allGradesDownloaded =
-    submissions.length > 0 &&
-    submissions.every((submission) =>
-      isDownloaded(submission.id, "grade")
-    );
 
   return (
-    <div className="professor-dashboard-page">
-
-      <header className="simple-header">
-
-        <div className="logo">
-          <span className="logo-icon" aria-hidden="true"><OralExamMark size={34} /></span>
-          <span>OralExam AI</span>
-        </div>
-
-        <button
-          type="button"
-          className="dashboard-logout"
-          onClick={async () => {
-            try {
-              await fetch("/api/auth/logout", {
-                method: "POST",
-                credentials: "include",
-              });
-            } finally {
-              window.location.href = "/professor/login";
-            }
-          }}
-        >
-          Log Out
-        </button>
-
-      </header>
-
-      <main className="professor-dashboard-content">
-
+    <div className="professor-dashboard">
+      <header className="dashboard-header">
         <a
           href="/professor/dashboard"
-          className="manage-back-link"
+          className="dashboard-brand"
+          aria-label="Return to professor dashboard"
         >
-          ← Back to Dashboard
+          <OralExamMark />
+          <span>OralExam AI</span>
         </a>
 
-        <section className="submission-page-header">
+        <a href="/professor/dashboard" className="progress-back-link">
+          <ArrowLeft size={16} aria-hidden="true" />
+          Dashboard
+        </a>
+      </header>
 
+      <main className="dashboard-main">
+        <section className="dashboard-welcome">
           <div>
-
-            <p className="eyebrow">
-              PROFESSOR PORTAL
-            </p>
-
-            <h1>
-              Student Submissions
-            </h1>
-
+            <p className="eyebrow">EXAM MANAGEMENT</p>
+            <h1>Student Progress</h1>
             <p>
-              Review completed oral examinations and
-              download student examination files.
+              Monitor roster participation and review each student&apos;s
+              latest examination status.
             </p>
-
           </div>
 
-          <div className="bulk-download-buttons">
-
-            <button
-              type="button"
-              className={
-                allDownloaded
-                  ? "bulk-download-button downloaded"
-                  : "bulk-download-button primary"
-              }
-              onClick={downloadAllMaterials}
-              disabled={allDownloaded}
-            >
-              <span>
-                {allDownloaded ? "✓" : "📦"}
-              </span>
-
-              {allDownloaded
-                ? "All Materials Downloaded"
-                : "Download All Materials"}
-            </button>
-
-            <button
-              type="button"
-              className={
-                allTranscriptsDownloaded
-                  ? "bulk-download-button downloaded"
-                  : "bulk-download-button"
-              }
-              onClick={downloadAllTranscripts}
-              disabled={allTranscriptsDownloaded}
-            >
-              <span>
-                {allTranscriptsDownloaded ? "✓" : "📄"}
-              </span>
-
-              {allTranscriptsDownloaded
-                ? "All Transcripts Downloaded"
-                : "Download All Transcripts"}
-            </button>
-
-            <button
-              type="button"
-              className={
-                allVideosDownloaded
-                  ? "bulk-download-button downloaded"
-                  : "bulk-download-button"
-              }
-              onClick={downloadAllVideos}
-              disabled={allVideosDownloaded}
-            >
-              <span>
-                {allVideosDownloaded ? "✓" : "🎥"}
-              </span>
-
-              {allVideosDownloaded
-                ? "All Videos Downloaded"
-                : "Download All Videos"}
-            </button>
-
-            <button
-              type="button"
-              className={
-                allGradesDownloaded
-                  ? "bulk-download-button downloaded"
-                  : "bulk-download-button"
-              }
-              onClick={downloadAllGrades}
-              disabled={allGradesDownloaded}
-            >
-              <span>
-                {allGradesDownloaded ? "✓" : "📝"}
-              </span>
-
-              {allGradesDownloaded
-                ? "All Grades Downloaded"
-                : "Download All Grades"}
-            </button>
-
-          </div>
-
+          <button
+            type="button"
+            className="progress-refresh-button"
+            onClick={() => void loadProgress(true)}
+            disabled={loading || refreshing}
+          >
+            {refreshing ? (
+              <LoaderCircle size={16} className="progress-spin" />
+            ) : (
+              <RefreshCw size={16} />
+            )}
+            Refresh
+          </button>
         </section>
 
-        <section className="download-progress-card">
-
-          <div className="download-progress-top">
-
+        {error && (
+          <section className="progress-error" role="alert">
+            <AlertCircle size={20} aria-hidden="true" />
             <div>
-
-              <span className="submission-label">
-                DOWNLOAD PROGRESS
-              </span>
-
-              <strong>
-                {downloadedFiles} of {totalFiles} files
-              </strong>
-
-            </div>
-
-            <span className="download-progress-percent">
-              {totalFiles > 0
-                ? Math.round(
-                    (downloadedFiles / totalFiles) * 100
-                  )
-                : 0}%
-            </span>
-
-          </div>
-
-          <div className="download-progress-track">
-
-            <div
-              className="download-progress-bar"
-              style={{
-                width: `${
-                  totalFiles > 0
-                    ? (downloadedFiles / totalFiles) * 100
-                    : 0
-                }%`,
-              }}
-            />
-
-          </div>
-
-          <div className="download-progress-legend">
-
-            <span>📄 Transcripts</span>
-            <span>📝 Grades</span>
-            <span>🎥 Videos</span>
-
-          </div>
-
-        </section>
-
-        <section className="submission-summary">
-
-          <div className="submission-summary-card">
-
-            <strong>
-              {submissions.length}
-            </strong>
-
-            <span>
-              Total Submissions
-            </span>
-
-          </div>
-
-          <div className="submission-summary-card">
-
-            <strong>
-              {downloadedFiles}
-            </strong>
-
-            <span>
-              Files Downloaded
-            </span>
-
-          </div>
-
-          <div className="submission-summary-card">
-
-            <strong>
-              {totalFiles - downloadedFiles}
-            </strong>
-
-            <span>
-              Files Remaining
-            </span>
-
-          </div>
-
-        </section>
-
-        <div className="dashboard-section-heading">
-
-          <div>
-
-            <p className="eyebrow">
-              EXAM RESULTS
-            </p>
-
-            <h2>
-              Completed Examinations
-            </h2>
-
-          </div>
-
-        </div>
-
-        <section className="submission-list">
-
-          {submissions.map((submission) => {
-
-            const transcriptDownloaded =
-              isDownloaded(
-                submission.id,
-                "transcript"
-              );
-
-            const gradeDownloaded =
-              isDownloaded(
-                submission.id,
-                "grade"
-              );
-
-            const videoDownloaded =
-              isDownloaded(
-                submission.id,
-                "video"
-              );
-
-            const everythingDownloaded =
-              transcriptDownloaded &&
-              gradeDownloaded &&
-              videoDownloaded;
-
-            return (
-              <article
-                className="submission-card"
-                key={submission.id}
+              <strong>Progress could not be loaded</strong>
+              <p>{error}</p>
+              <button
+                type="button"
+                onClick={() => void loadProgress(true)}
               >
+                Try again
+              </button>
+            </div>
+          </section>
+        )}
 
-                <div className="submission-header">
+        <section className="progress-summary" aria-label="Exam progress summary">
+          <article className="progress-summary-card">
+            <Users size={20} aria-hidden="true" />
+            <span>Rostered students</span>
+            <strong>{loading ? "—" : counts.total}</strong>
+          </article>
 
-                  <div className="student-avatar">
-                    {submission.studentName
-                      .charAt(0)
-                      .toUpperCase()}
-                  </div>
+          <article className="progress-summary-card">
+            <Clock3 size={20} aria-hidden="true" />
+            <span>Not started</span>
+            <strong>{loading ? "—" : counts.notStarted}</strong>
+          </article>
 
-                  <div className="submission-student">
+          <article className="progress-summary-card">
+            <LoaderCircle size={20} aria-hidden="true" />
+            <span>In progress</span>
+            <strong>{loading ? "—" : counts.inProgress}</strong>
+          </article>
 
-                    <h3>
-                      {submission.studentName}
-                    </h3>
-
-                    <p>
-                      Student ID: {submission.studentId}
-                    </p>
-
-                  </div>
-
-                  <span className="submission-status">
-                    {submission.status}
-                  </span>
-
-                </div>
-
-                <div className="submission-info">
-
-                  <div>
-
-                    <span className="submission-label">
-                      EXAM
-                    </span>
-
-                    <strong>
-                      {submission.course}
-                    </strong>
-
-                    <p>
-                      {submission.examName}
-                    </p>
-
-                  </div>
-
-                  <div>
-
-                    <span className="submission-label">
-                      SUBMITTED
-                    </span>
-
-                    <strong>
-                      {submission.submittedAt}
-                    </strong>
-
-                  </div>
-
-                </div>
-
-                <div className="submission-files">
-
-                  <div
-                    className={
-                      transcriptDownloaded
-                        ? "submission-file file-downloaded"
-                        : "submission-file"
-                    }
-                  >
-
-                    <span className="submission-file-icon">
-                      📄
-                    </span>
-
-                    <div>
-
-                      <strong>
-                        Transcript
-                      </strong>
-
-                      <small>
-                        {submission.transcript}
-                      </small>
-
-                      {transcriptDownloaded && (
-                        <em>
-                          ✓ Downloaded
-                        </em>
-                      )}
-
-                    </div>
-
-                    <button
-                      type="button"
-                      className={
-                        transcriptDownloaded
-                          ? "file-download-button downloaded"
-                          : "file-download-button"
-                      }
-                      onClick={() =>
-                        downloadFile(
-                          submission,
-                          "transcript"
-                        )
-                      }
-                    >
-                      {transcriptDownloaded ? "✓" : "↓"}
-                    </button>
-
-                  </div>
-
-                  <div
-                    className={
-                      gradeDownloaded
-                        ? "submission-file file-downloaded"
-                        : "submission-file"
-                    }
-                  >
-
-                    <span className="submission-file-icon">
-                      📝
-                    </span>
-
-                    <div>
-
-                      <strong>
-                        Recommended Grade
-                      </strong>
-
-                      <small>
-                        {submission.recommendedGrade}
-                      </small>
-
-                      {gradeDownloaded && (
-                        <em>
-                          ✓ Downloaded
-                        </em>
-                      )}
-
-                    </div>
-
-                    <button
-                      type="button"
-                      className={
-                        gradeDownloaded
-                          ? "file-download-button downloaded"
-                          : "file-download-button"
-                      }
-                      onClick={() =>
-                        downloadFile(
-                          submission,
-                          "grade"
-                        )
-                      }
-                    >
-                      {gradeDownloaded ? "✓" : "↓"}
-                    </button>
-
-                  </div>
-
-                  <div
-                    className={
-                      videoDownloaded
-                        ? "submission-file file-downloaded"
-                        : "submission-file"
-                    }
-                  >
-
-                    <span className="submission-file-icon">
-                      🎥
-                    </span>
-
-                    <div>
-
-                      <strong>
-                        Video Recording
-                      </strong>
-
-                      <small>
-                        {submission.video}
-                      </small>
-
-                      {videoDownloaded && (
-                        <em>
-                          ✓ Downloaded
-                        </em>
-                      )}
-
-                    </div>
-
-                    <button
-                      type="button"
-                      className={
-                        videoDownloaded
-                          ? "file-download-button downloaded"
-                          : "file-download-button"
-                      }
-                      onClick={() =>
-                        downloadFile(
-                          submission,
-                          "video"
-                        )
-                      }
-                    >
-                      {videoDownloaded ? "✓" : "↓"}
-                    </button>
-
-                  </div>
-
-                </div>
-
-                <div className="submission-footer">
-
-                  <span>
-                    {everythingDownloaded
-                      ? "✓ All files downloaded"
-                      : "Download individual files above"}
-                  </span>
-
-                  <button
-                    type="button"
-                    className={
-                      everythingDownloaded
-                        ? "download-submission-button downloaded"
-                        : "download-submission-button"
-                    }
-                    onClick={() => {
-
-                      if (!transcriptDownloaded) {
-                        downloadFile(
-                          submission,
-                          "transcript"
-                        );
-                      }
-
-                      setTimeout(() => {
-                        if (!gradeDownloaded) {
-                          downloadFile(
-                            submission,
-                            "grade"
-                          );
-                        }
-                      }, 150);
-
-                      setTimeout(() => {
-                        if (!videoDownloaded) {
-                          downloadFile(
-                            submission,
-                            "video"
-                          );
-                        }
-                      }, 300);
-
-                    }}
-                    disabled={everythingDownloaded}
-                  >
-
-                    <span>
-                      {everythingDownloaded
-                        ? "✓"
-                        : "⬇"}
-                    </span>
-
-                    {everythingDownloaded
-                      ? "All Files Downloaded"
-                      : "Download All Files"}
-
-                  </button>
-
-                </div>
-
-              </article>
-            );
-          })}
-
+          <article className="progress-summary-card">
+            <GraduationCap size={20} aria-hidden="true" />
+            <span>Awaiting review</span>
+            <strong>{loading ? "—" : counts.awaitingReview}</strong>
+          </article>
         </section>
 
+        <section className="progress-table-section">
+          <div className="dashboard-section-heading">
+            <div>
+              <p className="eyebrow">ROSTER</p>
+              <h2>Student examination status</h2>
+            </div>
+            {!loading && (
+              <span className="progress-count">
+                {students.length} student{students.length === 1 ? "" : "s"}
+              </span>
+            )}
+          </div>
+
+          {loading ? (
+            <div className="progress-empty-state" role="status">
+              <LoaderCircle size={24} className="progress-spin" />
+              <p>Loading student progress…</p>
+            </div>
+          ) : !error && students.length === 0 ? (
+            <div className="progress-empty-state">
+              <Users size={28} aria-hidden="true" />
+              <h3>No students on this roster</h3>
+              <p>Upload a student roster for this exam to see participation here.</p>
+            </div>
+          ) : !error ? (
+            <div className="progress-table-wrap">
+              <table className="progress-table">
+                <thead>
+                  <tr>
+                    <th scope="col">Student</th>
+                    <th scope="col">EID</th>
+                    <th scope="col">Status</th>
+                    <th scope="col">Started</th>
+                    <th scope="col">Ended</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {students.map((student) => (
+                    <tr key={student.student_id}>
+                      <td>
+                        <div className="progress-student-name">
+                          <span className="progress-student-avatar">
+                            {(student.student_name || "?")
+                              .trim()
+                              .charAt(0)
+                              .toUpperCase()}
+                          </span>
+                          <div>
+                            <strong>{student.student_name || "Unnamed student"}</strong>
+                            <span>{student.email}</span>
+                          </div>
+                        </div>
+                      </td>
+                      <td>{student.eid || "—"}</td>
+                      <td>
+                        <span className={statusClass(student)}>
+                          {getStatus(student)}
+                        </span>
+                      </td>
+                      <td>{formatDate(student.started_at)}</td>
+                      <td>{formatDate(student.ended_at)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : null}
+
+          {!loading && !error && students.length > 0 && (
+            <p className="progress-status-note">
+              {counts.completed} graded · {counts.flagged} flagged ·{" "}
+              {counts.awaitingReview} awaiting review
+            </p>
+          )}
+        </section>
       </main>
-
-      <footer className="home-footer">
-
-        <p>
-          OralExam AI
-        </p>
-
-        <p>
-          AI-assisted oral examination platform
-        </p>
-
-      </footer>
-
     </div>
   );
 }

@@ -83,6 +83,12 @@ export function validTimeLimit(value: number): boolean {
   return Number.isInteger(value) && value >= 1 && value <= 240;
 }
 
+export function odsTimeLimit(timeLimit: number, savedSettings: ExamSettings): number | null {
+  if (!validTimeLimit(timeLimit) || savedSettings.extendedTime !== true ||
+      ![1.25, 1.5, 2, 3].includes(savedSettings.extendedTimeMultiplier)) return null;
+  return timeLimit * savedSettings.extendedTimeMultiplier;
+}
+
 export function saveExamSettingsCategory(
   storage: SettingsStorage,
   examId: string,

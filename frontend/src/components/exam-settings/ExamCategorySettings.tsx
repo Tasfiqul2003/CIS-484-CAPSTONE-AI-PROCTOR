@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import {
   defaultExamSettings, hasCategoryChanges, loadExamSettings,
-  saveExamSettingsCategory, validMaxFollowUps, validTimeLimit,
+  saveExamSettingsCategory, validMaxFollowUps, validTimeLimit, odsTimeLimit,
 } from "./examSettings";
 import type { ExamSettings, ExamSettingsCategory } from "./examSettings";
 
@@ -15,6 +15,7 @@ export default function ExamCategorySettings({ examId, category }: {
   const [saved, setSaved] = useState(false);
   const [settingsError, setSettingsError] = useState("");
   const dirty = loaded && hasCategoryChanges(category, settings, savedSettings);
+  const extendedMinutes = odsTimeLimit(settings.timeLimit, savedSettings);
 
   useEffect(() => {
     setLoaded(false);
@@ -135,6 +136,16 @@ export default function ExamCategorySettings({ examId, category }: {
                 </small>
               </div>
             </label>
+            {extendedMinutes !== null && (
+              <div className="settings-notice" role="status" aria-live="polite" aria-atomic="true">
+                <strong>ODS extended time: {extendedMinutes} minutes</strong>
+                <span>
+                  {settings.timeLimit} minutes × {savedSettings.extendedTimeMultiplier} = {extendedMinutes} minutes.
+                  {" "}Based on saved ODS accommodations, for students with approved extended time.
+                  {" "}The standard time limit stays unchanged. This is a draft preview; live exam timing is not connected.
+                </span>
+              </div>
+            )}
           </div>
         </div>
       )}

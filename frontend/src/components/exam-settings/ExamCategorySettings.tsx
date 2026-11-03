@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import {
   defaultExamSettings, hasCategoryChanges, loadExamSettings,
-  saveExamSettingsCategory, validMaxFollowUps,
+  saveExamSettingsCategory, validMaxFollowUps, validTimeLimit,
 } from "./examSettings";
 import type { ExamSettings, ExamSettingsCategory } from "./examSettings";
 
@@ -54,6 +54,11 @@ export default function ExamCategorySettings({ examId, category }: {
 
   const saveSettings = () => {
     if (!loaded) return;
+    if (category === "time-scheduling" && !validTimeLimit(settings.timeLimit)) {
+      setSettingsError("Standard Time Limit must be a whole number from 1 to 240 minutes.");
+      document.getElementById("exam-time-limit")?.focus();
+      return;
+    }
     if (category === "ai-questioning" && settings.followUpQuestions && !validMaxFollowUps(settings.maxFollowUps)) {
       setSettingsError("Maximum Follow-Ups Per Question must be a whole number from 1 to 4.");
       document.getElementById("legacy-max-followups")?.focus();
@@ -109,14 +114,19 @@ export default function ExamCategorySettings({ examId, category }: {
               </span>
               <div className="settings-input-with-unit">
                 <input
+                  id="exam-time-limit"
                   type="number"
                   min="1"
                   max="240"
-                  value={settings.timeLimit}
+                  step="1"
+                  required
+                  aria-invalid={!validTimeLimit(settings.timeLimit)}
+                  aria-describedby={settingsError ? "category-settings-error" : undefined}
+                  value={Number.isNaN(settings.timeLimit) ? "" : settings.timeLimit}
                   onChange={(e) =>
                     updateSetting(
                       "timeLimit",
-                      Number(e.target.value)
+                      e.target.valueAsNumber
                     )
                   }
                 />

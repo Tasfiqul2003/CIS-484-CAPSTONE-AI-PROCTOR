@@ -20,6 +20,23 @@ const {
 const EXAM_A = 'synthetic-exam-a';
 const EXAM_B = 'synthetic-exam-b';
 
+test('invalid time limits cannot overwrite a saved draft', () => {
+  const storage = memoryStorage();
+  seed(storage, EXAM_A, { ...defaultExamSettings, timeLimit: 30 });
+  const before = storage.getItem(examSettingsStorageKey(EXAM_A));
+  for (const timeLimit of [0, -1, NaN, Infinity, 1.5, 241]) {
+    assert.throws(() => saveExamSettingsCategory(storage, EXAM_A, 'time-scheduling', {
+      ...defaultExamSettings, timeLimit,
+    }), /whole number from 1 to 240 minutes/);
+    assert.equal(storage.getItem(examSettingsStorageKey(EXAM_A)), before);
+  }
+  assert.equal(storage.writes, 0);
+  for (const timeLimit of [1, 240]) {
+    saveExamSettingsCategory(storage, EXAM_A, 'time-scheduling', { ...defaultExamSettings, timeLimit });
+    assert.equal(loadExamSettings(storage, EXAM_A).timeLimit, timeLimit);
+  }
+});
+
 function memoryStorage() {
   const values = new Map();
   let writes = 0;

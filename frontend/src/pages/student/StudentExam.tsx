@@ -3,6 +3,10 @@ import { useEffect, useRef, useState } from "react";
 
 type StartResponse = {
   session_id: string;
+  session_token?: string;
+  status: string;
+  deadline: string | null;
+  server_now: string;
   sequence_num: number;
   question: string;
 };
@@ -17,10 +21,11 @@ type AnswerResponse = {
 async function apiRequest<T>(
   endpoint: string,
   body: Record<string, unknown>,
+  token?: string,
 ): Promise<T> {
   const response = await fetch(`/api${endpoint}`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
     body: JSON.stringify(body),
   });
 
@@ -45,6 +50,19 @@ export default function StudentExam() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const started = useRef(false);
+  const sessionToken = useRef("");
+  const [remaining, setRemaining] = useState<number | null>(null);
+  const clock = useRef<{ deadline: number; serverNow: number; received: number } | null>(null);
+
+  useEffect(() => {
+    const tick = () => {
+      const value = clock.current;
+      if (value) setRemaining(Math.max(0, Math.ceil((value.deadline - value.serverNow - (performance.now() - value.received)) / 1000)));
+    };
+    const timer = window.setInterval(tick, 250);
+    tick();
+    return () => window.clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     // Avoid starting two sessions during React's development checks.
@@ -65,22 +83,48 @@ export default function StudentExam() {
       return;
     }
 
-    apiRequest<StartResponse>("/exam/start", {
-      student_id: studentId,
-      exam_template_id: examTemplateId,
-    })
-      .then((result) => {
-        setSessionId(result.session_id);
-        sessionStorage.setItem("oralexam_exam_session_id", result.session_id);
-        setQuestion(result.question);
-        setQuestionNumber(result.sequence_num);
-      })
-      .catch((err: unknown) => {
-        setError(
-          err instanceof Error ? err.message : "Unable to start the exam.",
-        );
-      })
-      .finally(() => setLoading(false));
+    const storageKey = `oralexam_attempt:${examTemplateId}:${studentId}`;
+    async function loadAttempt() {
+      let result: StartResponse;
+      const saved = sessionStorage.getItem(storageKey);
+      if (saved) {
+        const attempt = JSON.parse(saved) as { id: string; token: string };
+        const response = await fetch(`/api/exam/sessions/${encodeURIComponent(attempt.id)}`, {
+          headers: { Authorization: `Bearer ${attempt.token}` },
+        });
+        if (!response.ok) throw new Error("Unable to resume this attempt. Please contact your professor.");
+        result = await response.json();
+        sessionToken.current = attempt.token;
+      } else {
+        const token = sessionStorage.getItem(`oralexam_exam_token:${examTemplateId}:${studentId}`);
+        if (!token) throw new Error("Exam authorization is missing. Return to your exam list to start.");
+        result = await apiRequest<StartResponse>("/exam/start", {
+          student_id: studentId, exam_template_id: examTemplateId, student_token: token,
+        });
+        if (!result.session_token) throw new Error("Session authorization is missing.");
+        sessionToken.current = result.session_token;
+        sessionStorage.setItem(storageKey, JSON.stringify({ id: result.session_id, token: result.session_token }));
+      }
+      setSessionId(result.session_id);
+      sessionStorage.setItem("oralexam_exam_session_id", result.session_id);
+      setQuestion(result.question);
+      setQuestionNumber(result.sequence_num);
+      if (result.status !== "in_progress") {
+        setCompletedQuestions(result.sequence_num);
+        setShowConfirmation(true);
+        return;
+      }
+      if (result.deadline !== null) {
+        const deadline = Date.parse(result.deadline);
+        const serverNow = Date.parse(result.server_now);
+        if (!Number.isFinite(deadline) || !Number.isFinite(serverNow)) throw new Error("The server returned invalid timing information.");
+        clock.current = { deadline, serverNow, received: performance.now() };
+        setRemaining(Math.max(0, Math.ceil((deadline - serverNow) / 1000)));
+      }
+    }
+    void loadAttempt().catch((err: unknown) => {
+      setError(err instanceof Error ? err.message : "Unable to start the exam.");
+    }).finally(() => setLoading(false));
   }, []);
 
   const handleNext = async () => {
@@ -93,7 +137,7 @@ export default function StudentExam() {
       const result = await apiRequest<AnswerResponse>("/exam/answer", {
         session_id: sessionId,
         answer_transcript: answer.trim(),
-      });
+      }, sessionToken.current);
 
       if (result.done) {
         setCompletedQuestions(questionNumber);
@@ -241,6 +285,9 @@ export default function StudentExam() {
         </div>
         <div className="student-exam-progress">
           Question {questionNumber}
+          <div className="exam-countdown" role="timer" aria-label="Time remaining" aria-live="off">
+            {remaining === null ? "No time limit" : `Time left: ${Math.floor(remaining / 60)}:${String(remaining % 60).padStart(2, "0")}`}
+          </div>
         </div>
       </header>
 
@@ -251,6 +298,7 @@ export default function StudentExam() {
           </div>
 
           <h1>{question}</h1>
+          {remaining === 0 && <p role="status">Time has expired. Submit your current response to finish the attempt.</p>}
 
           <div className="ai-avatar-container">
             <div className="ai-avatar">AI</div>

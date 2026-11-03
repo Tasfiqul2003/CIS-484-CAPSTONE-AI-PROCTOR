@@ -3,6 +3,7 @@ import os
 from uuid import UUID
 import csv
 import io
+from datetime import timedelta
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, File, UploadFile, Header
@@ -180,8 +181,9 @@ def start_exam(req: StartRequest, db: Session = Depends(get_db)):
         )
 
     session_id = str(db.execute(
-        text("""INSERT INTO exam_sessions (student_id, exam_template_id)
-                VALUES (CAST(:s AS uuid), CAST(:t AS uuid)) RETURNING id"""),
+        text("""INSERT INTO exam_sessions (student_id, exam_template_id, time_limit_minutes)
+                SELECT CAST(:s AS uuid), id, time_limit_minutes FROM exam_templates
+                WHERE id = CAST(:t AS uuid) RETURNING id"""),
         {"s": str(req.student_id), "t": str(req.exam_template_id)},
     ).scalar_one())
 
@@ -213,14 +215,41 @@ def start_exam(req: StartRequest, db: Session = Depends(get_db)):
         exam_template_id=str(req.exam_template_id),
         purpose="student_session",
         session_id=session_id,
-        minutes=180,
+        minutes=max(180, (template["time_limit_minutes"] or 0) + 30),
     )
+    state = get_session_state(UUID(session_id), authorization=f"Bearer {session_token}", db=db)
     return {
+        **state,
         "session_id": session_id,
         "sequence_num": 1,
         "question": question,
         "session_token": session_token,
     }
+
+
+@router.get("/sessions/{session_id}")
+def get_session_state(session_id: UUID, authorization: str | None = Header(default=None),
+                      db: Session = Depends(get_db)):
+    claims = read_student_token(authorization, expected_purpose="student_session")
+    if claims.get("session_id") != str(session_id):
+        raise HTTPException(403, "Student token does not match this session.")
+    row = db.execute(text("""SELECT student_id, exam_template_id, status, started_at,
+        time_limit_minutes, now() AS server_now FROM exam_sessions
+        WHERE id = CAST(:sid AS uuid)"""), {"sid": str(session_id)}).mappings().first()
+    if not row:
+        raise HTTPException(404, "Session not found")
+    if claims.get("sub") != str(row["student_id"]) or claims.get("exam_template_id") != str(row["exam_template_id"]):
+        raise HTTPException(403, "Student token does not match this exam session.")
+    question = db.execute(text("""SELECT sequence_num, question_text FROM interactions
+        WHERE session_id = CAST(:sid AS uuid) ORDER BY sequence_num DESC LIMIT 1"""),
+        {"sid": str(session_id)}).mappings().first()
+    deadline = (row["started_at"] + timedelta(minutes=row["time_limit_minutes"])
+                if row["time_limit_minutes"] is not None else None)
+    return {"session_id": str(session_id), "status": row["status"],
+            "server_now": row["server_now"].isoformat(),
+            "deadline": deadline.isoformat() if deadline else None,
+            "sequence_num": question["sequence_num"] if question else 0,
+            "question": question["question_text"] if question else ""}
 
 
 @router.post("/answer")
@@ -238,7 +267,7 @@ def submit_answer(
         raise HTTPException(403, "Student token does not match this session.")
 
     session = db.execute(
-        text("""SELECT s.status, s.student_id, s.exam_template_id,
+        text("""SELECT s.status, s.student_id, s.exam_template_id, s.time_limit_minutes,
                        EXTRACT(EPOCH FROM (now() - s.started_at)) / 60 AS elapsed_min
                 FROM exam_sessions s WHERE s.id = CAST(:sid AS uuid)"""),
         {"sid": sid},
@@ -285,8 +314,8 @@ def submit_answer(
         {"sid": sid},
     ).mappings().all()]
 
-    out_of_time = (template["time_limit_minutes"] is not None
-                   and session["elapsed_min"] >= template["time_limit_minutes"])
+    out_of_time = (session["time_limit_minutes"] is not None
+                   and session["elapsed_min"] >= session["time_limit_minutes"])
     if out_of_time or len(history) >= MAX_QUESTIONS:
         end_session(db, sid)
         db.commit()
@@ -1497,6 +1526,73 @@ def get_exam_roster(
             SELECT s.name, s.email, s.eid
             FROM exam_roster AS r
             JOIN students AS s ON s.id = r.student_id
+            WHERE r.exam_template_id = CAST(:exam_id AS uuid)
+            ORDER BY lower(s.name), lower(s.email)
+        """),
+        {"exam_id": str(exam_template_id)},
+    ).mappings().all()
+
+    return [dict(row) for row in rows]
+
+
+@router.get("/templates/{exam_template_id}/progress")
+def get_exam_progress(
+    exam_template_id: UUID,
+    account: dict = Depends(require_professor),
+    db: Session = Depends(get_db),
+):
+    professor_id = account.get("professor_id")
+    if not professor_id:
+        raise HTTPException(
+            status_code=403,
+            detail="Professor account required.",
+        )
+
+    exam = db.execute(
+        text("""
+            SELECT id
+            FROM exam_templates
+            WHERE id = CAST(:exam_id AS uuid)
+              AND professor_id = CAST(:professor_id AS uuid)
+        """),
+        {
+            "exam_id": str(exam_template_id),
+            "professor_id": str(professor_id),
+        },
+    ).first()
+
+    if not exam:
+        raise HTTPException(
+            status_code=404,
+            detail="Exam not found or you do not own this exam.",
+        )
+
+    rows = db.execute(
+        text("""
+            SELECT
+                s.id AS student_id,
+                s.name AS student_name,
+                s.email,
+                s.eid,
+                latest.id AS session_id,
+                latest.status,
+                latest.started_at,
+                latest.ended_at
+            FROM exam_roster AS r
+            JOIN students AS s
+              ON s.id = r.student_id
+            LEFT JOIN LATERAL (
+                SELECT
+                    es.id,
+                    es.status,
+                    es.started_at,
+                    es.ended_at
+                FROM exam_sessions AS es
+                WHERE es.student_id = s.id
+                  AND es.exam_template_id = r.exam_template_id
+                ORDER BY es.started_at DESC, es.id DESC
+                LIMIT 1
+            ) AS latest ON TRUE
             WHERE r.exam_template_id = CAST(:exam_id AS uuid)
             ORDER BY lower(s.name), lower(s.email)
         """),

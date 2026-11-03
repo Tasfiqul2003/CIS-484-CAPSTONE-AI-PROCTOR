@@ -77,7 +77,7 @@ def plan_turn(req: AnswerRequest, claims: dict) -> dict:
     db = open_session()
     try:
         session = db.execute(
-            text("""SELECT s.status, s.student_id, s.exam_template_id,
+            text("""SELECT s.status, s.student_id, s.exam_template_id, s.time_limit_minutes,
                            EXTRACT(EPOCH FROM (now() - s.started_at)) / 60 AS elapsed_min
                     FROM exam_sessions s WHERE s.id = CAST(:sid AS uuid)"""),
             {"sid": sid},
@@ -135,8 +135,8 @@ def plan_turn(req: AnswerRequest, claims: dict) -> dict:
             "curve": template["difficulty_curve"],
         }
 
-        out_of_time = (template["time_limit_minutes"] is not None
-                       and session["elapsed_min"] >= template["time_limit_minutes"])
+        out_of_time = (session["time_limit_minutes"] is not None
+                       and session["elapsed_min"] >= session["time_limit_minutes"])
         if out_of_time or len(history) >= MAX_QUESTIONS:
             return {**plan, "kind": "done", "reason": "time or question limit reached"}
 

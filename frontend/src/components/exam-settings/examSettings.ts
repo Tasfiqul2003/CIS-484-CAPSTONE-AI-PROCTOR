@@ -79,12 +79,25 @@ export function validMaxFollowUps(value: number): boolean {
   return Number.isInteger(value) && value >= 1 && value <= 4;
 }
 
+export function validTimeLimit(value: number): boolean {
+  return Number.isInteger(value) && value >= 1 && value <= 240;
+}
+
+export function odsTimeLimit(timeLimit: number, savedSettings: ExamSettings): number | null {
+  if (!validTimeLimit(timeLimit) || savedSettings.extendedTime !== true ||
+      ![1.25, 1.5, 2, 3].includes(savedSettings.extendedTimeMultiplier)) return null;
+  return timeLimit * savedSettings.extendedTimeMultiplier;
+}
+
 export function saveExamSettingsCategory(
   storage: SettingsStorage,
   examId: string,
   category: ExamSettingsCategory,
   settings: ExamSettings,
 ): StoredSettings {
+  if (category === "time-scheduling" && !validTimeLimit(settings.timeLimit)) {
+    throw new Error("Standard Time Limit must be a whole number from 1 to 240 minutes.");
+  }
   if (category === "ai-questioning" && settings.followUpQuestions && !validMaxFollowUps(settings.maxFollowUps)) {
     throw new Error("Maximum Follow-Ups Per Question must be a whole number from 1 to 4.");
   }

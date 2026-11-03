@@ -9116,3 +9116,333 @@ code {
   height: 34px;
   flex: 0 0 34px;
 }
+.exam-countdown {
+  margin-top: 6px;
+  padding: 6px 10px;
+  border: 1px solid #ddd6fe;
+  border-radius: 8px;
+  background: #f5f3ff;
+  color: #4c1d95;
+  font-size: 0.875rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* OralExam AI: professor exam progress */
+.progress-back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--oe-text, #40365f);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.progress-back-link:hover {
+  color: var(--oe-accent, #7054b8);
+}
+
+.dashboard-header:has(.progress-back-link) {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.progress-refresh-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 15px;
+  border: 1px solid var(--oe-border, #ddd6ed);
+  border-radius: 10px;
+  background: var(--oe-card, #fff);
+  color: var(--oe-text, #40365f);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.progress-refresh-button:hover:not(:disabled) {
+  border-color: var(--oe-accent, #7054b8);
+}
+
+.progress-refresh-button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.progress-spin {
+  animation: progress-spin-animation 1s linear infinite;
+}
+
+@keyframes progress-spin-animation {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.progress-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+  margin: 28px 0 36px;
+}
+
+.progress-summary-card {
+  display: grid;
+  grid-template-columns: 30px 1fr;
+  align-items: center;
+  gap: 5px 10px;
+  min-width: 0;
+  padding: 20px;
+  border: 1px solid var(--oe-border, #e5dff0);
+  border-radius: 14px;
+  background: var(--oe-card, #fff);
+  color: var(--oe-text, #40365f);
+}
+
+.progress-summary-card > svg {
+  grid-row: span 2;
+  color: var(--oe-accent, #7054b8);
+}
+
+.progress-summary-card > span {
+  font-size: 13px;
+  color: var(--oe-muted, #716b80);
+}
+
+.progress-summary-card > strong {
+  font-size: 26px;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+}
+
+.progress-table-section {
+  min-width: 0;
+  margin-bottom: 36px;
+}
+
+.progress-count {
+  color: var(--oe-muted, #716b80);
+  font-size: 13px;
+}
+
+.progress-table-wrap {
+  overflow-x: auto;
+  margin-top: 18px;
+  border: 1px solid var(--oe-border, #e5dff0);
+  border-radius: 14px;
+  background: var(--oe-card, #fff);
+}
+
+.progress-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+.progress-table th,
+.progress-table td {
+  padding: 15px 18px;
+  border-bottom: 1px solid var(--oe-border, #eae5f1);
+  vertical-align: middle;
+}
+
+.progress-table th {
+  background: var(--oe-table-header, #f7f5fb);
+  color: var(--oe-muted, #716b80);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.055em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.progress-table td {
+  color: var(--oe-text, #40365f);
+  font-size: 13px;
+}
+
+.progress-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.progress-table tbody tr:hover {
+  background: var(--oe-hover, #faf9fd);
+}
+
+.progress-student-name {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-width: 190px;
+}
+
+.progress-student-avatar {
+  display: grid;
+  flex: 0 0 36px;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--oe-avatar-bg, #eee8fb);
+  color: var(--oe-accent, #6044a3);
+  font-weight: 700;
+}
+
+.progress-student-name > div {
+  display: grid;
+  gap: 4px;
+}
+
+.progress-student-name strong {
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.progress-student-name > div > span {
+  color: var(--oe-muted, #716b80);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.progress-status {
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 9px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  font-size: 12px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.status-not-started {
+  color: #5d5868;
+  background: #f0eef4;
+  border-color: #dfdbe6;
+}
+
+.status-in-progress {
+  color: #285a87;
+  background: #eaf3fc;
+  border-color: #c8def3;
+}
+
+.status-pending {
+  color: #765015;
+  background: #fff4d9;
+  border-color: #eed9a4;
+}
+
+.status-graded {
+  color: #246448;
+  background: #e8f5ee;
+  border-color: #c4e5d2;
+}
+
+.status-flagged {
+  color: #8c3038;
+  background: #fbeaec;
+  border-color: #efc9ce;
+}
+
+.status-abandoned,
+.status-unknown {
+  color: #5d5868;
+  background: #f0eef4;
+  border-color: #dfdbe6;
+}
+
+.progress-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 210px;
+  margin-top: 18px;
+  padding: 28px;
+  border: 1px dashed var(--oe-border, #dcd4e9);
+  border-radius: 14px;
+  color: var(--oe-muted, #716b80);
+  text-align: center;
+}
+
+.progress-empty-state h3,
+.progress-empty-state p {
+  margin: 0;
+}
+
+.progress-empty-state h3 {
+  color: var(--oe-text, #40365f);
+  font-size: 16px;
+}
+
+.progress-empty-state p {
+  font-size: 13px;
+}
+
+.progress-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-top: 22px;
+  padding: 16px;
+  border: 1px solid #efc9ce;
+  border-radius: 12px;
+  background: #fbeaec;
+  color: #8c3038;
+}
+
+.progress-error p {
+  margin: 5px 0 10px;
+  overflow-wrap: anywhere;
+}
+
+.progress-error button {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 700;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.progress-status-note {
+  margin-top: 14px;
+  color: var(--oe-muted, #716b80);
+  font-size: 12px;
+}
+
+@media (max-width: 850px) {
+  .progress-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .progress-table {
+    min-width: 760px;
+  }
+}
+
+@media (max-width: 480px) {
+  .progress-summary {
+    gap: 10px;
+  }
+
+  .progress-summary-card {
+    padding: 14px;
+  }
+
+  .dashboard-header:has(.progress-back-link) {
+    align-items: flex-start;
+  }
+
+  .progress-back-link {
+    font-size: 13px;
+  }
+}

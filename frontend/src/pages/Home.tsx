@@ -1,9 +1,6 @@
 import {
   ArrowRight,
-  BookOpenCheck,
   GraduationCap,
-  Mic2,
-  ShieldCheck,
   Sparkles,
   UserRound,
 } from "lucide-react";
@@ -97,9 +94,6 @@ export default function Home() {
 
         <section className="features-section" aria-label="Platform features">
           <article className="feature">
-            <span className="feature-icon" aria-hidden="true">
-              <Mic2 size={19} strokeWidth={1.9} />
-            </span>
             <div>
               <h3>Interactive oral exams</h3>
               <p>Students respond verbally in a guided exam experience.</p>
@@ -107,9 +101,6 @@ export default function Home() {
           </article>
 
           <article className="feature">
-            <span className="feature-icon" aria-hidden="true">
-              <ShieldCheck size={19} strokeWidth={1.9} />
-            </span>
             <div>
               <h3>Identity verification</h3>
               <p>Verification steps help connect each exam to its student.</p>
@@ -117,9 +108,6 @@ export default function Home() {
           </article>
 
           <article className="feature">
-            <span className="feature-icon" aria-hidden="true">
-              <BookOpenCheck size={19} strokeWidth={1.9} />
-            </span>
             <div>
               <h3>Professor controls</h3>
               <p>Manage exams, question banks, materials, and submissions.</p>

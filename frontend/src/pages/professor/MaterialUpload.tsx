@@ -228,7 +228,7 @@ export default function MaterialUpload() {
                 credentials: "include",
               });
             } finally {
-              window.location.href = "/professor/login";
+              window.location.href = "/";
             }
           }}
         >

@@ -242,7 +242,7 @@ export default function ProfessorExams() {
                 credentials: "include",
               });
             } finally {
-              window.location.href = "/professor/login";
+              window.location.href = "/";
             }
           }}
         >

@@ -114,7 +114,7 @@ export default function ProfessorDashboard() {
         credentials: "include",
       });
     } finally {
-      window.location.href = "/professor/login";
+      window.location.href = "/";
     }
   }
 
@@ -272,10 +272,6 @@ export default function ProfessorDashboard() {
         <section className="dashboard-welcome">
           <p className="eyebrow">PROFESSOR PORTAL</p>
           <h1>Welcome back, {professorName}.</h1>
-          <p>
-            Your oral examinations, student activity, and grading
-            workflow — all in one place.
-          </p>
         </section>
 
         {error && (

@@ -9435,3 +9435,16 @@ code {
     font-size: 13px;
   }
 }
+
+
+/* Professor login: give the brand mark more prominence */
+.professor-login-page .simple-header .logo-icon:has(.oralexam-mark) {
+  width: 54px;
+  height: 54px;
+  min-width: 54px;
+}
+
+.professor-login-page .simple-header .oralexam-mark {
+  width: 48px;
+  height: 48px;
+}

@@ -9116,3 +9116,14 @@ code {
   height: 34px;
   flex: 0 0 34px;
 }
+.exam-countdown {
+  margin-top: 6px;
+  padding: 6px 10px;
+  border: 1px solid #ddd6fe;
+  border-radius: 8px;
+  background: #f5f3ff;
+  color: #4c1d95;
+  font-size: 0.875rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}

@@ -12,6 +12,7 @@ export default function ExamCategorySettings({ examId, category }: {
   const [settings, setSettings] = useState<ExamSettings>(defaultExamSettings);
   const [savedSettings, setSavedSettings] = useState<ExamSettings>(defaultExamSettings);
   const [loaded, setLoaded] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [settingsError, setSettingsError] = useState("");
   const dirty = loaded && hasCategoryChanges(category, settings, savedSettings);
@@ -21,14 +22,31 @@ export default function ExamCategorySettings({ examId, category }: {
     setLoaded(false);
     setSaved(false);
     setSettingsError("");
-    try {
-      const draft = loadExamSettings(localStorage, examId);
-      setSettings(draft);
-      setSavedSettings(draft);
-      setLoaded(true);
-    } catch {
-      setSettingsError("Unable to load these settings from browser storage. Existing saved data has not been changed.");
+    const controller = new AbortController();
+    async function load() {
+      try {
+        const draft = loadExamSettings(localStorage, examId);
+        if (category === "time-scheduling") {
+          const response = await fetch(`/api/exam/templates/${encodeURIComponent(examId)}/time-settings`, {
+            credentials: "include", signal: controller.signal,
+          });
+          if (!response.ok) throw new Error("Unable to load the saved exam time from the server.");
+          const data = await response.json();
+          if (data.time_limit_minutes !== null && !validTimeLimit(data.time_limit_minutes)) {
+            setSettingsError("The saved time is outside 1-240 minutes. Enter a valid time and save to correct it.");
+          }
+          draft.timeLimit = validTimeLimit(data.time_limit_minutes) ? data.time_limit_minutes : NaN;
+        }
+        if (controller.signal.aborted) return;
+        setSettings(draft);
+        setSavedSettings(draft);
+        setLoaded(true);
+      } catch (error) {
+        if (!controller.signal.aborted) setSettingsError(error instanceof Error ? error.message : "Unable to load settings.");
+      }
     }
+    void load();
+    return () => controller.abort();
   }, [examId, category]);
 
   useEffect(() => {
@@ -53,8 +71,8 @@ export default function ExamCategorySettings({ examId, category }: {
     setSettingsError("");
   };
 
-  const saveSettings = () => {
-    if (!loaded) return;
+  const saveSettings = async () => {
+    if (!loaded || saving) return;
     if (category === "time-scheduling" && !validTimeLimit(settings.timeLimit)) {
       setSettingsError("Standard Time Limit must be a whole number from 1 to 240 minutes.");
       document.getElementById("exam-time-limit")?.focus();
@@ -65,14 +83,29 @@ export default function ExamCategorySettings({ examId, category }: {
       document.getElementById("legacy-max-followups")?.focus();
       return;
     }
+    setSaving(true);
     try {
-      const next = saveExamSettingsCategory(localStorage, examId, category, settings);
+      let next = settings;
+      if (category === "time-scheduling") {
+        const response = await fetch(`/api/exam/templates/${encodeURIComponent(examId)}/time-settings`, {
+          method: "PUT", credentials: "include", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ time_limit_minutes: settings.timeLimit }),
+        });
+        if (!response.ok) throw new Error("Unable to save the exam time to the server. Your changes remain unsaved.");
+        const data = await response.json();
+        if (!validTimeLimit(data.time_limit_minutes)) throw new Error("The server returned an invalid time limit. Reload to verify the saved value.");
+        next = { ...settings, timeLimit: data.time_limit_minutes };
+      } else {
+        next = saveExamSettingsCategory(localStorage, examId, category, settings);
+      }
       setSettings(next);
       setSavedSettings(next);
       setSettingsError("");
       setSaved(true);
-    } catch {
-      setSettingsError("Unable to save these settings in browser storage. Your changes remain unsaved.");
+    } catch (error) {
+      setSettingsError(error instanceof Error ? error.message : "Unable to save settings. Your changes remain unsaved.");
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -82,14 +115,14 @@ export default function ExamCategorySettings({ examId, category }: {
         <div>
           <p className="eyebrow">CONFIGURATION</p>
           <h2>Exam Settings</h2>
-          <p>Save this category as a browser-local draft for this exam.</p>
+          <p>{category === "time-scheduling" ? "Save the standard time limit to the server for new exam attempts." : "Save this category as a browser-local draft for this exam."}</p>
           <p role="status">{dirty ? "Unsaved changes" : loaded ? "No unsaved changes" : "Settings unavailable"}</p>
         </div>
-        <button type="button" disabled={!loaded} className={saved ? "settings-save-button saved" : "settings-save-button"} onClick={saveSettings}>
-          {saved ? "✓ Settings Saved" : "Save Settings"}
+        <button type="button" disabled={!loaded || saving} className={saved ? "settings-save-button saved" : "settings-save-button"} onClick={saveSettings}>
+          {saving ? "Saving..." : saved ? "✓ Settings Saved" : "Save Settings"}
         </button>
       </div>
-      <p className="settings-notice">These settings remain separate from Avatar &amp; Interaction drafts, shared previews, and saved exam policies. Saving this category does not change live exam behavior.</p>
+      <p className="settings-notice">{category === "time-scheduling" ? "The standard time limit applies to new attempts. Existing attempts keep their starting limit. ODS adjustments below are browser-local previews and are not applied to live attempts." : <>These settings remain separate from Avatar &amp; Interaction drafts, shared previews, and saved exam policies. Saving this category does not change live exam behavior.</>}</p>
       {settingsError && <p id="category-settings-error" role="alert">{settingsError}</p>}
       {loaded && <>
       {category === "time-scheduling" && (
@@ -108,6 +141,7 @@ export default function ExamCategorySettings({ examId, category }: {
               </p>
             </div>
           </div>
+          <p>The server may have no time limit yet; enter a value to set one. Browser-local time drafts are not imported automatically.</p>
           <div className="settings-grid">
             <label className="settings-field">
               <span>
@@ -116,6 +150,7 @@ export default function ExamCategorySettings({ examId, category }: {
               <div className="settings-input-with-unit">
                 <input
                   id="exam-time-limit"
+                  disabled={saving}
                   type="number"
                   min="1"
                   max="240"
@@ -142,7 +177,7 @@ export default function ExamCategorySettings({ examId, category }: {
                 <span>
                   {settings.timeLimit} minutes × {savedSettings.extendedTimeMultiplier} = {extendedMinutes} minutes.
                   {" "}Based on saved ODS accommodations, for students with approved extended time.
-                  {" "}The standard time limit stays unchanged. This is a draft preview; live exam timing is not connected.
+                  {" "}The standard time limit stays unchanged. This ODS adjustment is a preview and is not applied to live attempts.
                 </span>
               </div>
             )}

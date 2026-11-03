@@ -101,6 +101,8 @@ export default function StudentExams() {
         throw new Error("The student identity did not match. Please start verification again.");
       }
 
+      if (!data.student_token) throw new Error("The server did not return exam authorization.");
+      sessionStorage.setItem(`oralexam_exam_token:${exam.id}:${studentId}`, data.student_token);
       const query = new URLSearchParams({ templateId: exam.id, studentId });
       window.location.href = `/student/exam?${query.toString()}`;
     } catch (err) {

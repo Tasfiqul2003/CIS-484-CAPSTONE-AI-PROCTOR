@@ -11,6 +11,7 @@ from .review import router as review_router
 from .stream import router as stream_router
 from .auth import router as auth_router, validate_auth_secret
 from .avatar_policy import router as avatar_policy_router
+from .time_settings import router as time_settings_router
 
 app = FastAPI(title="AI Oral Exam Proctor")
 
@@ -25,6 +26,7 @@ app.include_router(review_router)
 app.include_router(stream_router)
 app.include_router(auth_router)
 app.include_router(avatar_policy_router)
+app.include_router(time_settings_router)
 
 
 @app.get("/")

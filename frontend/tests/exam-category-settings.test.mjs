@@ -14,11 +14,48 @@ const compiled = ts.transpileModule(source, {
 assert.deepEqual(compiled.diagnostics.filter(item => item.category === ts.DiagnosticCategory.Error), []);
 const {
   defaultExamSettings, categorySettingKeys, examSettingsStorageKey,
-  loadExamSettings, saveExamSettingsCategory, hasCategoryChanges,
+  loadExamSettings, saveExamSettingsCategory, hasCategoryChanges, odsTimeLimit,
 } = await import(`data:text/javascript;base64,${Buffer.from(compiled.outputText).toString('base64')}`);
 
 const EXAM_A = 'synthetic-exam-a';
 const EXAM_B = 'synthetic-exam-b';
+
+test('ODS time preview uses saved accommodations and preserves the standard limit', () => {
+  const storage = memoryStorage();
+  const ods = { ...defaultExamSettings, extendedTime: true, extendedTimeMultiplier: 1.5 };
+  assert.equal(odsTimeLimit(30, loadExamSettings(storage, EXAM_A)), null);
+  saveExamSettingsCategory(storage, EXAM_A, 'ods-accommodations', ods);
+  const saved = loadExamSettings(storage, EXAM_A);
+  assert.equal(odsTimeLimit(30, saved), 45);
+  assert.equal(odsTimeLimit(2, saved), 3);
+  for (const multiplier of [1.25, 1.5, 2, 3]) {
+    assert.equal(odsTimeLimit(1, { ...saved, extendedTimeMultiplier: multiplier }), multiplier);
+  }
+  for (const time of [0, -1, NaN, 241]) assert.equal(odsTimeLimit(time, saved), null);
+  assert.equal(odsTimeLimit(30, { ...saved, extendedTimeMultiplier: 0 }), null);
+  assert.equal(odsTimeLimit(30, { ...saved, extendedTime: false }), null);
+  assert.equal(odsTimeLimit(30, loadExamSettings(storage, EXAM_B)), null);
+  saveExamSettingsCategory(storage, EXAM_A, 'time-scheduling', { ...saved, timeLimit: 20 });
+  assert.equal(loadExamSettings(storage, EXAM_A).timeLimit, 20);
+  assert.equal(odsTimeLimit(20, loadExamSettings(storage, EXAM_A)), 30);
+});
+
+test('invalid time limits cannot overwrite a saved draft', () => {
+  const storage = memoryStorage();
+  seed(storage, EXAM_A, { ...defaultExamSettings, timeLimit: 30 });
+  const before = storage.getItem(examSettingsStorageKey(EXAM_A));
+  for (const timeLimit of [0, -1, NaN, Infinity, 1.5, 241]) {
+    assert.throws(() => saveExamSettingsCategory(storage, EXAM_A, 'time-scheduling', {
+      ...defaultExamSettings, timeLimit,
+    }), /whole number from 1 to 240 minutes/);
+    assert.equal(storage.getItem(examSettingsStorageKey(EXAM_A)), before);
+  }
+  assert.equal(storage.writes, 0);
+  for (const timeLimit of [1, 240]) {
+    saveExamSettingsCategory(storage, EXAM_A, 'time-scheduling', { ...defaultExamSettings, timeLimit });
+    assert.equal(loadExamSettings(storage, EXAM_A).timeLimit, timeLimit);
+  }
+});
 
 function memoryStorage() {
   const values = new Map();

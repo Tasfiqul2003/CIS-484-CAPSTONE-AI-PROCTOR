@@ -33,7 +33,7 @@ def confirm_grades(
 
     session = db.execute(
         text("""
-            SELECT s.status, t.professor_id AS exam_professor_id
+            SELECT s.status, s.developer_demo, t.professor_id AS exam_professor_id
             FROM exam_sessions AS s
             JOIN exam_templates AS t ON t.id = s.exam_template_id
             WHERE s.id = CAST(:sid AS uuid)
@@ -49,6 +49,8 @@ def confirm_grades(
         or str(session["exam_professor_id"]) != str(professor_id)
     ):
         raise HTTPException(404, "Session not found")
+    if session.get("developer_demo", False):
+        raise HTTPException(409, "Developer demo attempts cannot receive assessment grades.")
     if session["status"] not in ("pending_grading", "flagged", "graded"):
         raise HTTPException(409, f"Session is {session['status']}, not ready for review")
 

@@ -369,6 +369,13 @@ class DeveloperPlanTests(unittest.TestCase):
         self.assertNotIn("capabilities: [gpu]", compose)
         self.assertNotIn("--gpus", plan["core"])
 
+    def test_demo_opt_in_is_confined_to_the_dedicated_developer_backend(self):
+        developer = (ROOT / "compose.developer.yaml").read_text()
+        normal = (ROOT / "docker-compose.yml").read_text()
+        self.assertIn('DEVELOPER_DEMO_MODE: "1"', developer)
+        self.assertNotIn("DEVELOPER_DEMO_MODE", normal)
+        self.assertNotIn("DEVELOPER_DEMO_MODE", launcher.validate_choices(choices()))
+
     def test_disabling_local_ai_preserves_configured_endpoint_and_no_unavailable_flags(self):
         plan = launcher.build_plan(ROOT, choices(), "synthetic-model", "https://synthetic.invalid:11434/")
         self.assertFalse(plan["local_ai"])
@@ -486,6 +493,8 @@ class DeveloperProcessTests(unittest.TestCase):
 
     def test_missing_local_model_never_downloads_or_stops_borrowed_ollama(self):
         plan = launcher.build_plan(ROOT, choices(True), "synthetic-missing", "http://synthetic.invalid")
+        frontend = Mock()
+        frontend.poll.return_value = None
 
         def metadata(path):
             return {"version": "synthetic-1"} if path == "/api/version" else {"models": []}
@@ -493,13 +502,21 @@ class DeveloperProcessTests(unittest.TestCase):
         with patch.object(launcher, "run_command", return_value="") as run, \
                 patch.object(launcher, "check_free_ports"), \
                 patch.object(launcher, "local_json", side_effect=metadata) as local, \
-                patch.object(launcher.subprocess, "Popen") as popen, \
+                patch.object(launcher, "wait_for_http"), \
+                patch.object(launcher.subprocess, "Popen", return_value=frontend) as popen, \
+                patch.object(launcher.webbrowser, "open") as browser, \
+                patch.object(launcher.time, "sleep", side_effect=KeyboardInterrupt), \
                 redirect_stdout(self.output):
-            with self.assertRaisesRegex(launcher.StartupError, "not installed"):
+            with self.assertRaises(KeyboardInterrupt):
                 launcher.launch(ROOT, inventory(), plan, {})
         self.assertEqual([call.args[0] for call in local.call_args_list], ["/api/version", "/api/tags"])
-        self.assertEqual(run.call_count, 1)
-        popen.assert_not_called()
+        self.assertEqual([call.args[0] for call in run.call_args_list], [
+            plan["compose"] + ["ps", "--status", "running", "-q"], plan["core"], plan["compose"] + ["stop"],
+        ])
+        self.assertEqual(popen.call_args.args[0], plan["frontend"])
+        browser.assert_called_once()
+        self.assertIn("not installed", self.output.getvalue())
+        self.assertIn("labeled developer demo fallback", self.output.getvalue())
 
     def test_frontend_failure_cleans_core_and_owned_process_but_leaves_borrowed_ai(self):
         plan = launcher.build_plan(ROOT, choices(True), "synthetic-model", "http://synthetic.invalid")
@@ -530,23 +547,26 @@ class DeveloperProcessTests(unittest.TestCase):
         self.assertEqual(run.call_args.args[0], plan["compose"] + ["stop"])
         browser.assert_not_called()
 
-    def test_owned_local_ai_is_cleaned_if_model_is_missing_after_start(self):
+    def test_missing_model_keeps_core_available_and_owned_ai_is_cleaned_at_session_end(self):
         plan = launcher.build_plan(ROOT, choices(True), "synthetic-model", "http://synthetic.invalid")
-        ai = Mock()
-        ai.poll.return_value = None
+        ai, frontend = Mock(), Mock()
+        ai.poll.return_value = frontend.poll.return_value = None
         with patch.object(launcher, "run_command", return_value="") as run, \
                 patch.object(launcher, "check_free_ports"), \
                 patch.object(launcher, "local_json", return_value=None), \
                 patch.object(launcher, "wait_for_http"), \
-                patch.object(launcher.subprocess, "Popen", return_value=ai) as popen, \
+                patch.object(launcher.subprocess, "Popen", side_effect=[ai, frontend]) as popen, \
+                patch.object(launcher.webbrowser, "open"), \
+                patch.object(launcher.time, "sleep", side_effect=KeyboardInterrupt), \
                 redirect_stdout(self.output):
-            with self.assertRaisesRegex(launcher.StartupError, "not installed"):
+            with self.assertRaises(KeyboardInterrupt):
                 launcher.launch(ROOT, inventory(), plan, {})
-        self.assertEqual(popen.call_args.args[0], [inventory()["ollama"], "serve"])
-        self.assertFalse(popen.call_args.kwargs["shell"])
-        self.assertEqual(popen.call_args.kwargs["env"]["OLLAMA_HOST"], "127.0.0.1:11434")
+        self.assertEqual(popen.call_args_list[0].args[0], [inventory()["ollama"], "serve"])
+        self.assertFalse(popen.call_args_list[0].kwargs["shell"])
+        self.assertEqual(popen.call_args_list[0].kwargs["env"]["OLLAMA_HOST"], "127.0.0.1:11434")
+        self.assertEqual(popen.call_args_list[1].args[0], plan["frontend"])
         ai.terminate.assert_called_once()
-        self.assertEqual(run.call_count, 1)
+        self.assertIn(plan["core"], [call.args[0] for call in run.call_args_list])
 
     def test_failed_frontend_and_compose_cleanup_still_stops_owned_ai(self):
         plan = launcher.build_plan(ROOT, choices(True), "synthetic-model", "http://synthetic.invalid")
@@ -581,8 +601,10 @@ class DeveloperProcessTests(unittest.TestCase):
         self.assertIn("Frontend cleanup failed (OSError)", self.output.getvalue())
         self.assertNotIn("synthetic-secret-must-not-appear", self.output.getvalue())
 
-    def test_local_ai_container_connectivity_failure_stops_core_before_frontend(self):
+    def test_local_ai_container_connectivity_failure_continues_with_demo_fallback(self):
         plan = launcher.build_plan(ROOT, choices(True), "synthetic-model", "http://synthetic.invalid")
+        frontend = Mock()
+        frontend.poll.return_value = None
 
         def command(args, *_args, **_kwargs):
             if "exec" in args:
@@ -596,12 +618,101 @@ class DeveloperProcessTests(unittest.TestCase):
                 patch.object(launcher, "check_free_ports"), \
                 patch.object(launcher, "local_json", side_effect=metadata), \
                 patch.object(launcher, "wait_for_http"), \
-                patch.object(launcher.subprocess, "Popen") as popen, \
+                patch.object(launcher.subprocess, "Popen", return_value=frontend) as popen, \
+                patch.object(launcher.webbrowser, "open") as browser, \
+                patch.object(launcher.time, "sleep", side_effect=KeyboardInterrupt), \
                 redirect_stdout(self.output):
-            with self.assertRaisesRegex(launcher.StartupError, "cannot reach local Ollama"):
+            with self.assertRaises(KeyboardInterrupt):
                 launcher.launch(ROOT, inventory(), plan, {})
         self.assertEqual(run.call_args.args[0], plan["compose"] + ["stop"])
-        popen.assert_not_called()
+        self.assertEqual(popen.call_args.args[0], plan["frontend"])
+        browser.assert_called_once()
+        self.assertIn("cannot reach local Ollama", self.output.getvalue())
+        self.assertIn("labeled developer demo fallback", self.output.getvalue())
+
+    def test_absent_local_ollama_cannot_block_core_startup(self):
+        plan = launcher.build_plan(ROOT, choices(True), "synthetic-model", "http://synthetic.invalid")
+        frontend = Mock()
+        frontend.poll.return_value = None
+        found = {**inventory(False), "ollama": None}
+        with patch.object(launcher, "run_command", return_value="") as run, \
+                patch.object(launcher, "check_free_ports"), \
+                patch.object(launcher, "local_json", return_value=None), \
+                patch.object(launcher, "wait_for_http"), \
+                patch.object(launcher.subprocess, "Popen", return_value=frontend) as popen, \
+                patch.object(launcher.webbrowser, "open"), \
+                patch.object(launcher.time, "sleep", side_effect=KeyboardInterrupt), \
+                redirect_stdout(self.output):
+            with self.assertRaises(KeyboardInterrupt):
+                launcher.launch(ROOT, found, plan, {})
+        self.assertEqual(popen.call_args.args[0], plan["frontend"])
+        self.assertIn(plan["core"], [call.args[0] for call in run.call_args_list])
+        self.assertIn("Ollama is unavailable", self.output.getvalue())
+
+    def test_optional_ollama_spawn_failure_is_redacted_and_core_still_starts(self):
+        plan = launcher.build_plan(ROOT, choices(True), "synthetic-model", "http://synthetic.invalid")
+        frontend = Mock()
+        frontend.poll.return_value = None
+        with patch.object(launcher, "run_command", return_value="") as run, \
+                patch.object(launcher, "check_free_ports"), \
+                patch.object(launcher, "local_json", return_value=None), \
+                patch.object(launcher, "wait_for_http"), \
+                patch.object(launcher.subprocess, "Popen", side_effect=[OSError("synthetic-secret-must-not-appear"), frontend]), \
+                patch.object(launcher.webbrowser, "open"), \
+                patch.object(launcher.time, "sleep", side_effect=KeyboardInterrupt), \
+                redirect_stdout(self.output):
+            with self.assertRaises(KeyboardInterrupt):
+                launcher.launch(ROOT, inventory(), plan, {})
+        self.assertIn(plan["core"], [call.args[0] for call in run.call_args_list])
+        self.assertIn("optional Ollama process could not start", self.output.getvalue())
+        self.assertNotIn("synthetic-secret-must-not-appear", self.output.getvalue())
+
+    def test_optional_ollama_readiness_timeout_does_not_stop_core(self):
+        plan = launcher.build_plan(ROOT, choices(True), "synthetic-model", "http://synthetic.invalid")
+        ai, frontend = Mock(), Mock()
+        ai.poll.return_value = frontend.poll.return_value = None
+
+        def ready(url, _process):
+            if ":11434/" in url:
+                raise launcher.StartupError("Synthetic optional Ollama readiness timeout")
+
+        with patch.object(launcher, "run_command", return_value="") as run, \
+                patch.object(launcher, "check_free_ports"), \
+                patch.object(launcher, "local_json", return_value=None), \
+                patch.object(launcher, "wait_for_http", side_effect=ready), \
+                patch.object(launcher.subprocess, "Popen", side_effect=[ai, frontend]), \
+                patch.object(launcher.webbrowser, "open"), \
+                patch.object(launcher.time, "sleep", side_effect=KeyboardInterrupt), \
+                redirect_stdout(self.output):
+            with self.assertRaises(KeyboardInterrupt):
+                launcher.launch(ROOT, inventory(), plan, {})
+        self.assertIn(plan["core"], [call.args[0] for call in run.call_args_list])
+        ai.terminate.assert_called_once()
+        self.assertIn("readiness timeout", self.output.getvalue())
+
+    def test_owned_ai_exit_warns_once_and_preserves_running_core(self):
+        plan = launcher.build_plan(ROOT, choices(True), "synthetic-model", "http://synthetic.invalid")
+        ai, frontend = Mock(), Mock()
+        ai.poll.return_value = 7
+        frontend.poll.return_value = None
+
+        def metadata(path):
+            return None if path == "/api/version" else {"models": [{"name": "synthetic-model:latest"}]}
+
+        with patch.object(launcher, "run_command", return_value="") as run, \
+                patch.object(launcher, "check_free_ports"), \
+                patch.object(launcher, "local_json", side_effect=metadata), \
+                patch.object(launcher, "wait_for_http"), \
+                patch.object(launcher.subprocess, "Popen", side_effect=[ai, frontend]), \
+                patch.object(launcher.webbrowser, "open"), \
+                patch.object(launcher.time, "sleep", side_effect=[None, KeyboardInterrupt]) as sleep, \
+                redirect_stdout(self.output):
+            with self.assertRaises(KeyboardInterrupt):
+                launcher.launch(ROOT, inventory(), plan, {})
+        self.assertEqual(sleep.call_count, 2)
+        self.assertEqual(self.output.getvalue().count("optional local AI service exited"), 1)
+        ai.terminate.assert_not_called()
+        self.assertEqual(run.call_args.args[0], plan["compose"] + ["stop"])
 
     def test_stubborn_owned_process_is_killed_after_graceful_timeout(self):
         process = Mock()

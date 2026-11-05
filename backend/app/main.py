@@ -15,6 +15,7 @@ from .avatar_session import router as avatar_session_router
 from .avatar_assistance import router as avatar_assistance_router
 from .time_settings import router as time_settings_router
 from .ods_accommodations import router as ods_accommodations_router
+from .developer_demo import router as developer_demo_router
 
 app = FastAPI(title="AI Oral Exam Proctor")
 
@@ -33,6 +34,7 @@ app.include_router(avatar_session_router)
 app.include_router(avatar_assistance_router)
 app.include_router(time_settings_router)
 app.include_router(ods_accommodations_router)
+app.include_router(developer_demo_router)
 
 
 @app.get("/")

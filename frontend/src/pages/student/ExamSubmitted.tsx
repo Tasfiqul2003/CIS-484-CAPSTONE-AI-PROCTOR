@@ -1,9 +1,11 @@
 import { useState } from "react";
+import { DemoAttemptNotice } from "../../components/developer-demo/DemoWorkspace";
 
 export default function ExamSubmitted() {
   const [feedback, setFeedback] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const demoAttempt = sessionStorage.getItem("oralexam_developer_demo") === "true";
 
   async function finish(skipFeedback = false) {
     const sessionId = sessionStorage.getItem("oralexam_exam_session_id") || "";
@@ -19,7 +21,8 @@ export default function ExamSubmitted() {
     try {
       const response = await fetch("/api/exam/feedback", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json",
+          Authorization: `Bearer ${sessionStorage.getItem("oralexam_exam_session_token") || ""}` },
         credentials: "include",
         body: JSON.stringify({
           session_id: sessionId,
@@ -45,6 +48,8 @@ export default function ExamSubmitted() {
       "oralexam_student_name",
       "oralexam_face_check_passed",
       "oralexam_exam_session_id",
+      "oralexam_exam_session_token",
+      "oralexam_developer_demo",
     ]) sessionStorage.removeItem(key);
     window.location.href = "/";
   }
@@ -55,8 +60,9 @@ export default function ExamSubmitted() {
         <div className="submission-success-icon">✓</div>
         <p className="submission-eyebrow">EXAM COMPLETE</p>
         <h1>Your exam has been submitted</h1>
+        {demoAttempt && <DemoAttemptNotice />}
         <p className="submission-message">
-          Your responses have been recorded for professor review. Before returning
+          {demoAttempt ? "Your developer demo responses have been saved without grades." : "Your responses have been recorded for professor review."} Before returning
           to the main screen, you can share feedback about your experience.
         </p>
 
@@ -64,7 +70,7 @@ export default function ExamSubmitted() {
         <div className="submission-status">
           <div className="submission-status-row"><span>Exam status</span><strong>Submitted ✓</strong></div>
           <div className="submission-status-row"><span>Responses</span><strong>Recorded ✓</strong></div>
-          <div className="submission-status-row"><span>Grading</span><strong>Pending professor review</strong></div>
+          <div className="submission-status-row"><span>Grading</span><strong>{demoAttempt ? "Demo · grading disabled" : "Pending professor review"}</strong></div>
         </div>
 
         <label className="settings-field">

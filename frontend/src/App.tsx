@@ -1,5 +1,6 @@
 import Home from "./pages/Home";
 import "./styles/exam-ui-tokens.css";
+import { DeveloperDemoProvider } from "./components/developer-demo/DemoWorkspace";
 
 import StudentVerification from "./pages/student/StudentVerification";
 import FaceVerification from "./pages/student/FaceVerification";
@@ -19,7 +20,7 @@ import { examSettingsCategories } from "./pages/professor/examSettingsNavigation
 import ExamSubmissions from "./pages/professor/ExamSubmissions";
 import ExamSubmitted from "./pages/student/ExamSubmitted";
 
-function App() {
+function AppRoutes() {
   const path = window.location.pathname;
 
   /* ================================
@@ -134,4 +135,6 @@ if (
   return <Home />;
 }
 
-export default App;
+export default function App() {
+  return <DeveloperDemoProvider><AppRoutes /></DeveloperDemoProvider>;
+}

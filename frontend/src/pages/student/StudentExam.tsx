@@ -3,6 +3,8 @@ import { formatRemaining, readExamClock, remainingTime } from "./examTiming";
 import type { ExamClock, ExamTiming, RemainingTime } from "./examTiming";
 import LiveExamPresentation from "../../components/avatar/LiveExamPresentation";
 import OralExamMark from "../../components/brand/OralExamMark";
+import { DemoAttemptNotice, useDeveloperDemo } from "../../components/developer-demo/DemoWorkspace";
+import { demoAnswer } from "../../components/developer-demo/developerDemo";
 import "./StudentExam.css";
 
 type StartResponse = ExamTiming & {
@@ -11,6 +13,7 @@ type StartResponse = ExamTiming & {
   status: string;
   sequence_num: number;
   question: string;
+  developer_demo?: boolean;
 };
 
 type AnswerResponse = { done: true; reason?: string }
@@ -38,6 +41,8 @@ async function apiRequest<T>(
 }
 
 export default function StudentExam() {
+  const developer = useDeveloperDemo();
+  const [demoAttempt, setDemoAttempt] = useState(false);
   const [sessionId, setSessionId] = useState("");
   const [question, setQuestion] = useState("");
   const [questionNumber, setQuestionNumber] = useState(1);
@@ -119,7 +124,11 @@ export default function StudentExam() {
       }
       if (result.status === "in_progress") updateClock(result);
       setSessionId(result.session_id);
+      setDemoAttempt(result.developer_demo === true);
       sessionStorage.setItem("oralexam_exam_session_id", result.session_id);
+      sessionStorage.setItem("oralexam_exam_session_token", sessionToken.current);
+      // Display only: permission to use substitutes and to grade is enforced by the server.
+      sessionStorage.setItem("oralexam_developer_demo", String(result.developer_demo === true));
       setQuestion(result.question);
       setQuestionNumber(result.sequence_num);
       if (result.status !== "in_progress") {
@@ -277,6 +286,7 @@ export default function StudentExam() {
             <p className="confirmation-eyebrow">FINAL CONFIRMATION</p>
 
             <h1>Are you ready to continue?</h1>
+            {demoAttempt && <DemoAttemptNotice />}
 
             <p className="confirmation-message">
               You have reached the end of your oral examination. Your
@@ -294,14 +304,14 @@ export default function StudentExam() {
               </div>
               <div className="confirmation-row">
                 <span>Exam status</span>
-                <strong>Pending professor review</strong>
+                <strong>{demoAttempt ? "Demo saved · no grading" : "Pending professor review"}</strong>
               </div>
             </div>
 
             <div className="confirmation-warning">
               <strong>You cannot return to the completed exam.</strong>
               <span>
-                Your professor will review your recorded responses.
+                {demoAttempt ? "This developer demo is saved separately from assessed work and cannot receive grades." : "Your professor will review your recorded responses."}
               </span>
             </div>
 
@@ -340,6 +350,7 @@ export default function StudentExam() {
 
       <main className="student-exam-content">
         <div className="exam-question-card" style={{ fontSize: textSize }}>
+          {demoAttempt && <DemoAttemptNotice />}
           <div className="exam-question-number">
             QUESTION {questionNumber}
           </div>
@@ -355,6 +366,7 @@ export default function StudentExam() {
           </p>}
 
           <LiveExamPresentation sessionId={sessionId} token={sessionToken.current} question={question}
+            developerDemo={demoAttempt}
             sequence={questionNumber} answer={answer} expired={expired && !assisting} submitting={submitting}
             onTiming={updateClock} onBusyChange={setAssisting} onTextSizeChange={setTextSize} />
 
@@ -364,10 +376,17 @@ export default function StudentExam() {
             className="student-answer-input"
             value={answer}
             onChange={(event) => setAnswer(event.target.value)}
-            placeholder="Speak your answer or type your response..."
+            placeholder="Type your response..."
             disabled={submitting || (expired && !assisting)}
             style={{ fontSize: textSize }}
           />
+          {demoAttempt && developer.enabled && <section className="developer-demo-media" aria-label="Demo transcription substitute">
+            <strong>Demo transcription substitute</strong>
+            <p>Microphone transcription is not connected. Type your own response, or insert a labeled sample answer to test this flow. No audio is recorded.</p>
+            <button type="button" disabled={!!answer.trim() || submitting || expired || assisting}
+              onClick={() => setAnswer(demoAnswer)}>Insert demo answer (no recording)</button>
+            {!!answer.trim() && <p>Clear the answer first to insert the sample.</p>}
+          </section>}
 
           {error && (
             <p role="alert" className="exam-error">

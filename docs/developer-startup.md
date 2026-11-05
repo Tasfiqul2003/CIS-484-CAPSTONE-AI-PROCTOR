@@ -10,15 +10,15 @@ Each option also shows **HEAVY** or **LIGHT** as approximate relative resource g
 
 | Menu item | Estimated load | Displayed model/provider | What this checkout can activate |
 |---|---|---|---|
-| Start local AI model | HEAVY; depends on the selected model and quantization | Ollama version; `cybros-v2`, configured base `qwen3:14b` by default | Reuse local Ollama, or start `ollama serve` if installed. Verify the selected model exists before starting the app. |
+| Start local AI model | HEAVY; depends on the selected model and quantization | Ollama version; `cybros-v2`, configured base `qwen3:14b` by default | Try to reuse local Ollama, or start `ollama serve` if installed. Missing runtime, model, readiness or container connectivity produces a demo-fallback warning while core startup continues. No model is downloaded. |
 | Speech recognition | LIGHT relative to local AI/avatar; CPU usage can still spike | Faster-Whisper version; `base.en`, CPU INT8 | Unavailable in the web exam. The standalone voice prototype remains separate. |
-| Voice playback | LIGHT | Piper version; `en_US-lessac-medium` | Unavailable in the web exam. No voice/model is loaded by this menu. |
+| Voice playback | LIGHT | Piper version; `en_US-lessac-medium` | Piper is unavailable in the web exam. Existing standard English browser read-aloud is separate; this menu loads no voice/model. |
 | Animated avatar | HEAVY | SoulX-FlashHead checkout revision when configured; proposed Lite 1.3B | Unavailable: there is no FlashHead web adapter or service. |
 | Camera recording | LIGHT at normal settings; depends on resolution and encoding | Browser recording; no AI model | Unavailable in the web exam. No camera is opened. |
 
 The always-on React/Vite frontend, FastAPI backend, and PostgreSQL core are labeled LIGHT for normal development use. The first Docker build and image downloads can still be heavy.
 
-**Recommended for light computers:** choose **N, N, N, N, N** for the five optional features. The core website still starts. This suggestion does not override saved defaults or your manual choices. Local AI set to N skips starting Ollama through this launcher; an independently running Ollama server is left running. AI functions still need a reachable configured model server. The four media options remain unavailable in this checkout.
+**Recommended for light computers:** choose **N, N, N, N, N** for the five optional features. The core website still starts, with labeled developer substitutes available for missing optional services and exam content. This suggestion does not override saved defaults or your manual choices. Local AI set to N skips starting Ollama through this launcher; an independently running Ollama server is left running. Real providers are still used when available. The four optional media providers remain unavailable through this menu; their N status does not mean that a demo placeholder is a running provider.
 
 Unavailable items require N. Typing Y explains the missing integration and repeats the prompt; the launcher never reports these features as enabled. Installing an audio package alone does not connect it to the web application. Existing Foundation/GUI launchers and Modelfiles are unchanged.
 
@@ -33,7 +33,7 @@ The launcher checks Docker's Linux engine and these ports before asking for cred
 
 If `.venv` does not exist, create it with your installed Python, as in [setup](setup.md). The launcher itself uses only Python's standard library; the backend runs in its existing Docker image. Audio packages are optional for inspecting their installed versions.
 
-For local AI, install Ollama separately and provision the chosen model before launch. The default is the preserved CYBROS V2 configuration. After obtaining the base weights through your normal permitted setup, create a separate `cybros-v2` model from `ollama/Modelfile-cybros-v2` if it is missing. Do not replace an existing locally customized model without saving it first. The launcher performs no inference during inspection or startup and does not assert that Qwen3 14B will run acceptably on a particular laptop.
+For real local AI, install Ollama separately and provision the chosen model. This is optional for a labeled developer demo. The default is the preserved CYBROS V2 configuration. After obtaining the base weights through your normal permitted setup, create a separate `cybros-v2` model from `ollama/Modelfile-cybros-v2` if it is missing. Do not replace an existing locally customized model without saving it first. The launcher performs no inference during inspection or startup and does not assert that Qwen3 14B will run acceptably on a particular laptop.
 
 ## Local settings and credentials
 
@@ -51,10 +51,34 @@ These environment variables can also supply configuration before launching:
 | `DEVELOPER_OLLAMA_MODEL` | Model name, default `cybros-v2`. Known saved configurations display their Modelfile's `FROM` base. Other names show an unknown base. |
 | `DEVELOPER_OLLAMA_URL` | Backend-reachable inference endpoint when local AI is N, default `http://host.docker.internal:11434`. URLs with embedded credentials, paths, query strings, or fragments are rejected. |
 | `DEVELOPER_FLASHHEAD_DIR` | Optional existing FlashHead checkout used only to inspect its Git revision. It does not enable rendering or verify weights. |
+| `DEVELOPER_DEMO_MODE` | Backend opt-in: only the exact value `1` enables developer substitutes. The dedicated developer Compose backend sets it to `1`; ordinary Compose is unchanged and does not enable it. A separately launched backend must opt in explicitly. This flag is not one of the five saved provider choices. |
 
-Choosing N for local AI means the launcher does not start or stop an inference server. The backend still uses its configured inference endpoint for AI requests. Without a reachable server those requests fail; ordinary non-AI pages remain available. No synthetic AI replies are substituted. Choosing Y selects local Ollama and uses `host.docker.internal:11434` from the container. The launcher keeps a newly started Ollama bound to host loopback and checks connectivity from the backend; if Docker cannot reach it, use an explicitly configured reachable development endpoint with local AI set to N. Existing Ollama settings are never modified.
+Choosing N for local AI means the launcher does not start or stop an inference server. The backend still tries its configured inference endpoint. In this explicitly enabled developer stack, unavailable optional services can fall back to labeled synthetic content for demo-marked attempts. Choosing Y selects local Ollama and uses `host.docker.internal:11434` from the container. The launcher keeps a newly started Ollama bound to host loopback and checks connectivity from the backend. If startup, the configured model, or connectivity is unavailable, it warns and continues core startup. A reachable endpoint can still be configured with local AI set to N. Existing Ollama settings are never modified.
 
 There are no pre-created accounts or authentication bypasses. Create an administrator through the existing bootstrap endpoint, then a synthetic professor through `/auth/admin/professors`, using the existing authenticated account workflow. All professor ownership and grading rules remain in effect.
+
+## Developer demo substitutes
+
+See [implemented behavior and measured application checks](developer-demo-verification-2026-11-05.md)
+for the API, media placeholder, durable marker and no-grading boundaries.
+
+The developer backend's `DEVELOPER_DEMO_MODE=1` permits clearly labeled substitutes
+for optional AI/media availability and missing exam content, such as sample exam
+questions or material context. Existing services are preferred when available.
+An attempt created with the demo marker remains a demo attempt across reloads and
+provider recovery; a later real response does not turn it into an assessed record.
+Normal backends remain off unless their process explicitly opts in with `1`.
+
+Demo text, feedback and media placeholders are synthetic. They do not establish
+student grades, identity verification, real microphone/camera capture, voice
+cloning, or a working unavailable provider. Temporary substitute material
+summaries are used only for the request and are not saved as authoritative course
+summaries. Use synthetic accounts, rosters, uploads and answers in this workflow.
+
+The real database, migrations, professor/student authorization, roster eligibility,
+configured credentials, Docker/Node installation and free ports are still required.
+Core startup errors remain errors. The original Word guide predates this behavior;
+use this Markdown reference and the Developer Mode README for current fallback rules.
 
 ## Services and shutdown
 
@@ -62,9 +86,12 @@ The standalone `compose.developer.yaml` starts an isolated `oralexam-developer` 
 
 The developer database uses its own named volume; the team's existing Compose configuration and `pgdata` volume are not selected. The migration runner targets only `db/oralexam_developer`, applies the preserved base schema and full-filename-ordered migrations in one transaction, and records hashes. It refuses to adopt untracked schemas or silently change previously applied migrations. Migration 007 supplies the EID/roster storage already required by existing routes. No existing database is migrated just by opening or inspecting the menu.
 
-Keep the launcher window open. Ctrl+C stops the Vite process, developer Compose services started by this run, and an Ollama process only if this launcher started it. Pre-existing Ollama is left running. Database contents are retained. If the console is forcibly closed or Windows terminates it, use Docker Desktop to stop the `oralexam-developer` project; shutdown cleanup cannot be guaranteed in that case. A session lock prevents simultaneous launches in the same checkout; a second launcher also refuses to take over an already running developer project. The ignored `.developer-session.lock` file can remain after exit; its OS lock is released when the process exits. Metadata and cleanup commands time out after 30 seconds; initial Docker builds can take longer and remain cancellable with Ctrl+C.
+Keep the launcher window open. Ctrl+C stops the Vite process, developer Compose services started by this run, and an Ollama process only if this launcher started it. Pre-existing Ollama is left running. If the owned Ollama process exits, the launcher warns once and keeps core services running with labeled developer fallback available. Database contents are retained. If the console is forcibly closed or Windows terminates it, use Docker Desktop to stop the `oralexam-developer` project; shutdown cleanup cannot be guaranteed in that case. A session lock prevents simultaneous launches in the same checkout; a second launcher also refuses to take over an already running developer project. The ignored `.developer-session.lock` file can remain after exit; its OS lock is released when the process exits. Metadata and cleanup commands time out after 30 seconds; initial Docker builds can take longer and remain cancellable with Ctrl+C.
 
-This startup menu does not complete the existing rubric editor, live-policy enforcement, authenticated student attempts, media services, or real submissions/review UI. Those integrations remain separate work. Scores remain provisional for professor review.
+The existing saved exam rules and authenticated workflows remain real requirements.
+Demo substitutions do not establish live-inference quality, media verification,
+production reliability, or final grades. Actual avatar/time/ODS implementation and
+verification are documented separately in [Live avatar integration](avatar-live-integration.md).
 
 ## Inspect without starting anything
 
@@ -124,3 +151,21 @@ entry. The existing local PGlite database was separately backed up and updated;
 its existing professor login and the three new settings pages were verified in
 the browser. The configured local AI service remains offline. See
 [the measured results and remaining limits](local-update-verification-2026-11-04.md).
+
+## Actual developer demo-launcher checks - November 5, 2026
+
+- All **48 launcher regression tests passed**. Synthetic process fixtures cover
+  absent Ollama, spawn/readiness failures, missing models, unreachable
+  container-to-host metadata and owned-AI exit while core startup continues.
+  Existing checks still reject Docker-engine, credential, occupied-port and
+  core-startup failures and preserve service ownership and cleanup behavior.
+- `--show-menu` returned exit 0 with exactly five provider choices, the explicit
+  developer-demo notice and unavailable media status. It started no services,
+  saved no settings and requested no inference or downloads.
+- The dedicated developer Compose flag and its absence from ordinary Compose
+  were checked by the regression suite. These launcher tests do not execute
+  backend content substitution or establish live AI/media availability.
+
+No Docker stack, model, microphone, camera or real student workflow was started
+for these launcher checks. Backend/API verification belongs to its separate
+synthetic checks and any later explicitly recorded application run.

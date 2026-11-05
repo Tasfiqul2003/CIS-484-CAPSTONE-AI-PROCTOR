@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from .student_auth import issue_student_token, read_student_token
 from .avatar_session import snapshot_for_exam, session_policy
 from .avatar_timing import pause_sum_sql, active_pause_until_sql
+from .developer_demo import demo_enabled, demo_for_session, ai_available, demo_question, demo_summary
 
 from .db import get_db
 
@@ -160,8 +161,11 @@ def ask_model(template, history, bank_remaining, course_material_summaries=None)
             timeout=45,
         )
         r.raise_for_status()
-        return json.loads(r.json()["message"]["content"])
-    except (httpx.HTTPError, json.JSONDecodeError, KeyError) as e:
+        decision = json.loads(r.json()["message"]["content"])
+        if not isinstance(decision, dict):
+            raise ValueError("Invalid model decision")
+        return decision
+    except (httpx.HTTPError, ValueError, KeyError, TypeError) as e:
         raise HTTPException(502, f"Ollama call failed: {e}")
 
 
@@ -241,17 +245,18 @@ def start_exam(req: StartRequest, db: Session = Depends(get_db)):
     snapshot = db.execute(
         text("""INSERT INTO exam_sessions (student_id, exam_template_id, time_limit_minutes,
                     question_time_limit_minutes, extended_time_multiplier,
-                    avatar_policy_snapshot, avatar_policy_revision, avatar_exam_mode)
+                    avatar_policy_snapshot, avatar_policy_revision, avatar_exam_mode, developer_demo)
                 SELECT CAST(:s AS uuid), t.id, t.time_limit_minutes, t.question_time_limit_minutes,
                        COALESCE(r.extended_time_multiplier, 1),
-                       CAST(:avatar_policy AS jsonb), :avatar_revision, :avatar_mode
+                       CAST(:avatar_policy AS jsonb), :avatar_revision, :avatar_mode, :developer_demo
                 FROM exam_templates t JOIN exam_roster r ON r.exam_template_id = t.id
                     AND r.student_id = CAST(:s AS uuid)
                 WHERE t.id = CAST(:t AS uuid)
-                RETURNING id, time_limit_minutes, extended_time_multiplier"""),
+                RETURNING id, time_limit_minutes, extended_time_multiplier, developer_demo"""),
         {"s": str(req.student_id), "t": str(req.exam_template_id),
          "avatar_policy": json.dumps(avatar_settings.model_dump()),
-         "avatar_revision": avatar_revision, "avatar_mode": avatar_mode},
+         "avatar_revision": avatar_revision, "avatar_mode": avatar_mode,
+         "developer_demo": demo_enabled()},
     ).mappings().first()
     if not snapshot:
         db.rollback()
@@ -272,8 +277,18 @@ def start_exam(req: StartRequest, db: Session = Depends(get_db)):
         question = first["question_text"]
     else:
         summaries = load_exam_material_summaries(db, req.exam_template_id)
-        decision = ask_model(template, [], [], summaries)
+        use_demo = demo_for_session(snapshot)
+        try:
+            if use_demo and not ai_available(OLLAMA_URL, OLLAMA_MODEL):
+                raise HTTPException(502, "The configured model is unavailable.")
+            decision = ask_model(template, [], [], summaries)
+        except HTTPException as error:
+            if not use_demo or error.status_code != 502:
+                raise
+            decision = {"question": demo_question(1), "reasoning": "Developer demo sample; no assessment."}
         question = decision.get("question")
+        if use_demo and (not isinstance(question, str) or not question.strip()):
+            question = demo_question(1)
         if not question:
             db.rollback()
             raise HTTPException(502, "Model did not return a first question")
@@ -312,7 +327,7 @@ def read_session_state(db, session_id: str, claims: dict):
         raise HTTPException(403, "Student token does not match this session.")
     row = db.execute(text(f"""SELECT student_id, exam_template_id, status, started_at,
         time_limit_minutes, question_time_limit_minutes, extended_time_multiplier,
-        avatar_policy_snapshot, avatar_policy_revision, avatar_exam_mode,
+        avatar_policy_snapshot, avatar_policy_revision, avatar_exam_mode, developer_demo,
         {pause_sum_sql('exam_sessions.id')} AS avatar_pause_seconds,
         {active_pause_until_sql('exam_sessions.id')} AS pause_until,
         clock_timestamp() AS server_now FROM exam_sessions
@@ -332,6 +347,7 @@ def read_session_state(db, session_id: str, claims: dict):
     question_deadline = (question["created_at"] + timedelta(seconds=question_seconds + float(question.get("avatar_pause_seconds", 0)))
                          if question and question_seconds is not None else None)
     return {"session_id": session_id, "status": row["status"],
+            "developer_demo": bool(row.get("developer_demo", False)),
             "server_now": row["server_now"].isoformat(),
             "deadline": deadline.isoformat() if deadline else None,
             "question_deadline": question_deadline.isoformat() if question_deadline else None,
@@ -356,7 +372,7 @@ def submit_answer(
 
     session = db.execute(
         text(f"""SELECT s.status, s.student_id, s.exam_template_id, s.time_limit_minutes,
-                       s.extended_time_multiplier,
+                       s.extended_time_multiplier, s.developer_demo,
                        s.question_time_limit_minutes, s.avatar_policy_snapshot, s.avatar_policy_revision, s.avatar_exam_mode,
                        {active_pause_until_sql('s.id')} AS pause_until,
                        (EXTRACT(EPOCH FROM (clock_timestamp() - s.started_at)) - {pause_sum_sql('s.id')}) / 60 AS elapsed_min
@@ -414,7 +430,8 @@ def submit_answer(
     if out_of_time or len(history) >= MAX_QUESTIONS:
         end_session(db, sid)
         db.commit()
-        return {"done": True, "reason": "time or question limit reached"}
+        return {"done": True, "reason": "time or question limit reached",
+                "developer_demo": bool(session.get("developer_demo", False))}
 
     bank_remaining = [
         {"id": str(r["id"]), "text": r["question_text"],
@@ -437,23 +454,29 @@ def submit_answer(
     if not can_follow_up and not bank_remaining:
         end_session(db, sid)
         db.commit()
-        return {"done": True, "reason": "No further questions available"}
+        return {"done": True, "reason": "No further questions available",
+                "developer_demo": bool(session.get("developer_demo", False))}
+    use_demo = demo_for_session(session)
     try:
-        decision = (ask_model(template, history, bank_remaining, summaries) if can_follow_up else {
+        if use_demo and not bank_remaining and not ai_available(OLLAMA_URL, OLLAMA_MODEL):
+            raise HTTPException(502, "The configured model is unavailable.")
+        decision = (ask_model(template, history, bank_remaining, summaries)
+                    if can_follow_up and not (use_demo and bank_remaining) else {
             "bank_question_id": bank_remaining[0]["id"],
             "reasoning": "The saved follow-up limit requires the next bank question.",
         })
-    except HTTPException:
-        if not bank_remaining:
+    except HTTPException as error:
+        if not bank_remaining and (not use_demo or error.status_code != 502):
             raise
 
         # Keep the exam moving if AI generation fails.
         # The normal selection logic below will use this unused bank question.
         decision = {
             "end_exam": False,
-            "bank_question_id": bank_remaining[0]["id"],
-            "question": None,
-            "reasoning": "Using an unused bank question because AI generation failed.",
+            "bank_question_id": bank_remaining[0]["id"] if bank_remaining else None,
+            "question": None if bank_remaining else demo_question(pending["sequence_num"] + 1),
+            "reasoning": ("Using an unused bank question because AI generation failed."
+                          if bank_remaining else "Developer demo sample; no assessment."),
         }
 
     # Do not let the model end the exam while bank questions remain.
@@ -466,22 +489,26 @@ def submit_answer(
     if decision.get("end_exam"):
         end_session(db, sid)
         db.commit()
-        return {"done": True, "reason": "Examination complete"}
+        return {"done": True, "reason": "Examination complete",
+                "developer_demo": bool(session.get("developer_demo", False))}
 
     chosen = bank_remaining[0] if bank_remaining and decision.get("bank_question_id") else None
 
     if chosen:
         question, source, source_id = chosen["text"], "bank", chosen["id"]
-    elif decision.get("question") and can_follow_up:
+    elif isinstance(decision.get("question"), str) and decision["question"].strip() and can_follow_up:
         question, source, source_id = decision["question"], "generated", None
     elif bank_remaining:
         # Fallback if the model fails to choose a question.
         chosen = bank_remaining[0]
         question, source, source_id = chosen["text"], "bank", chosen["id"]
+    elif use_demo and can_follow_up:
+        question, source, source_id = demo_question(pending["sequence_num"] + 1), "generated", None
     else:
         end_session(db, sid)
         db.commit()
-        return {"done": True, "reason": "No further questions available"}
+        return {"done": True, "reason": "No further questions available",
+                "developer_demo": bool(session.get("developer_demo", False))}
 
     seq = pending["sequence_num"] + 1
     root_sequence, followup_index = follow_up_metadata(pending, source)
@@ -513,6 +540,7 @@ def list_exam_submissions(
             SELECT
                 s.id AS session_id,
                 s.status,
+                s.developer_demo,
                 s.started_at,
                 s.ended_at,
                 st.name AS student_name,
@@ -538,6 +566,7 @@ def list_exam_submissions(
         {
             "id": str(row["session_id"]),
             "status": row["status"],
+            "developer_demo": bool(row.get("developer_demo", False)),
             "studentName": row["student_name"] or "Unknown student",
             "studentId": row["student_eid"] or "Not available",
             "examId": str(row["exam_template_id"]),
@@ -1414,7 +1443,14 @@ async def summarize_exam_material(
     # Keep the prompt bounded for large uploads.
     source_text = row["extracted_text"][:30000]
 
+    def sample_summary():
+        return {"id": str(row["id"]), "filename": row["filename"],
+                "summary": demo_summary(source_text), "cached": False,
+                "demo": True, "persisted": False}
+
     try:
+        if demo_enabled() and not ai_available(OLLAMA_URL, OLLAMA_MODEL):
+            return sample_summary()
         async with httpx.AsyncClient(timeout=180) as client:
             response = await client.post(
                 f"{OLLAMA_URL}/api/chat",
@@ -1452,7 +1488,9 @@ async def summarize_exam_material(
         if not summary:
             raise ValueError("Ollama returned an empty summary.")
 
-    except (httpx.HTTPError, KeyError, ValueError) as exc:
+    except (httpx.HTTPError, KeyError, ValueError, TypeError, AttributeError) as exc:
+        if demo_enabled():
+            return sample_summary()
         raise HTTPException(
             status_code=502,
             detail=f"Could not generate the material summary with Ollama: {exc}",
@@ -1659,6 +1697,7 @@ def get_exam_progress(
                 s.eid,
                 latest.id AS session_id,
                 latest.status,
+                latest.developer_demo,
                 latest.started_at,
                 latest.ended_at
             FROM exam_roster AS r
@@ -1668,6 +1707,7 @@ def get_exam_progress(
                 SELECT
                     es.id,
                     es.status,
+                    es.developer_demo,
                     es.started_at,
                     es.ended_at
                 FROM exam_sessions AS es

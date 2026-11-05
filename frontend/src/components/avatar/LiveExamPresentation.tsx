@@ -17,9 +17,10 @@ const actionLabels: Record<AssistanceAction, string> = {
 };
 
 export default function LiveExamPresentation({ sessionId, token, question, sequence, answer, expired, submitting,
-  onTiming, onBusyChange, onTextSizeChange,
+  developerDemo = false, onTiming, onBusyChange, onTextSizeChange,
 }: {
   sessionId: string; token: string; question: string; sequence: number; answer: string; expired: boolean; submitting: boolean;
+  developerDemo?: boolean;
   onTiming: (timing: ExamTiming) => void; onBusyChange: (busy: boolean) => void; onTextSizeChange: (size: number) => void;
 }) {
   const [presentation, setPresentation] = useState<SessionPresentation | null>(null);
@@ -270,7 +271,8 @@ export default function LiveExamPresentation({ sessionId, token, question, seque
         </div>
         {!speechSupported && <p>Speech is unavailable in this browser. All questions and assistance remain readable.</p>}
         {speechError && <p role="alert">{speechError}</p>}
-        <small>Saved examiner policy revision {presentation.revision}{assistance ? ` · ${assistance.mode} exam` : ""}</small>
+        {developerDemo && <p className="developer-demo-note">Demo media: the on-screen examiner works without an external avatar service. If browser speech is unavailable, use the readable question and assistance text. No voice cloning or video recording is simulated.</p>}
+        <small>Saved examiner policy revision {presentation.revision}{assistance ? ` · ${assistance.mode} rules` : ""}{developerDemo ? " · demo attempt" : ""}</small>
       </div>
     </div>
     {assistance && Object.keys(assistance.actions).length > 0 && <section className="live-exam-assistance" aria-labelledby="live-assistance-heading">

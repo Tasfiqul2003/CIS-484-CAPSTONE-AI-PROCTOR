@@ -22,6 +22,7 @@ from .exam import (
 )
 from .avatar_session import session_policy
 from .avatar_timing import pause_sum_sql, active_pause_until_sql
+from .developer_demo import demo_for_session, ai_available, demo_question
 
 router = APIRouter(prefix="/exam", tags=["streaming"])
 
@@ -72,8 +73,11 @@ def decide(plan, bank_remaining):
             timeout=180,
         )
         r.raise_for_status()
-        return json.loads(r.json()["message"]["content"])
-    except (httpx.HTTPError, json.JSONDecodeError, KeyError) as e:
+        decision = json.loads(r.json()["message"]["content"])
+        if not isinstance(decision, dict):
+            raise ValueError("Invalid model decision")
+        return decision
+    except (httpx.HTTPError, ValueError, KeyError, TypeError) as e:
         raise HTTPException(502, f"Ollama decision call failed: {e}")
 
 
@@ -84,7 +88,7 @@ def plan_turn(req: AnswerRequest, claims: dict) -> dict:
     try:
         session = db.execute(
             text(f"""SELECT s.status, s.student_id, s.exam_template_id, s.time_limit_minutes,
-                           s.extended_time_multiplier,
+                           s.extended_time_multiplier, s.developer_demo,
                            s.question_time_limit_minutes, s.avatar_policy_snapshot, s.avatar_policy_revision, s.avatar_exam_mode,
                            {active_pause_until_sql('s.id')} AS pause_until,
                            (EXTRACT(EPOCH FROM (clock_timestamp() - s.started_at)) - {pause_sum_sql('s.id')}) / 60 AS elapsed_min
@@ -136,6 +140,8 @@ def plan_turn(req: AnswerRequest, claims: dict) -> dict:
 
         plan = {
             "sid": sid,
+            "developer_demo": bool(session.get("developer_demo", False)),
+            "use_demo": demo_for_session(session),
             "claims": claims,
             "pending_id": pending["id"],
             "seq": pending["sequence_num"] + 1,
@@ -178,7 +184,18 @@ def plan_turn(req: AnswerRequest, claims: dict) -> dict:
             return {**plan, "kind": "bank", "question": chosen["text"], "source_id": chosen["id"],
                     "reasoning": "The saved follow-up limit requires the next bank question."}
         return {**plan, "kind": "done", "reason": "No further questions available"}
-    decision = decide(plan, bank_remaining)
+    if plan["use_demo"] and bank_remaining:
+        chosen = bank_remaining[0]
+        return {**plan, "kind": "bank", "question": chosen["text"], "source_id": chosen["id"],
+                "reasoning": "Developer demo uses an authored bank question first."}
+    try:
+        if plan["use_demo"] and not ai_available(OLLAMA_URL, OLLAMA_MODEL):
+            raise HTTPException(502, "The configured model is unavailable.")
+        decision = decide(plan, bank_remaining)
+    except HTTPException as error:
+        if not plan["use_demo"] or error.status_code != 502:
+            raise
+        return {**plan, "kind": "sample", "reasoning": "Developer demo sample; no assessment."}
     plan["reasoning"] = decision.get("reasoning")
     action = decision.get("action")
     chosen = bank_remaining[0] if bank_remaining else None
@@ -192,6 +209,8 @@ def plan_turn(req: AnswerRequest, claims: dict) -> dict:
     if bank_remaining:  # model gave nothing usable: fall back to the next bank question
         b = bank_remaining[0]
         return {**plan, "kind": "bank", "question": b["text"], "source_id": b["id"]}
+    if plan["use_demo"]:
+        return {**plan, "kind": "sample", "reasoning": "Developer demo sample; no assessment."}
     return {**plan, "kind": "done", "reason": "No further questions available"}
 
 
@@ -244,17 +263,20 @@ def event_stream(plan):
         except HTTPException as error:
             yield sse("error", {"detail": error.detail})
             return
-        yield sse("done", {"reason": plan["reason"]})
+        yield sse("done", {"reason": plan["reason"],
+                           "developer_demo": plan.get("developer_demo", False)})
         return
 
-    if kind == "bank":
+    if kind in ("bank", "sample"):
+        question = demo_question(plan["seq"]) if kind == "sample" else plan["question"]
+        source = "generated" if kind == "sample" else "bank"
         try:
-            state = finish_question(plan, plan["question"], "bank", plan["source_id"])
+            state = finish_question(plan, question, source, plan.get("source_id"))
         except HTTPException as error:
             yield sse("error", {"detail": error.detail})
             return
-        yield sse("token", {"text": plan["question"]})
-        yield sse("complete", {**state, "source": "bank"})
+        yield sse("token", {"text": question})
+        yield sse("complete", {**state, "source": source})
         return
 
     # Buffer generated follow-ups until the turn commits. A racing request must
@@ -284,17 +306,25 @@ def event_stream(plan):
                     continue
                 chunk = json.loads(line)
                 token = chunk.get("message", {}).get("content", "")
+                if not isinstance(token, str):
+                    raise ValueError("Invalid model question token")
                 if token:
                     parts.append(token)
                 if chunk.get("done"):
                     break
-    except (httpx.HTTPError, json.JSONDecodeError) as e:
-        yield sse("error", {"detail": f"Ollama streaming failed: {e}"})
+    except (httpx.HTTPError, ValueError, TypeError, AttributeError) as e:
+        if plan.get("use_demo"):
+            yield from event_stream({**plan, "kind": "sample"})
+        else:
+            yield sse("error", {"detail": f"Ollama streaming failed: {e}"})
         return
 
     question = "".join(parts).strip()
     if not question:
-        yield sse("error", {"detail": "Model returned an empty question"})
+        if plan.get("use_demo"):
+            yield from event_stream({**plan, "kind": "sample"})
+        else:
+            yield sse("error", {"detail": "Model returned an empty question"})
         return
 
     try:

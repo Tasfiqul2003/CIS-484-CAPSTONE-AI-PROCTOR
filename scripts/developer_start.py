@@ -1,7 +1,8 @@
 """Interactive laptop launcher. Importing this module starts no services.
 
-Only the local Ollama switch has an application integration in this checkout.
-The remaining choices are displayed, but cannot enable unwired web features.
+Only the local Ollama provider switch has an application integration here.
+Unavailable provider choices remain off; the dedicated developer stack's
+labeled substitutes and built-in browser presentation are separate.
 """
 
 from __future__ import annotations
@@ -51,8 +52,14 @@ LOAD_GUIDANCE = (
 )
 LIGHT_COMPUTER_GUIDANCE = (
     "\nRecommended for light computers: choose N for all five optional features.\n"
-    "The core website still starts. AI features need a reachable model server when local AI is N.\n"
+    "The core website still starts; labeled developer substitutes cover unavailable optional services.\n"
     "This is a suggestion; your choices and saved defaults remain under your control."
+)
+DEMO_NOTICE = (
+    "DEVELOPER DEMO MODE: this separate stack enables labeled substitutes when optional services "
+    "or exam content are unavailable. Real providers are used when available.\n"
+    "Demo-marked attempts stay demo; substitutes do not establish grades or real verification.\n"
+    "Authentication, roster eligibility, the database, migrations, Docker, Node, and ports remain real requirements."
 )
 UNAVAILABLE = {
     "transcription": "The standalone voice prototype is not connected to the web exam.",
@@ -293,6 +300,7 @@ def show_menu(inventory: dict, defaults: dict, output_fn=print) -> None:
     output_fn(CORE_LABEL)
     output_fn(LOAD_GUIDANCE)
     output_fn(LIGHT_COMPUTER_GUIDANCE)
+    output_fn(DEMO_NOTICE)
     output_fn("Model names are configured selections; installed model availability is checked before launch.\n")
     for key in FEATURES:
         output_fn(f"{TITLES[key]} [{RESOURCE_LOAD[key]}]\n  ({inventory['labels'][key]})")
@@ -447,26 +455,38 @@ def launch(root: Path, inventory: dict, plan: dict, env: dict) -> None:
 def launch_services(root: Path, inventory: dict, plan: dict, env: dict) -> None:
     owned_ai = owned_frontend = None
     core_started = False
+    local_ai_ready = False
+    ai_exit_reported = False
     try:
         # A fixed separate project plus this guard prevents taking over an existing stack.
         if run_command(plan["compose"] + ["ps", "--status", "running", "-q"], root, env, capture=True):
             raise StartupError("The developer stack is already running. Stop it separately before using this launcher.")
         check_free_ports()
+        print(DEMO_NOTICE)
         if plan["local_ai"]:
-            if local_json("/api/version") is None:
-                if not inventory["ollama"]:
-                    raise StartupError("Ollama is unavailable.")
-                # Keep the host service local. Container connectivity is checked below.
-                ai_env = dict(env, OLLAMA_HOST="127.0.0.1:11434")
-                owned_ai = subprocess.Popen([inventory["ollama"], "serve"], cwd=root,
-                                            env=ai_env, shell=False, creationflags=hidden_flags(),
-                                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                wait_for_http("http://127.0.0.1:11434/api/version", owned_ai)
-            tags = local_json("/api/tags") or {}
-            names = {item.get("name") for item in tags.get("models", []) if isinstance(item, dict)}
-            desired = plan["model"] if ":" in plan["model"] else plan["model"] + ":latest"
-            if desired not in names and plan["model"] not in names:
-                raise StartupError(f"Model {plan['model']} is not installed. See docs/developer-startup.md; no model was downloaded.")
+            try:
+                if local_json("/api/version") is None:
+                    if not inventory["ollama"]:
+                        raise StartupError("Ollama is unavailable.")
+                    # Keep the host service local. Container connectivity is checked below.
+                    ai_env = dict(env, OLLAMA_HOST="127.0.0.1:11434")
+                    owned_ai = subprocess.Popen([inventory["ollama"], "serve"], cwd=root,
+                                                env=ai_env, shell=False, creationflags=hidden_flags(),
+                                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    wait_for_http("http://127.0.0.1:11434/api/version", owned_ai)
+                tags = local_json("/api/tags") or {}
+                models = tags.get("models", [])
+                names = {
+                    item["name"] for item in models
+                    if isinstance(item, dict) and isinstance(item.get("name"), str)
+                } if isinstance(models, list) else set()
+                desired = plan["model"] if ":" in plan["model"] else plan["model"] + ":latest"
+                if desired not in names and plan["model"] not in names:
+                    raise StartupError(f"Model {plan['model']} is not installed. No model was downloaded.")
+                local_ai_ready = True
+            except (StartupError, OSError) as exc:
+                reason = str(exc) if isinstance(exc, StartupError) else "The optional Ollama process could not start."
+                print(f"Warning: {reason} Continuing core startup with labeled developer demo fallback available.")
         print(f"Backend model: {plan['model']} at {plan['endpoint']}")
         print("Starting developer database, migrations, and backend...")
         core_started = True  # Also clean up partially started services if Compose fails.
@@ -474,25 +494,26 @@ def launch_services(root: Path, inventory: dict, plan: dict, env: dict) -> None:
         # Ctrl+C still cancels the build and enters owned-service cleanup.
         run_command(plan["core"], root, env, timeout=None)
         wait_for_http("http://127.0.0.1:8000/health", None)
-        if plan["local_ai"]:
+        if local_ai_ready:
             probe = ("import os,urllib.request; "
                      "urllib.request.urlopen(os.environ['OLLAMA_URL']+'/api/tags', timeout=5).close()")
             try:
                 run_command(plan["compose"] + ["exec", "-T", "backend", "python", "-c", probe], root, env, capture=True)
-            except StartupError as exc:
-                raise StartupError("The Docker backend cannot reach local Ollama. Configure a reachable development endpoint with local AI set to N; see docs/developer-startup.md.") from exc
+            except StartupError:
+                print("Warning: the Docker backend cannot reach local Ollama. Continuing with labeled developer demo fallback available; see docs/developer-startup.md.")
         owned_frontend = subprocess.Popen(plan["frontend"], cwd=root / "frontend", env=env,
                                           shell=False, creationflags=hidden_flags())
         wait_for_http("http://127.0.0.1:5173", owned_frontend)
         print("\nDeveloper app: http://127.0.0.1:5173")
-        print("FlashHead, web speech, and camera recording are off. Existing prototype launchers are unchanged.")
+        print("Optional Faster-Whisper, Piper, FlashHead, and recording providers remain off. Built-in web presentation and labeled demo substitutes are separate.")
         print("Keep this window open. Press Ctrl+C to stop services started by this launcher.")
         webbrowser.open("http://127.0.0.1:5173")
         while True:
             if owned_frontend.poll() is not None:
                 raise StartupError("The frontend exited. Stopping the developer session.")
-            if owned_ai is not None and owned_ai.poll() is not None:
-                raise StartupError("The local AI service exited. Stopping the developer session.")
+            if owned_ai is not None and owned_ai.poll() is not None and not ai_exit_reported:
+                print("Warning: the optional local AI service exited. Core services remain running; labeled developer demo fallback is available.")
+                ai_exit_reported = True
             time.sleep(1)
     finally:
         previous = signal.signal(signal.SIGINT, signal.SIG_IGN)

@@ -6,6 +6,7 @@ from uuid import uuid4
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+import httpx
 import pytest
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
@@ -59,7 +60,8 @@ def api(monkeypatch):
     with engine.begin() as db:
         db.execute(text("""CREATE TABLE exam_sessions (id TEXT PRIMARY KEY, student_id TEXT,
             exam_template_id TEXT, status TEXT, avatar_policy_snapshot TEXT,
-            avatar_policy_revision INTEGER, avatar_exam_mode TEXT)"""))
+            avatar_policy_revision INTEGER, avatar_exam_mode TEXT,
+            developer_demo BOOLEAN NOT NULL DEFAULT FALSE)"""))
         db.execute(text("""CREATE TABLE interactions (id TEXT PRIMARY KEY, session_id TEXT,
             sequence_num INTEGER, question_text TEXT, student_answer_transcript TEXT)"""))
         db.execute(text("""CREATE TABLE exam_templates (id TEXT PRIMARY KEY,
@@ -69,7 +71,7 @@ def api(monkeypatch):
             created_at TIMESTAMP, pause_started_at TIMESTAMP, pause_until TIMESTAMP, pause_ended_at TIMESTAMP,
             PRIMARY KEY (session_id, request_id))"""))
         db.execute(text("""INSERT INTO exam_sessions VALUES (:sid, :student, :exam, 'in_progress',
-            :settings, 1, 'assessed')"""), {"sid": SESSION, "student": STUDENT,
+            :settings, 1, 'assessed', FALSE)"""), {"sid": SESSION, "student": STUDENT,
             "exam": EXAM, "settings": json.dumps(default_settings().model_dump())})
         db.execute(text("INSERT INTO interactions VALUES (:qid, :sid, 1, 'Exact synthetic question?', NULL)"),
                    {"qid": QUESTION, "sid": SESSION})
@@ -136,6 +138,48 @@ def test_only_mode_permitted_actions_are_released_without_private_policy(api):
     assert set(data["actions"]) == {"repeat", "clarification"}
     assert data["actions"]["repeat"] == {"limit": 2, "used": 0, "remaining": 2, "timerContinues": True}
     assert not any(key in data for key in ("settings", "policy", "behavior", "rubric", "input_hash"))
+
+
+def test_demo_assistance_preserves_permissions_quota_idempotency_and_pause(api, monkeypatch):
+    client, engine, _, _, _ = api
+    monkeypatch.setenv("DEVELOPER_DEMO_MODE", "1")
+    update_settings(engine, "clarification", timerContinues=False)
+    with engine.begin() as db:
+        db.execute(text("UPDATE exam_sessions SET developer_demo = TRUE"))
+    monkeypatch.setattr(assistance, "generate_assistance", REAL_GENERATOR)
+    monkeypatch.setattr("backend.app.exam.load_exam_material_summaries", lambda *a: [])
+    probes = []
+    monkeypatch.setattr(assistance, "ai_available", lambda *a: probes.append(True) or False)
+    assert client.post(URL, json=body("hint"), headers=auth()).status_code == 403
+    assert probes == [] and records(engine) == []
+    request = body("clarification")
+    result = client.post(URL, json=request, headers=auth()).json()
+    assert result["status"] == "succeeded" and result["text"].startswith("[Developer demo]")
+    assert result["usage"]["actions"]["clarification"]["remaining"] == 0
+    assert result["pause_until"] is not None
+    replay = client.post(URL, json=request, headers=auth()).json()
+    assert replay["text"] == result["text"] and replay["usage"] == result["usage"]
+    assert len(records(engine)) == 1 and len(probes) == 1
+    complete = client.post(f"{URL}/{request['request_id']}/complete",
+        json={}, headers=auth())
+    assert complete.status_code == 200 and complete.json()["pause_until"] is None
+    assert client.post(URL, json=body("clarification"), headers=auth()).status_code == 409
+
+
+@pytest.mark.parametrize("saved_demo,flag", [(False, "1"), (True, "0")])
+def test_demo_help_never_leaks_into_legacy_or_disabled_runtime(api, monkeypatch, saved_demo, flag):
+    client, engine, _, _, _ = api
+    monkeypatch.setenv("DEVELOPER_DEMO_MODE", flag)
+    with engine.begin() as db:
+        db.execute(text("UPDATE exam_sessions SET developer_demo = :demo"), {"demo": saved_demo})
+    monkeypatch.setattr(assistance, "generate_assistance", REAL_GENERATOR)
+    monkeypatch.setattr("backend.app.exam.load_exam_material_summaries", lambda *a: [])
+    monkeypatch.setattr(assistance, "ai_available", lambda *a: pytest.fail("Normal attempts must not probe demo capabilities"))
+    monkeypatch.setattr(assistance.httpx, "post", lambda *a, **k: (_ for _ in ()).throw(httpx.ConnectError("synthetic offline")))
+    result = client.post(URL, json=body("clarification"), headers=auth()).json()
+    assert result["status"] == "failed" and result["text"] is None
+    assert result["pause_until"] is None
+    assert result["usage"]["actions"]["clarification"]["remaining"] == 1
 
 
 def test_repeat_is_exact_and_idempotent_with_fresh_clocks_and_no_model(api):

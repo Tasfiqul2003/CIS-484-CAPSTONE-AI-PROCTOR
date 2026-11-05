@@ -261,7 +261,7 @@ export default function LiveExamPresentation({ sessionId, token, question, seque
         <p>Read the question or enable the browser's standard English voice.</p>
         <div className="live-exam-controls">
           <button type="button" ref={launchButton} onClick={() => setPanelOpen(true)}>Student settings</button>
-          {speechSupported && <button type="button" disabled={expired || submitting || assistanceBusy} onClick={() => {
+          {speechSupported && <button type="button" aria-pressed={audioEnabled} disabled={expired || submitting || assistanceBusy} onClick={() => {
             if (audioEnabled) { latestSpeech.current.audioEnabled = false; setAudioEnabled(false); stopSpeech(); }
             else { latestSpeech.current.audioEnabled = true; setAudioEnabled(true); if (preferences.volume > 0 && !readQuestions.current.has(sequence)) { readQuestions.current.add(sequence); speak(question); } }
           }}>{audioEnabled ? "Disable question audio" : "Enable question audio"}</button>}
@@ -279,8 +279,9 @@ export default function LiveExamPresentation({ sessionId, token, question, seque
       {assistanceActions.filter(action => assistance.actions[action]).map(action => {
         const allowance = assistance.actions[action]!;
         return <div className="live-exam-assistance-item" key={action}>
-          <div><strong>{actionLabels[action]}</strong><span>{allowance.remaining} of {allowance.limit} remaining</span></div>
+          <div><strong>{actionLabels[action]}</strong><span id={`live-assistance-${action}-remaining`} aria-live="polite">{allowance.remaining} of {allowance.limit} remaining</span></div>
           <button type="button" disabled={allowance.remaining === 0 || expired || submitting || assistanceBusy || (action === "correctness" && !answer.trim())}
+            aria-describedby={`live-assistance-${action}-remaining`}
             onClick={() => void ask(action)}>{actionLabels[action]}</button>
         </div>;
       })}

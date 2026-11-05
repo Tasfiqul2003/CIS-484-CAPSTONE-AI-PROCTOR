@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { extendedTimeMultipliers, normalizedEid, readOdsAccommodations } from "./odsAssignmentState";
 import type { OdsAccommodationsState } from "./odsAssignmentState";
+import "./category-settings.css";
 import "./ods-accommodations.css";
 
 export default function OdsAccommodations({ examId }: { examId: string }) {
@@ -123,7 +124,7 @@ export default function OdsAccommodations({ examId }: { examId: string }) {
       "Extended time saved for all EIDs in the CSV. It applies to their new attempts for this exam.");
   }
 
-  return <section className="exam-settings-container ods-accommodations" aria-label="ODS accommodations">
+  return <section className="exam-settings-container category-settings ods-accommodations" aria-label="ODS accommodations" aria-busy={loading || !!busy}>
     <div className="exam-settings-header">
       <div>
         <p className="eyebrow">APPROVED EXTENDED TIME</p>
@@ -182,8 +183,11 @@ export default function OdsAccommodations({ examId }: { examId: string }) {
       </div>
       <section className="settings-section ods-saved-assignments" aria-labelledby="ods-saved-heading">
         <h3 id="ods-saved-heading">Saved extended-time assignments</h3>
-        {data.assignments.length === 0 ? <p>No students have extended time assigned for this exam.</p> : <div className="roster-table-wrap">
+        {data.assignments.length === 0 ? <p>No students have extended time assigned for this exam.</p> : <>
+          <p id="ods-table-help" className="ods-table-help">If the table is wider than the screen, focus it and use the arrow keys to view all columns.</p>
+          <div className="roster-table-wrap ods-table-scroll" role="region" tabIndex={0} aria-labelledby="ods-saved-heading" aria-describedby="ods-table-help">
           <table>
+            <caption>Assigned students and their total exam time for new attempts</caption>
             <thead><tr><th scope="col">EID</th><th scope="col">Student</th><th scope="col">Multiplier</th><th scope="col">Total exam time</th><th scope="col">Action</th></tr></thead>
             <tbody>{data.assignments.map(assignment => <tr key={assignment.student_id}>
               <td><code>{assignment.eid}</code></td><td>{assignment.name}</td>
@@ -197,7 +201,7 @@ export default function OdsAccommodations({ examId }: { examId: string }) {
               </button></td>
             </tr>)}</tbody>
           </table>
-        </div>}
+        </div></>}
       </section>
     </>}
     <section className="settings-section ods-future-accommodations">

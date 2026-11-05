@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { formatRemaining, readExamClock, remainingTime } from "./examTiming";
 import type { ExamClock, ExamTiming, RemainingTime } from "./examTiming";
 import LiveExamPresentation from "../../components/avatar/LiveExamPresentation";
+import OralExamMark from "../../components/brand/OralExamMark";
+import "./StudentExam.css";
 
 type StartResponse = ExamTiming & {
   session_id: string;
@@ -215,7 +217,7 @@ export default function StudentExam() {
       <div className="student-exam-page">
         <header className="student-exam-header">
           <div className="student-exam-logo">
-            <span>◉</span>
+            <span aria-hidden="true"><OralExamMark size={34} /></span>
             <strong>OralExam AI</strong>
           </div>
         </header>
@@ -234,7 +236,7 @@ export default function StudentExam() {
       <div className="student-exam-page">
         <header className="student-exam-header">
           <div className="student-exam-logo">
-            <span>◉</span>
+            <span aria-hidden="true"><OralExamMark size={34} /></span>
             <strong>OralExam AI</strong>
           </div>
         </header>
@@ -262,7 +264,7 @@ export default function StudentExam() {
       <div className="student-exam-page">
         <header className="student-exam-header">
           <div className="student-exam-logo">
-            <span>◉</span>
+            <span aria-hidden="true"><OralExamMark size={34} /></span>
             <strong>OralExam AI</strong>
           </div>
           <div className="student-exam-progress">Exam Complete</div>
@@ -322,7 +324,7 @@ export default function StudentExam() {
     <div className="student-exam-page">
       <header className="student-exam-header">
         <div className="student-exam-logo">
-          <span>◉</span>
+          <span aria-hidden="true"><OralExamMark size={34} /></span>
           <strong>OralExam AI</strong>
         </div>
         <div className="student-exam-progress">
@@ -356,7 +358,9 @@ export default function StudentExam() {
             sequence={questionNumber} answer={answer} expired={expired && !assisting} submitting={submitting}
             onTiming={updateClock} onBusyChange={setAssisting} onTextSizeChange={setTextSize} />
 
+          <label className="student-answer-label" htmlFor="student-exam-answer">Your answer</label>
           <textarea
+            id="student-exam-answer"
             className="student-answer-input"
             value={answer}
             onChange={(event) => setAnswer(event.target.value)}

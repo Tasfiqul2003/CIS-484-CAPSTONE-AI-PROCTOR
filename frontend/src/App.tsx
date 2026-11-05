@@ -1,4 +1,5 @@
 import Home from "./pages/Home";
+import "./styles/exam-ui-tokens.css";
 
 import StudentVerification from "./pages/student/StudentVerification";
 import FaceVerification from "./pages/student/FaceVerification";

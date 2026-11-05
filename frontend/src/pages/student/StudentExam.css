@@ -1,0 +1,97 @@
+.student-exam-page {
+  min-height: 100vh;
+  background: var(--exam-ui-page);
+  color: var(--exam-ui-text);
+  font-family: inherit;
+  font-size: var(--exam-ui-font-size-base);
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.student-exam-page :is(main, section, .exam-question-card, .student-exam-logo, .student-exam-progress) { min-width: 0; }
+.student-exam-page .student-exam-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px 24px;
+  min-height: 72px;
+  padding: 16px var(--exam-ui-gutter);
+  border-bottom: 1px solid var(--exam-ui-border);
+  background: var(--exam-ui-surface);
+}
+.student-exam-page .student-exam-logo { display: flex; align-items: center; gap: 10px; font-size: 20px; }
+.student-exam-page .student-exam-logo > span { display: flex; flex: 0 0 34px; }
+.student-exam-page .student-exam-progress { color: var(--exam-ui-muted); font-size: var(--exam-ui-font-size-small); font-variant-numeric: tabular-nums; }
+.student-exam-page .exam-countdown { color: var(--exam-ui-text); }
+.student-exam-page .student-exam-content {
+  width: min(calc(100% - 2 * var(--exam-ui-gutter)), 960px);
+  margin: 0 auto;
+  padding: clamp(24px, 4vw, 48px) 0 64px;
+}
+.student-exam-page .exam-question-card {
+  padding: var(--exam-ui-panel-padding);
+  border: 1px solid var(--exam-ui-border);
+  border-radius: var(--exam-ui-radius);
+  background: var(--exam-ui-surface);
+  box-shadow: var(--exam-ui-shadow);
+}
+.student-exam-page .exam-question-number { margin-bottom: 12px; color: var(--exam-ui-accent); font-size: .875em; font-weight: 700; }
+.student-exam-page .exam-question-card h1 { margin: 0 0 16px; font-size: 1.5em; line-height: 1.4; }
+.student-exam-page .exam-question-card > p { margin: 12px 0; color: var(--exam-ui-muted); }
+.student-exam-page .student-answer-label { display: block; margin-bottom: 8px; font-weight: 650; }
+.student-exam-page .student-answer-input {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  min-height: 160px;
+  padding: 12px 16px;
+  resize: vertical;
+  border: 1px solid var(--exam-ui-border);
+  border-radius: var(--exam-ui-radius);
+  background: var(--exam-ui-surface);
+  color: var(--exam-ui-text);
+  font: inherit;
+  line-height: 1.6;
+}
+.student-exam-page .student-answer-input::placeholder { color: var(--exam-ui-muted); opacity: 1; }
+.student-exam-page .exam-question-footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; margin-top: 20px; }
+.student-exam-page .exam-question-footer > span { flex: 1 1 200px; color: var(--exam-ui-muted); font-size: .875em; }
+.student-exam-page :is(.exam-next-button, .confirmation-submit-button) {
+  min-height: var(--exam-ui-target-size);
+  max-width: 100%;
+  padding: 12px 16px;
+  border: 1px solid var(--exam-ui-accent);
+  border-radius: var(--exam-ui-radius);
+  background: var(--exam-ui-accent);
+  color: #fff;
+  font: inherit;
+  font-weight: 650;
+  line-height: 1.5;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+.student-exam-page :is(.exam-next-button, .confirmation-submit-button):hover:not(:disabled) { background: var(--exam-ui-accent-strong); }
+.student-exam-page :is(button, textarea):disabled { opacity: 1; cursor: not-allowed; color: var(--exam-ui-muted); background: var(--exam-ui-surface-muted); border-color: var(--exam-ui-border); }
+.student-exam-page :is(button, textarea, input, select, a, [tabindex]):focus-visible { outline: 3px solid var(--exam-ui-focus); outline-offset: 3px; }
+.student-exam-page .exam-question-card .exam-error { padding: 12px 16px; border: 1px solid var(--exam-ui-danger); border-radius: var(--exam-ui-radius); color: var(--exam-ui-danger); background: var(--oe-danger-bg, #fff0f0); }
+
+.student-exam-page .student-confirmation-content { min-height: 0; padding: 32px var(--exam-ui-gutter) 64px; }
+.student-exam-page .student-confirmation-card { padding: var(--exam-ui-panel-padding); border-color: var(--exam-ui-border); border-radius: var(--exam-ui-radius); background: var(--exam-ui-surface); color: var(--exam-ui-text); box-shadow: var(--exam-ui-shadow); }
+.student-exam-page .student-confirmation-card h1 { color: var(--exam-ui-text); font-size: 1.5rem; }
+.student-exam-page .confirmation-eyebrow { color: var(--exam-ui-accent); font-size: .75rem; }
+.student-exam-page .confirmation-message { font-size: 1rem; color: var(--exam-ui-muted); }
+.student-exam-page .confirmation-summary { overflow: visible; border-radius: var(--exam-ui-radius); }
+.student-exam-page .confirmation-row { flex-wrap: wrap; gap: 8px 16px; }
+.student-exam-page .confirmation-row :is(span, strong),
+.student-exam-page .confirmation-warning :is(strong, span) { min-width: 0; color: var(--exam-ui-text); font-size: .875rem; }
+.student-exam-page .confirmation-warning { background: var(--exam-ui-surface-muted); }
+.student-exam-page .confirmation-actions { flex-wrap: wrap; }
+@media (max-width: 480px) {
+  .student-exam-page .student-exam-logo { font-size: 18px; }
+  .student-exam-page .exam-question-footer .exam-next-button { width: 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .student-exam-page *, .student-exam-page *::before, .student-exam-page *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+}

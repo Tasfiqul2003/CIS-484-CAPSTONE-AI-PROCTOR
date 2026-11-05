@@ -496,14 +496,15 @@ export default function RosterUpload({ examId }: Props) {
                 </p>
               </div>
 
-              <div className="roster-table-wrap">
+              <div className="roster-table-wrap" role="region" aria-label="Student roster table, scroll horizontally if needed" tabIndex={0}>
                 <table className="roster-preview-table">
+                  <caption>Students in this exam roster</caption>
                   <thead>
                     <tr>
-                      <th>#</th>
-                      <th>Student name</th>
-                      <th>Email address</th>
-                      <th>JMU EID</th>
+                      <th scope="col">#</th>
+                      <th scope="col">Student name</th>
+                      <th scope="col">Email address</th>
+                      <th scope="col">JMU EID</th>
                     </tr>
                   </thead>
                   <tbody>

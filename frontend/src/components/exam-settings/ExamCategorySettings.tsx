@@ -4,6 +4,7 @@ import {
   saveExamSettingsCategory, validMaxFollowUps, validTimeLimit, validQuestionTimeLimit,
 } from "./examSettings";
 import type { ExamSettings, ExamSettingsCategory } from "./examSettings";
+import "./category-settings.css";
 
 export default function ExamCategorySettings({ examId, category }: {
   examId: string;
@@ -121,13 +122,13 @@ export default function ExamCategorySettings({ examId, category }: {
   };
 
   return (
-    <section className="exam-settings-container" aria-label="Category settings">
+    <section className="exam-settings-container category-settings" aria-label="Category settings" aria-busy={saving}>
       <div className="exam-settings-header">
         <div>
           <p className="eyebrow">CONFIGURATION</p>
           <h2>Exam Settings</h2>
           <p>{category === "time-scheduling" ? "Set time per question and time per exam for new attempts." : "Save this category as a browser-local draft for this exam."}</p>
-          <p role="status">{dirty ? "Unsaved changes" : loaded ? "No unsaved changes" : "Settings unavailable"}</p>
+          <p role="status">{dirty ? "Unsaved changes" : loaded ? "No unsaved changes" : settingsError ? "Settings unavailable" : "Loading settings..."}</p>
         </div>
         <button type="button" disabled={!loaded || saving} className={saved ? "settings-save-button saved" : "settings-save-button"} onClick={saveSettings}>
           {saving ? "Saving..." : saved ? "✓ Settings Saved" : "Save Settings"}
@@ -139,7 +140,7 @@ export default function ExamCategorySettings({ examId, category }: {
       {category === "time-scheduling" && (
         <div className="settings-section">
           <div className="settings-section-heading">
-            <div className="settings-section-icon">
+            <div className="settings-section-icon" aria-hidden="true">
               ⏱
             </div>
             <div>
@@ -183,7 +184,7 @@ export default function ExamCategorySettings({ examId, category }: {
               </div>
               <small id="exam-time-help">1–240 minutes for the whole exam.</small>
             </label>
-            <div>
+            <div className="category-question-limit">
               <label className="settings-toggle">
                 <div>
                   <strong>Limit time per question</strong>
@@ -194,11 +195,12 @@ export default function ExamCategorySettings({ examId, category }: {
                   type="checkbox"
                   disabled={saving}
                   checked={settings.questionTimeLimit !== null}
+                  aria-controls={settings.questionTimeLimit !== null ? "question-time-limit-controls" : undefined}
                   onChange={(event) => updateSetting("questionTimeLimit", event.target.checked ? 2 : null)}
                 />
               </label>
               {settings.questionTimeLimit !== null && (
-                <label className="settings-field nested-setting">
+                <label id="question-time-limit-controls" className="settings-field nested-setting">
                   <span>Time per question</span>
                   <div className="settings-input-with-unit">
                     <input

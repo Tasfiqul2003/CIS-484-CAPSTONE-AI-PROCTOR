@@ -8,16 +8,16 @@
   max-height: 90dvh;
   margin: auto;
   padding: 0;
-  overflow-x: hidden;
-  overflow-y: auto;
+  overflow: auto;
   overscroll-behavior: contain;
+  scroll-padding-block: 8em 1em;
   scrollbar-gutter: stable;
-  border: 1px solid #dedde6;
-  border-radius: 18px;
-  background: #fff;
-  color: #202233;
+  border: 1px solid var(--exam-ui-border);
+  border-radius: var(--exam-ui-radius);
+  background: var(--exam-ui-surface);
+  color: var(--exam-ui-text);
   box-shadow: 0 18px 60px rgb(27 19 47 / 22%);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: inherit;
   font-size: 16px;
   line-height: 1.5;
   overflow-wrap: anywhere;
@@ -43,6 +43,7 @@
 .student-settings-panel h3 { margin: 0 0 18px; color: #30283f; font-size: 1em; font-weight: 700; line-height: 1.35; }
 .student-settings-panel p { margin: 0; }
 .student-settings-panel .student-settings-panel-content { padding: 22px 24px; }
+.student-settings-panel form { min-width: 0; }
 .student-settings-panel .student-settings-description { margin-bottom: 24px; color: #535566; font-size: .925em; }
 .student-settings-panel .student-settings-group + .student-settings-group { margin-top: 26px; padding-top: 24px; border-top: 1px solid #e8e6ee; }
 .student-settings-panel .student-settings-field + .student-settings-field { margin-top: 20px; }
@@ -58,15 +59,15 @@
   background: #fff;
   color: #292438;
   font: inherit;
-  font-size: .925em;
+  font-size: 1em;
   line-height: 1.4;
 }
 
 .student-settings-panel .student-settings-slider-row { display: flex; align-items: center; gap: 14px; }
-.student-settings-panel input[type="range"] { flex: 1 1 auto; width: 100%; min-height: 36px; margin: 0; accent-color: #6d28d9; cursor: pointer; }
+.student-settings-panel input[type="range"] { flex: 1 1 auto; width: 100%; min-height: var(--exam-ui-target-size); margin: 0; accent-color: var(--exam-ui-accent); cursor: pointer; }
 .student-settings-panel output { flex: 0 0 4em; color: #5b21b6; font-size: .925em; font-weight: 700; text-align: right; font-variant-numeric: tabular-nums; }
 .student-settings-panel .student-settings-help { margin-top: 6px; color: #5b5b6b; font-size: .8125em; font-weight: 400; line-height: 1.5; }
-.student-settings-panel .student-settings-field > .student-settings-check { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 6px; cursor: pointer; }
+.student-settings-panel .student-settings-field > .student-settings-check { display: flex; align-items: center; min-height: var(--exam-ui-target-size); gap: 10px; margin-bottom: 6px; cursor: pointer; }
 .student-settings-panel input[type="checkbox"] { width: 19px; height: 19px; flex: 0 0 19px; margin: 1px 0 0; accent-color: #6d28d9; }
 .student-settings-panel .student-settings-status { margin-top: 22px; color: #55416f; font-size: .8125em; }
 .student-settings-panel .student-settings-error { margin-top: 14px; padding: 12px 14px; border: 1px solid #d9a3a3; border-radius: 8px; background: #fff3f3; color: #882d2d; font-size: .875em; }
@@ -89,13 +90,22 @@
   cursor: pointer;
 }
 
-.student-settings-panel button:hover { border-color: #6d28d9; background: #f5f0fc; }
+.student-settings-panel button:hover:not(:disabled) { border-color: #6d28d9; background: #f5f0fc; }
 .student-settings-panel .student-settings-save { flex: 1 1 170px; border-color: #6d28d9; background: #6d28d9; color: #fff; }
-.student-settings-panel .student-settings-save:hover { border-color: #5b21b6; background: #5b21b6; }
+.student-settings-panel .student-settings-save:hover:not(:disabled) { border-color: #5b21b6; background: #5b21b6; }
 .student-settings-panel .student-settings-reset { flex: 1 1 150px; }
 .student-settings-panel .student-settings-panel-footer > p { flex-basis: 100%; }
+.student-settings-panel button:disabled { opacity: 1; cursor: wait; color: var(--exam-ui-muted); background: var(--exam-ui-surface-muted); border-color: var(--exam-ui-border); }
 .student-settings-panel :is(button, input, select):focus-visible,
 .student-settings-panel h2:focus { outline: 3px solid #6d28d9; outline-offset: 3px; }
+
+.student-settings-panel :is(.student-settings-description, .student-settings-help) { color: var(--exam-ui-muted); }
+.student-settings-panel :is(h2, h3, .student-settings-field > label) { color: var(--exam-ui-text); }
+.student-settings-panel :is(button, input, select):focus-visible,
+.student-settings-panel h2:focus { outline-color: var(--exam-ui-focus); }
+.student-settings-panel .student-settings-save { background: var(--exam-ui-accent); border-color: var(--exam-ui-accent); }
+.student-settings-panel .student-settings-save:hover:not(:disabled) { background: var(--exam-ui-accent-strong); border-color: var(--exam-ui-accent-strong); }
+.student-settings-panel :is(.student-settings-close, .student-settings-reset, output) { color: var(--exam-ui-accent-strong); }
 
 @media (max-width: 520px) {
   .student-settings-panel { position: fixed; inset: auto 0 0; width: 100%; max-width: 100%; margin: 0; border-bottom: 0; border-radius: 20px 20px 0 0; }

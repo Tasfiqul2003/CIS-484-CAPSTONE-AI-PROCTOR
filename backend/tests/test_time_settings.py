@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 
 from backend.app.auth import get_current_account
 from backend.app.db import get_db
@@ -14,11 +15,11 @@ URL = f"/exam/templates/{EXAM}/time-settings"
 
 
 @pytest.fixture
-def api(tmp_path):
-    engine = create_engine(f"sqlite:///{tmp_path / 'synthetic-time.sqlite'}", connect_args={"check_same_thread": False})
+def api():
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
     with engine.begin() as db:
-        db.execute(text("CREATE TABLE exam_templates (id TEXT PRIMARY KEY, professor_id TEXT, time_limit_minutes INTEGER)"))
-        db.execute(text("INSERT INTO exam_templates VALUES (:id, 'owner', NULL)"), {"id": EXAM})
+        db.execute(text("CREATE TABLE exam_templates (id TEXT PRIMARY KEY, professor_id TEXT, time_limit_minutes INTEGER, question_time_limit_minutes INTEGER)"))
+        db.execute(text("INSERT INTO exam_templates VALUES (:id, 'owner', NULL, NULL)"), {"id": EXAM})
     sessions = sessionmaker(bind=engine)
     app = FastAPI()
     app.include_router(router)
@@ -34,17 +35,17 @@ def api(tmp_path):
 
 def test_load_and_save(api):
     client, _ = api
-    assert client.get(URL).json() == {"time_limit_minutes": None}
+    assert client.get(URL).json() == {"time_limit_minutes": None, "question_time_limit_minutes": None}
     for minutes in [1, 30, 240]:
         assert client.put(URL, json={"time_limit_minutes": minutes}).status_code == 200
-        assert client.get(URL).json() == {"time_limit_minutes": minutes}
+        assert client.get(URL).json() == {"time_limit_minutes": minutes, "question_time_limit_minutes": None}
 
 
 @pytest.mark.parametrize("value", [0, -1, 241, 1.5, True, "30", None])
 def test_invalid_values_do_not_write(api, value):
     client, _ = api
     assert client.put(URL, json={"time_limit_minutes": value}).status_code == 422
-    assert client.get(URL).json() == {"time_limit_minutes": None}
+    assert client.get(URL).json() == {"time_limit_minutes": None, "question_time_limit_minutes": None}
 
 
 @pytest.mark.parametrize("method", ["get", "put"])
@@ -84,7 +85,8 @@ def test_expiry_uses_attempt_limit_even_when_template_was_extended(monkeypatch, 
             sql = str(statement)
             if "FROM exam_sessions s" in sql:
                 return Result({"status": "in_progress", "student_id": student,
-                               "exam_template_id": EXAM, "elapsed_min": 31, "time_limit_minutes": 30})
+                               "exam_template_id": EXAM, "elapsed_min": 31, "time_limit_minutes": 30,
+                               "avatar_policy_snapshot": None, "avatar_policy_revision": 0})
             if "student_answer_transcript IS NULL" in sql:
                 return Result({"id": "synthetic-question", "sequence_num": 1})
             if "SELECT * FROM exam_templates" in sql:

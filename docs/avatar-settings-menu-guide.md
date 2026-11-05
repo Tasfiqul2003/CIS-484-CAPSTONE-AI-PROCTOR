@@ -1,5 +1,12 @@
 # Avatar and Exam Settings Guide
 
+**November 4, 2026:** the saved avatar policy is now connected to live attempts,
+with a built-in examiner, standard English read-aloud, live exam mode, server
+preferences and assistance enforcement. The earlier preview-oriented descriptions
+below are historical where they say live delivery is disconnected. See
+[Live avatar integration](avatar-live-integration.md) for current behavior and
+verification. Time and ODS setup are documented in the backend test guides.
+
 This guide explains the new and updated features in plain language. Indented bullets show where a control sits inside a page or section. A preview is a test screen; it does not start or grade a real exam.
 
 ## Manage Exam

@@ -1,0 +1,22 @@
+.ods-accommodations .ods-base-times { padding: 18px 28px 0; font-size: 14px; color: #526074; }
+.ods-accommodations .ods-base-times p { margin: 0 0 8px; }
+.ods-accommodations .ods-base-times a { color: #6d28d9; }
+.ods-accommodations .ods-assignment-forms { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; padding: 24px 28px; }
+.ods-accommodations .ods-assignment-form { display: flex; flex-direction: column; align-items: stretch; gap: 14px; padding: 20px; border: 1px solid #e3e7ec; border-radius: 10px; min-width: 0; }
+.ods-accommodations h3 { margin: 0; color: #312e81; font-size: 18px; }
+.ods-accommodations .ods-assignment-form :is(p, small) { margin: 0; color: #687386; font-size: 13px; line-height: 1.6; }
+.ods-accommodations .settings-field > span { font-size: 13px; }
+.ods-accommodations .settings-field :is(input, select) { width: 100%; min-width: 0; font-size: 14px; box-sizing: border-box; }
+.ods-accommodations .settings-field input[type="file"] { height: auto; padding: 10px; }
+.ods-accommodations .ods-secondary-button { border: 1px solid #c4b5fd; border-radius: 8px; background: white; color: #5b21b6; padding: 9px 12px; cursor: pointer; font: inherit; }
+.ods-accommodations button:disabled { cursor: default; opacity: .6; }
+.ods-accommodations .ods-success { margin: 18px 28px; color: #356342; font-size: 14px; }
+.ods-accommodations .ods-loading { padding: 18px 28px; color: #687386; }
+.ods-accommodations .ods-saved-assignments h3 { margin-bottom: 16px; }
+.ods-accommodations td { overflow-wrap: anywhere; font-size: 13px; }
+.ods-accommodations .ods-future-accommodations p { color: #687386; font-size: 14px; line-height: 1.6; }
+@media (max-width: 750px) {
+  .ods-accommodations .ods-assignment-forms { grid-template-columns: minmax(0, 1fr); padding: 20px 18px; }
+  .ods-accommodations .ods-base-times { padding: 18px 18px 0; }
+  .ods-accommodations .ods-success { margin: 18px; }
+}

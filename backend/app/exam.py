@@ -3,14 +3,17 @@ import os
 from uuid import UUID
 import csv
 import io
+from math import ceil
 from datetime import timedelta
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, File, UploadFile, Header
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 from .student_auth import issue_student_token, read_student_token
+from .avatar_session import snapshot_for_exam, session_policy
+from .avatar_timing import pause_sum_sql, active_pause_until_sql
 
 from .db import get_db
 
@@ -19,6 +22,7 @@ router = APIRouter(prefix="/exam", tags=["exam"])
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://ollama:11434")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.1")
 MAX_QUESTIONS = int(os.getenv("MAX_QUESTIONS", "8"))
+QUESTION_TIMEOUT_ANSWER = "[System: No answer accepted before the question time limit expired.]"
 
 
 
@@ -55,6 +59,57 @@ class AnswerRequest(BaseModel):
     answer_transcript: str
     answer_timestamp_start: float | None = None
     answer_timestamp_end: float | None = None
+    question_sequence_num: int | None = Field(default=None, strict=True, ge=1)
+
+
+def accepted_answer(req, session, pending):
+    """Use trusted server elapsed time; request timestamps are only video offsets."""
+    if req.question_sequence_num is not None and req.question_sequence_num != pending["sequence_num"]:
+        raise HTTPException(409, "This answer belongs to a different question. Reload the attempt.")
+    if session.get("pause_until") is not None:
+        raise HTTPException(409, "Finish the current question assistance before submitting an answer.")
+    seconds = effective_question_seconds(session)
+    if seconds is not None and float(pending["elapsed_min"]) * 60 >= seconds:
+        return QUESTION_TIMEOUT_ANSWER, None, None
+    return req.answer_transcript, req.answer_timestamp_start, req.answer_timestamp_end
+
+
+def effective_exam_minutes(session):
+    """Apply the attempt's saved ODS multiplier to total exam time only."""
+    minutes = session["time_limit_minutes"]
+    if minutes is None:
+        return None
+    return float(minutes) * float(session.get("extended_time_multiplier", 1))
+
+
+def effective_question_seconds(session):
+    """The first of the question limit and fixed avatar response window wins."""
+    minutes = session.get("question_time_limit_minutes")
+    limits = [float(minutes) * 60] if minutes is not None else []
+    behavior = session_policy(session).behavior
+    if behavior.responseTiming == "fixed":
+        limits.append(behavior.responseSeconds)
+    return min(limits) if limits else None
+
+
+def bank_order_sql(policy):
+    return "avatar_authored_position NULLS LAST, created_at, id" if policy.behavior.order == "authored" else "random()"
+
+
+def follow_up_metadata(pending, source):
+    if source == "generated":
+        return (pending.get("avatar_root_sequence") or pending["sequence_num"],
+                pending.get("avatar_followup_index", 0) + 1)
+    return pending["sequence_num"] + 1, 0
+
+
+def assistance_pause_budget_minutes(settings, mode):
+    # A successful action may pause generation/reading for at most two minutes.
+    # Failed actions receive no pause credit; the server caps the question count.
+    return MAX_QUESTIONS * 2 * sum(
+        item.limit for item in settings.assistance.__dict__.values()
+        if item.enabled and item.modes in ("both", mode) and not item.timerContinues
+    )
 
 
 def load_exam_material_summaries(db, exam_template_id):
@@ -119,15 +174,17 @@ def end_session(db: Session, session_id: str):
     )
 
 
-def insert_question(db, session_id, seq, question_text, source, source_id, reasoning):
+def insert_question(db, session_id, seq, question_text, source, source_id, reasoning,
+                    root_sequence=None, followup_index=0):
     db.execute(
         text("""INSERT INTO interactions
                 (session_id, sequence_num, question_text, question_source,
-                 source_question_id, model_reasoning)
+                 source_question_id, model_reasoning, created_at, avatar_root_sequence, avatar_followup_index)
                 VALUES (CAST(:sid AS uuid), :seq, :q, :src,
-                        CAST(:qid AS uuid), :why)"""),
+                        CAST(:qid AS uuid), :why, clock_timestamp(), :root, :followup)"""),
         {"sid": session_id, "seq": seq, "q": question_text,
-         "src": source, "qid": source_id, "why": reasoning},
+         "src": source, "qid": source_id, "why": reasoning,
+         "root": root_sequence or seq, "followup": followup_index},
     )
 
 
@@ -180,18 +237,32 @@ def start_exam(req: StartRequest, db: Session = Depends(get_db)):
             "This student is not authorized for this exam roster.",
         )
 
-    session_id = str(db.execute(
-        text("""INSERT INTO exam_sessions (student_id, exam_template_id, time_limit_minutes)
-                SELECT CAST(:s AS uuid), id, time_limit_minutes FROM exam_templates
-                WHERE id = CAST(:t AS uuid) RETURNING id"""),
-        {"s": str(req.student_id), "t": str(req.exam_template_id)},
-    ).scalar_one())
+    avatar_settings, avatar_revision, avatar_mode = snapshot_for_exam(db, req.exam_template_id)
+    snapshot = db.execute(
+        text("""INSERT INTO exam_sessions (student_id, exam_template_id, time_limit_minutes,
+                    question_time_limit_minutes, extended_time_multiplier,
+                    avatar_policy_snapshot, avatar_policy_revision, avatar_exam_mode)
+                SELECT CAST(:s AS uuid), t.id, t.time_limit_minutes, t.question_time_limit_minutes,
+                       COALESCE(r.extended_time_multiplier, 1),
+                       CAST(:avatar_policy AS jsonb), :avatar_revision, :avatar_mode
+                FROM exam_templates t JOIN exam_roster r ON r.exam_template_id = t.id
+                    AND r.student_id = CAST(:s AS uuid)
+                WHERE t.id = CAST(:t AS uuid)
+                RETURNING id, time_limit_minutes, extended_time_multiplier"""),
+        {"s": str(req.student_id), "t": str(req.exam_template_id),
+         "avatar_policy": json.dumps(avatar_settings.model_dump()),
+         "avatar_revision": avatar_revision, "avatar_mode": avatar_mode},
+    ).mappings().first()
+    if not snapshot:
+        db.rollback()
+        raise HTTPException(403, "This student is not authorized for this exam roster.")
+    session_id = str(snapshot["id"])
 
     # First question: easiest bank question for this template
     first = db.execute(
-        text("""SELECT id, question_text FROM questions
+        text(f"""SELECT id, question_text FROM questions
                 WHERE exam_template_id = CAST(:t AS uuid)
-                ORDER BY difficulty NULLS LAST, random() LIMIT 1"""),
+                ORDER BY {bank_order_sql(avatar_settings)} LIMIT 1"""),
         {"t": str(req.exam_template_id)},
     ).mappings().first()
 
@@ -215,7 +286,8 @@ def start_exam(req: StartRequest, db: Session = Depends(get_db)):
         exam_template_id=str(req.exam_template_id),
         purpose="student_session",
         session_id=session_id,
-        minutes=max(180, (template["time_limit_minutes"] or 0) + 30),
+        minutes=max(180, ceil(effective_exam_minutes(snapshot) or 0)
+                    + assistance_pause_budget_minutes(avatar_settings, avatar_mode) + 30),
     )
     state = get_session_state(UUID(session_id), authorization=f"Bearer {session_token}", db=db)
     return {
@@ -231,23 +303,39 @@ def start_exam(req: StartRequest, db: Session = Depends(get_db)):
 def get_session_state(session_id: UUID, authorization: str | None = Header(default=None),
                       db: Session = Depends(get_db)):
     claims = read_student_token(authorization, expected_purpose="student_session")
-    if claims.get("session_id") != str(session_id):
+    return read_session_state(db, str(session_id), claims)
+
+
+def read_session_state(db, session_id: str, claims: dict):
+    """Read persisted question and attempt deadlines without resetting either clock."""
+    if claims.get("session_id") != session_id:
         raise HTTPException(403, "Student token does not match this session.")
-    row = db.execute(text("""SELECT student_id, exam_template_id, status, started_at,
-        time_limit_minutes, now() AS server_now FROM exam_sessions
-        WHERE id = CAST(:sid AS uuid)"""), {"sid": str(session_id)}).mappings().first()
+    row = db.execute(text(f"""SELECT student_id, exam_template_id, status, started_at,
+        time_limit_minutes, question_time_limit_minutes, extended_time_multiplier,
+        avatar_policy_snapshot, avatar_policy_revision, avatar_exam_mode,
+        {pause_sum_sql('exam_sessions.id')} AS avatar_pause_seconds,
+        {active_pause_until_sql('exam_sessions.id')} AS pause_until,
+        clock_timestamp() AS server_now FROM exam_sessions
+        WHERE id = CAST(:sid AS uuid)"""), {"sid": session_id}).mappings().first()
     if not row:
         raise HTTPException(404, "Session not found")
     if claims.get("sub") != str(row["student_id"]) or claims.get("exam_template_id") != str(row["exam_template_id"]):
         raise HTTPException(403, "Student token does not match this exam session.")
-    question = db.execute(text("""SELECT sequence_num, question_text FROM interactions
+    question = db.execute(text(f"""SELECT sequence_num, question_text, created_at,
+        {pause_sum_sql('interactions.session_id', 'interactions.id')} AS avatar_pause_seconds FROM interactions
         WHERE session_id = CAST(:sid AS uuid) ORDER BY sequence_num DESC LIMIT 1"""),
-        {"sid": str(session_id)}).mappings().first()
-    deadline = (row["started_at"] + timedelta(minutes=row["time_limit_minutes"])
-                if row["time_limit_minutes"] is not None else None)
-    return {"session_id": str(session_id), "status": row["status"],
+        {"sid": session_id}).mappings().first()
+    exam_minutes = effective_exam_minutes(row)
+    deadline = (row["started_at"] + timedelta(minutes=exam_minutes, seconds=float(row.get("avatar_pause_seconds", 0)))
+                if exam_minutes is not None else None)
+    question_seconds = effective_question_seconds(row)
+    question_deadline = (question["created_at"] + timedelta(seconds=question_seconds + float(question.get("avatar_pause_seconds", 0)))
+                         if question and question_seconds is not None else None)
+    return {"session_id": session_id, "status": row["status"],
             "server_now": row["server_now"].isoformat(),
             "deadline": deadline.isoformat() if deadline else None,
+            "question_deadline": question_deadline.isoformat() if question_deadline else None,
+            "pause_until": row["pause_until"].isoformat() if row.get("pause_until") else None,
             "sequence_num": question["sequence_num"] if question else 0,
             "question": question["question_text"] if question else ""}
 
@@ -267,9 +355,12 @@ def submit_answer(
         raise HTTPException(403, "Student token does not match this session.")
 
     session = db.execute(
-        text("""SELECT s.status, s.student_id, s.exam_template_id, s.time_limit_minutes,
-                       EXTRACT(EPOCH FROM (now() - s.started_at)) / 60 AS elapsed_min
-                FROM exam_sessions s WHERE s.id = CAST(:sid AS uuid)"""),
+        text(f"""SELECT s.status, s.student_id, s.exam_template_id, s.time_limit_minutes,
+                       s.extended_time_multiplier,
+                       s.question_time_limit_minutes, s.avatar_policy_snapshot, s.avatar_policy_revision, s.avatar_exam_mode,
+                       {active_pause_until_sql('s.id')} AS pause_until,
+                       (EXTRACT(EPOCH FROM (clock_timestamp() - s.started_at)) - {pause_sum_sql('s.id')}) / 60 AS elapsed_min
+                FROM exam_sessions s WHERE s.id = CAST(:sid AS uuid) FOR UPDATE"""),
         {"sid": sid},
     ).mappings().first()
     if not session:
@@ -283,7 +374,8 @@ def submit_answer(
         raise HTTPException(409, f"Session is {session['status']}")
 
     pending = db.execute(
-        text("""SELECT id, sequence_num FROM interactions
+        text(f"""SELECT id, sequence_num, avatar_root_sequence, avatar_followup_index,
+                       (EXTRACT(EPOCH FROM (clock_timestamp() - created_at)) - {pause_sum_sql('interactions.session_id', 'interactions.id')}) / 60 AS elapsed_min FROM interactions
                 WHERE session_id = CAST(:sid AS uuid)
                   AND student_answer_transcript IS NULL
                 ORDER BY sequence_num DESC LIMIT 1"""),
@@ -292,13 +384,16 @@ def submit_answer(
     if not pending:
         raise HTTPException(409, "No question is waiting for an answer")
 
+    avatar_settings = session_policy(session)
+    answer, timestamp_start, timestamp_end = accepted_answer(req, session, pending)
+
     db.execute(
         text("""UPDATE interactions
                 SET student_answer_transcript = :a,
                     answer_timestamp_start = :ts, answer_timestamp_end = :te
                 WHERE id = :id"""),
-        {"a": req.answer_transcript, "ts": req.answer_timestamp_start,
-         "te": req.answer_timestamp_end, "id": pending["id"]},
+        {"a": answer, "ts": timestamp_start,
+         "te": timestamp_end, "id": pending["id"]},
     )
 
     template = db.execute(
@@ -314,8 +409,8 @@ def submit_answer(
         {"sid": sid},
     ).mappings().all()]
 
-    out_of_time = (session["time_limit_minutes"] is not None
-                   and session["elapsed_min"] >= session["time_limit_minutes"])
+    exam_minutes = effective_exam_minutes(session)
+    out_of_time = (exam_minutes is not None and session["elapsed_min"] >= exam_minutes)
     if out_of_time or len(history) >= MAX_QUESTIONS:
         end_session(db, sid)
         db.commit()
@@ -325,11 +420,12 @@ def submit_answer(
         {"id": str(r["id"]), "text": r["question_text"],
          "topic": r["topic"], "difficulty": r["difficulty"]}
         for r in db.execute(
-            text("""SELECT id, question_text, topic, difficulty FROM questions
+            text(f"""SELECT id, question_text, topic, difficulty FROM questions
                     WHERE exam_template_id = :t
                       AND id NOT IN (SELECT source_question_id FROM interactions
                                      WHERE session_id = CAST(:sid AS uuid)
-                                       AND source_question_id IS NOT NULL)"""),
+                                       AND source_question_id IS NOT NULL)
+                    ORDER BY {bank_order_sql(avatar_settings)}"""),
             {"t": session["exam_template_id"], "sid": sid},
         ).mappings().all()
     ]
@@ -337,8 +433,16 @@ def submit_answer(
     summaries = load_exam_material_summaries(
         db, session["exam_template_id"]
     )
+    can_follow_up = pending.get("avatar_followup_index", 0) < avatar_settings.behavior.followUps
+    if not can_follow_up and not bank_remaining:
+        end_session(db, sid)
+        db.commit()
+        return {"done": True, "reason": "No further questions available"}
     try:
-        decision = ask_model(template, history, bank_remaining, summaries)
+        decision = (ask_model(template, history, bank_remaining, summaries) if can_follow_up else {
+            "bank_question_id": bank_remaining[0]["id"],
+            "reasoning": "The saved follow-up limit requires the next bank question.",
+        })
     except HTTPException:
         if not bank_remaining:
             raise
@@ -362,14 +466,13 @@ def submit_answer(
     if decision.get("end_exam"):
         end_session(db, sid)
         db.commit()
-        return {"done": True, "reason": decision.get("reasoning")}
+        return {"done": True, "reason": "Examination complete"}
 
-    bank_by_id = {b["id"]: b for b in bank_remaining}
-    chosen = bank_by_id.get(str(decision.get("bank_question_id")))
+    chosen = bank_remaining[0] if bank_remaining and decision.get("bank_question_id") else None
 
     if chosen:
         question, source, source_id = chosen["text"], "bank", chosen["id"]
-    elif decision.get("question"):
+    elif decision.get("question") and can_follow_up:
         question, source, source_id = decision["question"], "generated", None
     elif bank_remaining:
         # Fallback if the model fails to choose a question.
@@ -381,10 +484,11 @@ def submit_answer(
         return {"done": True, "reason": "No further questions available"}
 
     seq = pending["sequence_num"] + 1
+    root_sequence, followup_index = follow_up_metadata(pending, source)
     insert_question(db, sid, seq, question, source, source_id,
-                    decision.get("reasoning"))
+                    decision.get("reasoning"), root_sequence, followup_index)
     db.commit()
-    return {"done": False, "sequence_num": seq, "question": question}
+    return {"done": False, **read_session_state(db, sid, claims)}
 
 
 # Professor exam creation
@@ -560,7 +664,7 @@ def get_student_available_exams(
                 t.course,
                 t.description,
                 t.icon,
-                t.time_limit_minutes
+                t.time_limit_minutes * COALESCE(r.extended_time_multiplier, 1) AS time_limit_minutes
             FROM exam_roster AS r
             JOIN exam_templates AS t
               ON t.id = r.exam_template_id
@@ -889,29 +993,8 @@ async def upload_exam_questions(
         )
 
     try:
-        inserted = 0
-
-        for question in questions:
-            db.execute(
-                text("""
-                    INSERT INTO questions (
-                        professor_id,
-                        exam_template_id,
-                        question_text
-                    )
-                    VALUES (
-                        CAST(:professor_id AS uuid),
-                        CAST(:exam_id AS uuid),
-                        :question_text
-                    )
-                """),
-                {
-                    "professor_id": str(professor_id),
-                    "exam_id": str(exam_template_id),
-                    "question_text": question,
-                },
-            )
-            inserted += 1
+        from .question_order import append_bank_questions
+        inserted = append_bank_questions(db, exam_template_id, professor_id, questions)
 
         db.commit()
 
@@ -1129,7 +1212,7 @@ def list_exam_questions(
             WHERE q.exam_template_id = CAST(:exam_id AS uuid)
               AND q.professor_id = CAST(:professor_id AS uuid)
               AND e.professor_id = CAST(:professor_id AS uuid)
-            ORDER BY q.created_at DESC
+            ORDER BY q.avatar_authored_position NULLS LAST, q.created_at, q.id
         """),
         {
             "exam_id": str(exam_template_id),

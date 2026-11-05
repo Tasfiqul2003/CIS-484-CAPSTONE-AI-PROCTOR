@@ -1,6 +1,6 @@
 # Manage Exam navigation checks
 
-The instructor overview links to Question Bank, Course Materials, and six category pages under `/professor/exams/:id/settings/`. Avatar & Interaction Settings keeps all its existing subsections and separate local draft, shared preview, and server policy actions. The other categories retain their existing browser-local draft controls and use the original `oralExamSettings-/professor/exams/:id` storage key. Saving a category merges that category into the latest stored exam draft.
+The instructor overview links to Question Bank, Course Materials, and six category pages under `/professor/exams/:id/settings/`. Avatar & Interaction Settings keeps its separate local draft, shared preview, and server policy actions. Time & Scheduling saves exam/question limits to the server. ODS Accommodations saves per-EID extended total-exam time assignments to the server; its individual and CSV actions apply to new attempts for the selected exam. Other categories retain browser-local drafts using the original `oralExamSettings-/professor/exams/:id` key. Legacy ODS draft values are preserved but are not imported as live assignments.
 
 The legacy `/professor/exams/:id#avatar-settings` and `/professor/exams/:id/avatar-settings` links redirect to the dedicated avatar page. Navigation uses the existing full-page anchors and browser history. Dirty settings pages use the browser's unsaved-change prompt; accepting navigation discards the unsaved edits, while canceling retains the editor.
 
@@ -14,7 +14,9 @@ $env:MANAGE_EXAM_TEST_OUTPUT_DIR = 'C:\path\to\scratch\manage-exam-results'
 node tests/manage-exam-browser.test.mjs
 ```
 
-The suite intercepts every API request with synthetic exam and professor responses, returns an empty roster, and blocks external requests and unconfigured writes. It checks all navigation cards, category isolation, direct links, reloads, back/forward navigation, original draft keys, category saves, simultaneous category pages, unsaved-change prompts, old avatar links, instructor/student previews, owned-exam denial, and 360px layouts. It writes actual pass/fail results and screenshots to the selected output directory. Its server-policy fixture deliberately returns 503; server policy reads/writes and stale revisions are exercised separately by `exam-policy-browser.test.mjs`.
+The suite intercepts every API request with synthetic exam and professor responses, returns an empty roster, simulates time-setting and ODS assignment saves, and blocks external requests and unconfigured writes. It checks navigation, category isolation, direct links, reloads, browser history, original draft preservation, saves, simultaneous category pages, unsaved-change prompts, old avatar links, instructor/student previews, owned-exam denial, and 360px layouts. The ODS fixture simulates a saved synthetic student; it does not exercise real roster authorization or CSV parsing. It writes actual pass/fail results and screenshots to the selected output directory. Its server-policy fixture deliberately returns 503; server policy reads/writes and stale revisions are exercised separately by `exam-policy-browser.test.mjs`.
+
+The fixture was updated for live time settings and ODS assignments on November 4, 2026; browser automation was not run for that update. The historical results below describe the earlier navigation implementation.
 
 Also run the existing model and browser regressions documented in [README-avatar-settings.md](README-avatar-settings.md). Those suites retain the prior avatar, preference, and policy behavior checks; the avatar suite now opens the dedicated page through its overview card.
 

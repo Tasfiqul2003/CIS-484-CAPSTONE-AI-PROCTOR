@@ -1,4 +1,30 @@
-# Avatar permissions: requirements for related work
+# Avatar permissions: implementation and deployment checks
+
+## Completed in code — November 4, 2026
+
+The checklist's backend connection and default avatar are implemented. Live
+attempts snapshot professor policy and mode, expose a student-safe presentation
+API, enforce saved student preference permissions, and persist assistance usage
+and bounded pauses. Question order, follow-up limits and fixed response windows
+are enforced by the server. The built-in SVG examiner supports readable states,
+reduced motion and standard English question read-aloud.
+
+See [Live avatar integration](avatar-live-integration.md) for scope, migration,
+legacy handling, actual verification and limitations. New policies use a clear
+standard voice; the selected scope does not include professor voice cloning.
+
+## Remaining deployment and measurement work
+
+Apply migration 011 after prior migrations, verify it against isolated PostgreSQL,
+and test actual browser/audio/model behavior with synthetic content. PostgreSQL
+concurrency, browser speech availability and generated-help quality are not
+established by the SQLite/helper tests. This is not a compliance or reliability
+claim.
+
+## Historical integration requirements
+
+The following list records the earlier integration plan. Several items are now
+implemented; it is preserved as historical context rather than a current checklist.
 
 The instructor editor and student previews now share versioned exam policies. The professor-owned policy API and database migration are implemented. Real student access and exam-attempt enforcement require the integrations below.
 

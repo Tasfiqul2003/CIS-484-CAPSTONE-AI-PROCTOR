@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import AIAvatar from "../AIAvatar";
 import {
   AVATARS,
   BACKGROUNDS,
@@ -138,13 +139,10 @@ export default function StudentAvatarPreview({ settings, onClose }: { settings: 
           data-state={state.toLowerCase()}
           style={shownBackground === "custom" && customBackground ? { backgroundImage: `url("${customBackground}")` } : undefined}
         >
-          <div className={`avatar-figure avatar-figure-${shownAvatar}`} aria-hidden={shownAvatar !== "custom"}>
-            {shownAvatar === "custom" && customAvatar ? <img className="avatar-photo" src={customAvatar} alt="Uploaded avatar photo" /> : shownAvatar === "guide" ? (
-              <svg viewBox="0 0 100 100" focusable="false"><circle cx="50" cy="33" r="17" /><path d="M19 88v-9c0-17 14-28 31-28s31 11 31 28v9" /></svg>
-            ) : <span className="avatar-geometric-mark" />}
-          </div>
+          <AIAvatar compact avatar={shownAvatar} customAvatar={customAvatar} background={shownBackground}
+            customBackground={customBackground} state={state} animation={settings.presentation.animation} reducedMotion={reducedMotion} />
           <div>
-            <strong>{choiceLabel(avatarChoices, shownAvatar)}{shownAvatar === "custom" ? " · static photo" : " · placeholder"}</strong>
+            <strong>{choiceLabel(avatarChoices, shownAvatar)}{shownAvatar === "custom" ? " · static photo" : " · built-in examiner"}</strong>
             <p>{choiceLabel(backgroundChoices, shownBackground)}</p>
             <p>{choiceLabel(VOICES, settings.presentation.voice)} · {shownSpeed.toFixed(2)}× speed</p>
             {shownAvatar === "custom" && <p>The uploaded photo stays still. Avatar states are simulated; this photo is not an animated avatar integration.</p>}

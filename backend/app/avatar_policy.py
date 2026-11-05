@@ -153,12 +153,14 @@ class AvatarSettings(StrictModel):
 class SaveAvatarPolicy(StrictModel):
     settings: AvatarSettings
     expected_revision: Annotated[int, Field(strict=True, ge=0)]
+    exam_mode: Literal["practice", "assessed"] = "assessed"
 
 
 class AvatarPolicyResponse(StrictModel):
     exam_id: str
     revision: Annotated[int, Field(strict=True, ge=0)]
     settings: AvatarSettings
+    exam_mode: Literal["practice", "assessed"] = "assessed"
     effective_for: Literal["new_attempts"] = "new_attempts"
     assistance_scope: Literal["per_question"] = "per_question"
     updated_at: str | None
@@ -172,7 +174,7 @@ def default_settings() -> AvatarSettings:
     return AvatarSettings.model_validate({
         "presentation": {
             "avatar": "guide", "background": "neutral", "customAvatar": None,
-            "customBackground": None, "voice": "calm", "speed": 1,
+            "customBackground": None, "voice": "clear", "speed": 1,
             "animation": True, "reducedMotion": False, "stateLabels": True,
         },
         "student": {
@@ -210,13 +212,13 @@ def _database_error(db: Session, error: SQLAlchemyError) -> None:
     db.rollback()
     original = getattr(error, "orig", None)
     code = getattr(original, "pgcode", None) or getattr(original, "sqlstate", None)
-    missing = code == "42P01" or (
+    missing = code in ("42P01", "42703") or (
         "no such table: exam_avatar_policies" in str(original).lower()
-    )
+    ) or "no such column: exam_mode" in str(original).lower()
     if missing:
         raise HTTPException(
             503,
-            "Avatar policy storage is unavailable. Apply database/migrations/006_exam_avatar_policy.sql before saving or loading policies.",
+            "Avatar policy storage is unavailable. Apply database/migrations/006_exam_avatar_policy.sql and 011_session_avatar_presentation.sql before saving or loading policies.",
         ) from error
     raise error
 
@@ -231,7 +233,7 @@ def _response(exam_id: UUID, row=None) -> AvatarPolicyResponse:
         updated_at = stamp.isoformat() if isinstance(stamp, datetime) else str(stamp)
     return AvatarPolicyResponse(
         exam_id=str(exam_id), revision=row["revision"] if row else 0,
-        settings=settings, updated_at=updated_at,
+        settings=settings, updated_at=updated_at, exam_mode=row.get("exam_mode", "assessed") if row else "assessed",
     )
 
 
@@ -244,7 +246,7 @@ def get_avatar_policy(
     _ensure_owner(db, exam_id, account)
     try:
         row = db.execute(
-            text("SELECT settings, revision, updated_at FROM exam_avatar_policies WHERE exam_template_id = :exam_id"),
+            text("SELECT settings, revision, updated_at, exam_mode FROM exam_avatar_policies WHERE exam_template_id = :exam_id"),
             {"exam_id": str(exam_id)},
         ).mappings().first()
     except SQLAlchemyError as error:
@@ -268,26 +270,28 @@ def save_avatar_policy(
     values = {
         "exam_id": str(exam_id), "professor_id": str(account["professor_id"]),
         "settings": json.dumps(body.settings.model_dump(), allow_nan=False),
+        "exam_mode": body.exam_mode if "exam_mode" in body.model_fields_set else None,
         "revision": body.expected_revision, "updated_at": datetime.now(timezone.utc),
     }
     try:
         if body.expected_revision == 0:
             # Revision zero means first save; an existing row must not be overwritten.
             statement = f"""
-                INSERT INTO exam_avatar_policies (exam_template_id, settings, revision, updated_at)
-                SELECT id, {encoded}, 1, :updated_at FROM exam_templates
+                INSERT INTO exam_avatar_policies (exam_template_id, settings, revision, updated_at, exam_mode)
+                SELECT id, {encoded}, 1, :updated_at, COALESCE(:exam_mode, 'assessed') FROM exam_templates
                 WHERE id = :exam_id AND professor_id = :professor_id
                 ON CONFLICT (exam_template_id) DO NOTHING
-                RETURNING settings, revision, updated_at
+                RETURNING settings, revision, updated_at, exam_mode
             """
         else:
             statement = f"""
                 UPDATE exam_avatar_policies SET settings = {encoded},
-                    revision = revision + 1, updated_at = :updated_at
+                    revision = revision + 1, updated_at = :updated_at,
+                    exam_mode = COALESCE(:exam_mode, exam_mode)
                 WHERE exam_template_id = :exam_id AND revision = :revision
                     AND EXISTS (SELECT 1 FROM exam_templates
                         WHERE id = :exam_id AND professor_id = :professor_id)
-                RETURNING settings, revision, updated_at
+                RETURNING settings, revision, updated_at, exam_mode
             """
         row = db.execute(text(statement), values).mappings().first()
         if row is None:

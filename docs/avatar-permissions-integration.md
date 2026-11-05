@@ -1,5 +1,13 @@
 # Avatar permissions: rules and remaining integration work
 
+**November 4, 2026 update:** live attempt snapshots, server-authorized presentation
+preferences, assistance counters/idempotency/pauses, authoritative mode and
+question behavior are now implemented, together with the default SVG examiner
+and standard English read-aloud. See [Live avatar integration](avatar-live-integration.md)
+for the current implementation and measured checks. The historical remaining-work
+list below predates this increment; PostgreSQL deployment and browser/model
+verification remain outstanding.
+
 ## Decisions for this part
 
 | Control | Permission rule |
@@ -26,4 +34,6 @@ Policy changes apply to **new attempts**. An active preview keeps its starting p
 - **When adding individual accommodations,** store an approved, scoped override with its approver and applicable exam/student. Define how it combines with the exam policy without granting students access to professor-only rules.
 - **When validating the connected workflow,** test two professors, two students, unassigned students, changed enrollment, direct unauthorized requests, stale policy revisions, restricted saved preferences, and assistance races/reloads. Record observed results separately from expected behavior.
 
-This document does not claim that roster, student authorization, real attempt snapshots, or server-side assistance enforcement are implemented. Those belong to the integrations above. Frontend mock behavior cannot establish real exam security.
+The earlier checklist above describes the original plan. Current implementation
+status is recorded in the linked live-integration document; frontend mock
+behavior alone does not establish real exam authorization or content reliability.

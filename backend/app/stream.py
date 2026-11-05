@@ -12,10 +12,16 @@ from .exam import (
     OLLAMA_MODEL,
     OLLAMA_URL,
     AnswerRequest,
+    accepted_answer,
+    effective_exam_minutes,
+    bank_order_sql,
     end_session,
     insert_question,
     load_exam_material_summaries,
+    read_session_state,
 )
+from .avatar_session import session_policy
+from .avatar_timing import pause_sum_sql, active_pause_until_sql
 
 router = APIRouter(prefix="/exam", tags=["streaming"])
 
@@ -77,8 +83,11 @@ def plan_turn(req: AnswerRequest, claims: dict) -> dict:
     db = open_session()
     try:
         session = db.execute(
-            text("""SELECT s.status, s.student_id, s.exam_template_id, s.time_limit_minutes,
-                           EXTRACT(EPOCH FROM (now() - s.started_at)) / 60 AS elapsed_min
+            text(f"""SELECT s.status, s.student_id, s.exam_template_id, s.time_limit_minutes,
+                           s.extended_time_multiplier,
+                           s.question_time_limit_minutes, s.avatar_policy_snapshot, s.avatar_policy_revision, s.avatar_exam_mode,
+                           {active_pause_until_sql('s.id')} AS pause_until,
+                           (EXTRACT(EPOCH FROM (clock_timestamp() - s.started_at)) - {pause_sum_sql('s.id')}) / 60 AS elapsed_min
                     FROM exam_sessions s WHERE s.id = CAST(:sid AS uuid)"""),
             {"sid": sid},
         ).mappings().first()
@@ -93,7 +102,8 @@ def plan_turn(req: AnswerRequest, claims: dict) -> dict:
             raise HTTPException(409, f"Session is {session['status']}")
 
         pending = db.execute(
-            text("""SELECT id, sequence_num FROM interactions
+            text(f"""SELECT id, sequence_num, avatar_root_sequence, avatar_followup_index,
+                           (EXTRACT(EPOCH FROM (clock_timestamp() - created_at)) - {pause_sum_sql('interactions.session_id', 'interactions.id')}) / 60 AS elapsed_min FROM interactions
                     WHERE session_id = CAST(:sid AS uuid)
                       AND student_answer_transcript IS NULL
                     ORDER BY sequence_num DESC LIMIT 1"""),
@@ -101,6 +111,8 @@ def plan_turn(req: AnswerRequest, claims: dict) -> dict:
         ).mappings().first()
         if not pending:
             raise HTTPException(409, "No question is waiting for an answer")
+        answer, timestamp_start, timestamp_end = accepted_answer(req, session, pending)
+        avatar_settings = session_policy(session)
 
         template = db.execute(
             text("SELECT * FROM exam_templates WHERE id = :t"),
@@ -116,7 +128,7 @@ def plan_turn(req: AnswerRequest, claims: dict) -> dict:
         ).mappings().all()]
         for h in history:  # include the answer we haven't saved yet
             if h["sequence_num"] == pending["sequence_num"]:
-                h["answer"] = req.answer_transcript
+                h["answer"] = answer
 
         course_material_summaries = load_exam_material_summaries(
             db, session["exam_template_id"]
@@ -124,19 +136,23 @@ def plan_turn(req: AnswerRequest, claims: dict) -> dict:
 
         plan = {
             "sid": sid,
+            "claims": claims,
             "pending_id": pending["id"],
             "seq": pending["sequence_num"] + 1,
-            "answer": req.answer_transcript,
-            "ts": req.answer_timestamp_start,
-            "te": req.answer_timestamp_end,
+            "root_sequence": pending.get("avatar_root_sequence") or pending["sequence_num"],
+            "followup_index": pending.get("avatar_followup_index", 0),
+            "can_follow_up": pending.get("avatar_followup_index", 0) < avatar_settings.behavior.followUps,
+            "answer": answer,
+            "ts": timestamp_start,
+            "te": timestamp_end,
             "history": history,
             "course_material_summaries": course_material_summaries,
             "topics": template["topic_coverage_required"],
             "curve": template["difficulty_curve"],
         }
 
-        out_of_time = (session["time_limit_minutes"] is not None
-                       and session["elapsed_min"] >= session["time_limit_minutes"])
+        exam_minutes = effective_exam_minutes(session)
+        out_of_time = (exam_minutes is not None and session["elapsed_min"] >= exam_minutes)
         if out_of_time or len(history) >= MAX_QUESTIONS:
             return {**plan, "kind": "done", "reason": "time or question limit reached"}
 
@@ -144,28 +160,34 @@ def plan_turn(req: AnswerRequest, claims: dict) -> dict:
             {"id": str(r["id"]), "text": r["question_text"],
              "topic": r["topic"], "difficulty": r["difficulty"]}
             for r in db.execute(
-                text("""SELECT id, question_text, topic, difficulty FROM questions
+                text(f"""SELECT id, question_text, topic, difficulty FROM questions
                         WHERE exam_template_id = :t
                           AND id NOT IN (SELECT source_question_id FROM interactions
                                          WHERE session_id = CAST(:sid AS uuid)
-                                           AND source_question_id IS NOT NULL)"""),
+                                           AND source_question_id IS NOT NULL)
+                        ORDER BY {bank_order_sql(avatar_settings)}"""),
                 {"t": session["exam_template_id"], "sid": sid},
             ).mappings().all()
         ]
     finally:
         db.close()
 
+    if not plan["can_follow_up"]:
+        if bank_remaining:
+            chosen = bank_remaining[0]
+            return {**plan, "kind": "bank", "question": chosen["text"], "source_id": chosen["id"],
+                    "reasoning": "The saved follow-up limit requires the next bank question."}
+        return {**plan, "kind": "done", "reason": "No further questions available"}
     decision = decide(plan, bank_remaining)
     plan["reasoning"] = decision.get("reasoning")
     action = decision.get("action")
-    bank_by_id = {b["id"]: b for b in bank_remaining}
-    chosen = bank_by_id.get(str(decision.get("bank_question_id")))
+    chosen = bank_remaining[0] if bank_remaining else None
 
-    if action == "end":
-        return {**plan, "kind": "done", "reason": plan["reasoning"]}
-    if action == "bank" and chosen:
+    if action == "end" and not chosen:
+        return {**plan, "kind": "done", "reason": "Examination complete"}
+    if action in ("bank", "end") and chosen:
         return {**plan, "kind": "bank", "question": chosen["text"], "source_id": chosen["id"]}
-    if decision.get("follow_up_focus"):
+    if decision.get("follow_up_focus") and plan["can_follow_up"]:
         return {**plan, "kind": "generate", "focus": decision["follow_up_focus"]}
     if bank_remaining:  # model gave nothing usable: fall back to the next bank question
         b = bank_remaining[0]
@@ -174,13 +196,20 @@ def plan_turn(req: AnswerRequest, claims: dict) -> dict:
 
 
 def save_answer(db, plan):
-    db.execute(
+    session = db.execute(text(f"""SELECT s.status, {active_pause_until_sql('s.id')} AS pause_until
+        FROM exam_sessions s WHERE s.id = CAST(:sid AS uuid) FOR UPDATE"""),
+        {"sid": plan["sid"]}).mappings().first()
+    if not session or session["status"] != "in_progress" or session.get("pause_until") is not None:
+        raise HTTPException(409, "The attempt changed or assistance is still active. Resume the attempt.")
+    result = db.execute(
         text("""UPDATE interactions
                 SET student_answer_transcript = :a,
                     answer_timestamp_start = :ts, answer_timestamp_end = :te
-                WHERE id = :id"""),
+                WHERE id = :id AND student_answer_transcript IS NULL"""),
         {"a": plan["answer"], "ts": plan["ts"], "te": plan["te"], "id": plan["pending_id"]},
     )
+    if result.rowcount != 1:
+        raise HTTPException(409, "This question has already been answered. Resume the attempt.")
 
 
 def finish_done(plan):
@@ -198,8 +227,10 @@ def finish_question(plan, question, source, source_id):
     try:
         save_answer(db, plan)
         insert_question(db, plan["sid"], plan["seq"], question, source, source_id,
-                        plan["reasoning"])
+                        plan["reasoning"], plan["root_sequence"] if source == "generated" else plan["seq"],
+                        plan["followup_index"] + 1 if source == "generated" else 0)
         db.commit()
+        return read_session_state(db, plan["sid"], plan["claims"])
     finally:
         db.close()
 
@@ -208,18 +239,26 @@ def event_stream(plan):
     kind = plan["kind"]
 
     if kind == "done":
-        finish_done(plan)
+        try:
+            finish_done(plan)
+        except HTTPException as error:
+            yield sse("error", {"detail": error.detail})
+            return
         yield sse("done", {"reason": plan["reason"]})
         return
 
     if kind == "bank":
-        finish_question(plan, plan["question"], "bank", plan["source_id"])
+        try:
+            state = finish_question(plan, plan["question"], "bank", plan["source_id"])
+        except HTTPException as error:
+            yield sse("error", {"detail": error.detail})
+            return
         yield sse("token", {"text": plan["question"]})
-        yield sse("complete", {"sequence_num": plan["seq"], "question": plan["question"],
-                               "source": "bank"})
+        yield sse("complete", {**state, "source": "bank"})
         return
 
-    # kind == "generate": stream the follow-up question as the model writes it
+    # Buffer generated follow-ups until the turn commits. A racing request must
+    # not expose a second, uncommitted question or bypass the follow-up allowance.
     payload = {"focus": plan["focus"], "topics_required": plan["topics"],
                "difficulty_curve": plan["curve"], "history": plan["history"],
                "course_material_summaries": plan.get("course_material_summaries", [])}
@@ -247,7 +286,6 @@ def event_stream(plan):
                 token = chunk.get("message", {}).get("content", "")
                 if token:
                     parts.append(token)
-                    yield sse("token", {"text": token})
                 if chunk.get("done"):
                     break
     except (httpx.HTTPError, json.JSONDecodeError) as e:
@@ -259,9 +297,14 @@ def event_stream(plan):
         yield sse("error", {"detail": "Model returned an empty question"})
         return
 
-    finish_question(plan, question, "generated", None)
-    yield sse("complete", {"sequence_num": plan["seq"], "question": question,
-                           "source": "generated"})
+    try:
+        state = finish_question(plan, question, "generated", None)
+    except HTTPException as error:
+        yield sse("error", {"detail": error.detail})
+        return
+    for token in parts:
+        yield sse("token", {"text": token})
+    yield sse("complete", {**state, "source": "generated"})
 
 
 @router.post("/answer/stream")

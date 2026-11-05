@@ -22,7 +22,8 @@ def test_clock_uses_saved_start_and_session_limit(monkeypatch, minutes):
             if "FROM exam_sessions" in str(statement):
                 return Result({"student_id": "synthetic-student", "exam_template_id": "synthetic-exam",
                     "status": "in_progress", "started_at": datetime(2026, 1, 1, tzinfo=timezone.utc),
-                    "time_limit_minutes": minutes, "server_now": datetime(2026, 1, 1, 0, 5, tzinfo=timezone.utc)})
+                    "time_limit_minutes": minutes, "server_now": datetime(2026, 1, 1, 0, 5, tzinfo=timezone.utc),
+                    "avatar_policy_snapshot": None, "avatar_policy_revision": 0})
             return Result({"sequence_num": 2, "question_text": "Synthetic question"})
     first = exam.get_session_state(UUID(SID), authorization="synthetic", db=DB())
     assert first == exam.get_session_state(UUID(SID), authorization="synthetic", db=DB())

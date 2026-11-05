@@ -1,22 +1,18 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { formatRemaining, readExamClock, remainingTime } from "./examTiming";
+import type { ExamClock, ExamTiming, RemainingTime } from "./examTiming";
+import LiveExamPresentation from "../../components/avatar/LiveExamPresentation";
 
-
-type StartResponse = {
+type StartResponse = ExamTiming & {
   session_id: string;
   session_token?: string;
   status: string;
-  deadline: string | null;
-  server_now: string;
   sequence_num: number;
   question: string;
 };
 
-type AnswerResponse = {
-  done: boolean;
-  sequence_num?: number;
-  question?: string;
-  reason?: string;
-};
+type AnswerResponse = { done: true; reason?: string }
+  | (ExamTiming & { done: false; sequence_num: number; question: string });
 
 async function apiRequest<T>(
   endpoint: string,
@@ -48,16 +44,30 @@ export default function StudentExam() {
   const [showConfirmation, setShowConfirmation] = useState(false);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [assisting, setAssisting] = useState(false);
+  const [textSize, setTextSize] = useState(16);
   const [error, setError] = useState("");
   const started = useRef(false);
   const sessionToken = useRef("");
-  const [remaining, setRemaining] = useState<number | null>(null);
-  const clock = useRef<{ deadline: number; serverNow: number; received: number } | null>(null);
+  const [remaining, setRemaining] = useState<RemainingTime>({ exam: null, question: null });
+  const clock = useRef<ExamClock | null>(null);
+  const submittingRequest = useRef(false);
+  const automaticSubmission = useRef<number | null>(null);
+  const expired = remaining.exam === 0 || remaining.question === 0;
+
+  const updateClock = useCallback((timing: ExamTiming) => {
+    const value = readExamClock(timing, performance.now());
+    clock.current = value;
+    setRemaining(remainingTime(value, performance.now()));
+  }, []);
 
   useEffect(() => {
     const tick = () => {
       const value = clock.current;
-      if (value) setRemaining(Math.max(0, Math.ceil((value.deadline - value.serverNow - (performance.now() - value.received)) / 1000)));
+      if (value) {
+        const next = remainingTime(value, performance.now());
+        setRemaining(current => current.exam === next.exam && current.question === next.question ? current : next);
+      }
     };
     const timer = window.setInterval(tick, 250);
     tick();
@@ -105,6 +115,7 @@ export default function StudentExam() {
         sessionToken.current = result.session_token;
         sessionStorage.setItem(storageKey, JSON.stringify({ id: result.session_id, token: result.session_token }));
       }
+      if (result.status === "in_progress") updateClock(result);
       setSessionId(result.session_id);
       sessionStorage.setItem("oralexam_exam_session_id", result.session_id);
       setQuestion(result.question);
@@ -114,32 +125,30 @@ export default function StudentExam() {
         setShowConfirmation(true);
         return;
       }
-      if (result.deadline !== null) {
-        const deadline = Date.parse(result.deadline);
-        const serverNow = Date.parse(result.server_now);
-        if (!Number.isFinite(deadline) || !Number.isFinite(serverNow)) throw new Error("The server returned invalid timing information.");
-        clock.current = { deadline, serverNow, received: performance.now() };
-        setRemaining(Math.max(0, Math.ceil((deadline - serverNow) / 1000)));
-      }
     }
     void loadAttempt().catch((err: unknown) => {
       setError(err instanceof Error ? err.message : "Unable to start the exam.");
     }).finally(() => setLoading(false));
-  }, []);
+  }, [updateClock]);
 
-  const handleNext = async () => {
-    if (!sessionId || !answer.trim() || submitting) return;
+  const handleNext = useCallback(async () => {
+    const current = clock.current ? remainingTime(clock.current, performance.now()) : remaining;
+    const timedOut = current.exam === 0 || current.question === 0;
+    if (!sessionId || (!answer.trim() && !timedOut) || submittingRequest.current || assisting) return;
 
+    submittingRequest.current = true;
     setSubmitting(true);
     setError("");
 
     try {
       const result = await apiRequest<AnswerResponse>("/exam/answer", {
         session_id: sessionId,
-        answer_transcript: answer.trim(),
+        answer_transcript: timedOut ? "" : answer.trim(),
+        question_sequence_num: questionNumber,
       }, sessionToken.current);
 
       if (result.done) {
+        clock.current = null;
         setCompletedQuestions(questionNumber);
         setShowConfirmation(true);
         return;
@@ -149,19 +158,52 @@ export default function StudentExam() {
         throw new Error("The server did not return the next question.");
       }
 
+      updateClock(result);
       setQuestion(result.question);
-      setQuestionNumber(result.sequence_num ?? questionNumber + 1);
+      setQuestionNumber(result.sequence_num);
       setAnswer("");
     } catch (err: unknown) {
+      // A submission may have committed even when its response was lost. Resume
+      // before retrying so an old sequence cannot answer the following question.
+      try {
+        const response = await fetch(`/api/exam/sessions/${encodeURIComponent(sessionId)}`, {
+          headers: { Authorization: `Bearer ${sessionToken.current}` },
+        });
+        if (!response.ok) throw new Error("Unable to resume the attempt.");
+        const state = await response.json() as StartResponse;
+        if (state.status !== "in_progress") {
+          clock.current = null;
+          setCompletedQuestions(state.sequence_num);
+          setShowConfirmation(true);
+          return;
+        }
+        updateClock(state);
+        if (state.sequence_num !== questionNumber) {
+          setQuestion(state.question);
+          setQuestionNumber(state.sequence_num);
+          setAnswer("");
+          return;
+        }
+      } catch {
+        // Keep the submitted question and show the original error for retry.
+      }
       setError(
         err instanceof Error
           ? err.message
           : "Your answer could not be submitted. Please try again.",
       );
     } finally {
+      submittingRequest.current = false;
       setSubmitting(false);
     }
-  };
+  }, [sessionId, answer, questionNumber, remaining, updateClock, assisting]);
+
+  useEffect(() => {
+    if (!expired || loading || showConfirmation || submitting || assisting || !sessionId
+        || automaticSubmission.current === questionNumber) return;
+    automaticSubmission.current = questionNumber;
+    void handleNext();
+  }, [expired, loading, showConfirmation, submitting, assisting, sessionId, questionNumber, handleNext]);
 
   const submitExam = () => {
     // The backend has already ended the session when it returns done: true.
@@ -285,35 +327,42 @@ export default function StudentExam() {
         </div>
         <div className="student-exam-progress">
           Question {questionNumber}
-          <div className="exam-countdown" role="timer" aria-label="Time remaining" aria-live="off">
-            {remaining === null ? "No time limit" : `Time left: ${Math.floor(remaining / 60)}:${String(remaining % 60).padStart(2, "0")}`}
+          <div className="exam-countdown" role="timer" aria-label="Exam time remaining" aria-live="off">
+            {remaining.exam === null ? "No exam time limit" : `Exam time left: ${formatRemaining(remaining.exam)}`}
           </div>
+          {remaining.question !== null && <div className="exam-countdown" role="timer" aria-label="Question time remaining" aria-live="off">
+            Question time left: {formatRemaining(remaining.question)}
+          </div>}
         </div>
       </header>
 
       <main className="student-exam-content">
-        <div className="exam-question-card">
+        <div className="exam-question-card" style={{ fontSize: textSize }}>
           <div className="exam-question-number">
             QUESTION {questionNumber}
           </div>
 
-          <h1>{question}</h1>
-          {remaining === 0 && <p role="status">Time has expired. Submit your current response to finish the attempt.</p>}
+          <h1 style={{ fontSize: `${textSize * 1.5}px` }}>{question}</h1>
+          {remaining.question !== null && !expired && <p>
+            Submit before the question timer reaches zero. When it expires, this question is marked unanswered.
+          </p>}
+          {expired && !assisting && <p role="status">{remaining.exam === 0
+            ? "Exam time has expired. Finishing your attempt."
+            : "Question time has expired. Continuing with this question marked unanswered."}
+            {error && " Use Retry submission to continue."}
+          </p>}
 
-          <div className="ai-avatar-container">
-            <div className="ai-avatar">AI</div>
-            <div>
-              <strong>OralExam AI</strong>
-              <p>Take your time and explain your answer clearly.</p>
-            </div>
-          </div>
+          <LiveExamPresentation sessionId={sessionId} token={sessionToken.current} question={question}
+            sequence={questionNumber} answer={answer} expired={expired && !assisting} submitting={submitting}
+            onTiming={updateClock} onBusyChange={setAssisting} onTextSizeChange={setTextSize} />
 
           <textarea
             className="student-answer-input"
             value={answer}
             onChange={(event) => setAnswer(event.target.value)}
             placeholder="Speak your answer or type your response..."
-            disabled={submitting}
+            disabled={submitting || (expired && !assisting)}
+            style={{ fontSize: textSize }}
           />
 
           {error && (
@@ -335,9 +384,9 @@ export default function StudentExam() {
               type="button"
               className="exam-next-button"
               onClick={handleNext}
-              disabled={!answer.trim() || submitting}
+              disabled={(!answer.trim() && !expired) || submitting || assisting}
             >
-              {submitting ? "Please wait..." : "Submit Answer →"}
+              {submitting ? "Please wait..." : expired ? "Retry submission →" : "Submit Answer →"}
             </button>
           </div>
         </div>

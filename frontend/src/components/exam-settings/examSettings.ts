@@ -7,6 +7,7 @@ export type ExamSettingsCategory =
 
 export type ExamSettings = {
   timeLimit: number;
+  questionTimeLimit: number | null;
   extendedTime: boolean;
   extendedTimeMultiplier: number;
   breaksAllowed: boolean;
@@ -27,6 +28,7 @@ export type ExamSettings = {
 
 export const defaultExamSettings: ExamSettings = {
   timeLimit: 30,
+  questionTimeLimit: null,
   extendedTime: false,
   extendedTimeMultiplier: 1.5,
   breaksAllowed: true,
@@ -46,7 +48,7 @@ export const defaultExamSettings: ExamSettings = {
 };
 
 export const categorySettingKeys: Record<ExamSettingsCategory, readonly (keyof ExamSettings)[]> = {
-  "time-scheduling": ["timeLimit"],
+  "time-scheduling": ["timeLimit", "questionTimeLimit"],
   "ods-accommodations": ["extendedTime", "extendedTimeMultiplier", "breaksAllowed", "reducedDistraction", "assistiveTechnology"],
   "ai-questioning": ["questionCount", "followUpQuestions", "maxFollowUps", "allowRephrase", "allowHints"],
   "recording-transcript": ["recordVideo", "recordAudio", "generateTranscript"],
@@ -83,6 +85,10 @@ export function validTimeLimit(value: number): boolean {
   return Number.isInteger(value) && value >= 1 && value <= 240;
 }
 
+export function validQuestionTimeLimit(value: number | null): boolean {
+  return value === null || validTimeLimit(value);
+}
+
 export function odsTimeLimit(timeLimit: number, savedSettings: ExamSettings): number | null {
   if (!validTimeLimit(timeLimit) || savedSettings.extendedTime !== true ||
       ![1.25, 1.5, 2, 3].includes(savedSettings.extendedTimeMultiplier)) return null;
@@ -96,7 +102,10 @@ export function saveExamSettingsCategory(
   settings: ExamSettings,
 ): StoredSettings {
   if (category === "time-scheduling" && !validTimeLimit(settings.timeLimit)) {
-    throw new Error("Standard Time Limit must be a whole number from 1 to 240 minutes.");
+    throw new Error("Time per exam must be a whole number from 1 to 240 minutes.");
+  }
+  if (category === "time-scheduling" && !validQuestionTimeLimit(settings.questionTimeLimit)) {
+    throw new Error("Time per question must be a whole number from 1 to 240 minutes, or disabled.");
   }
   if (category === "ai-questioning" && settings.followUpQuestions && !validMaxFollowUps(settings.maxFollowUps)) {
     throw new Error("Maximum Follow-Ups Per Question must be a whole number from 1 to 4.");

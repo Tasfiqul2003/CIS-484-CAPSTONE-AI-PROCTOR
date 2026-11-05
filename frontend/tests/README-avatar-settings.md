@@ -2,15 +2,18 @@
 
 Manage Exam links to a dedicated **Avatar & Interaction Settings** page with separate **Save Local Draft**, **Share Preview Policy**, and **Save Exam Policy** actions. Browser sharing explicitly connects to `/student/settings-preview?examId=...&instructorId=...&policySource=local`. Saved-policy previews use `policySource=server` and require professor sign-in; there is no unauthenticated student policy endpoint. The plain `/student/settings-preview` route retains the independent fixed demonstration.
 
-Server setup: apply `database/migrations/006_exam_avatar_policy.sql` through the project's database migration process, then restart the backend so its new router is registered. This task prepares the migration but does not apply it to the existing PostgreSQL database. The professor-only GET/PUT endpoint is `/exam/templates/{exam_id}/avatar-policy`; PUT accepts `{settings, expected_revision}`. Stale revisions return 409. Unmigrated policy storage returns 503. Browser failures never silently fall back to local rules.
+Server setup: apply the project's migrations, including `006_exam_avatar_policy.sql` and `011_session_avatar_presentation.sql`, then restart the backend. The implementation prepares migrations without applying them to the existing PostgreSQL database. The professor-only GET/PUT endpoint is `/exam/templates/{exam_id}/avatar-policy`; PUT accepts `{settings, expected_revision, exam_mode}`. Stale revisions return 409. Browser failures never silently fall back to local rules.
 
-Policies apply to **new attempts**, and assistance allowances apply **per question**. Open synthetic previews keep their starting snapshot until explicitly restarted. Student authentication, roster/assignment checks, live attempt snapshots, and server assistance counters are documented integration work, not completed features.
+Policies apply to **new attempts**, and assistance allowances apply **per question**. The live exam now reads its saved server presentation, saves permitted preferences for the attempt, renders the shared built-in examiner, and calls server assistance endpoints. A separate **Live exam mode** is saved by the professor; preview mode remains a simulation. The shorter of the fixed response window and configured question limit applies. Standard English browser speech starts only after a student enables audio; uploaded avatar photos remain still. Open synthetic previews continue to simulate assistance and pin their starting policy until restarted.
+
+The shared renderer and obvious browser-fixture selectors were updated on November 4, 2026. Browser automation was not run for this update. `live-avatar.test.mjs` checks student-facing transport, policy restrictions, speech cancellation, and retry payloads using synthetic data and fake speech; it does not measure real speech quality or browser interaction. PostgreSQL deployment and real model-assisted flows remain unverified.
 
 Run commands from `frontend/`. No backend or real account is needed for these tests.
 
 ```powershell
 node --test tests/avatar-settings.test.mjs
 node --test tests/student-settings.test.mjs tests/exam-policy.test.mjs
+node --test tests/live-avatar.test.mjs
 npm run build
 ```
 

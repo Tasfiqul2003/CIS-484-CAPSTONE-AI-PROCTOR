@@ -112,3 +112,15 @@ An initial launcher-test run encountered test-fixture issues with Windows tempor
 - Both BAT entry points completed `--show-menu` from a different working directory with closed stdin: exit 0, exactly five feature choices, and one final pause. Both use ASCII text with CRLF line endings. The preview left saved settings unchanged and started no services.
 - All **43 existing launcher tests passed**, and `git diff --check` passed. These checks verify launcher paths and menu behavior; they do not repeat a live server or database startup.
 - The relocated guide has a populated native Word table of contents with 10 linked workflows. All link targets and page numbers were checked against the 12-page render, and every page was visually reviewed. Internal page references and launcher-location instructions were updated.
+
+## Actual migration and local website verification - November 4, 2026
+
+All **82 root regression tests passed**, including **19 migration runner checks**.
+The runner now safely handles preserved outer transaction wrappers and rejects
+other transaction controls before executing any migrations. An isolated
+PostgreSQL 16.15 run applied all 15 SQL files, applied zero on restart, and
+verified rollback of a deliberately failing synthetic migration and its ledger
+entry. The existing local PGlite database was separately backed up and updated;
+its existing professor login and the three new settings pages were verified in
+the browser. The configured local AI service remains offline. See
+[the measured results and remaining limits](local-update-verification-2026-11-04.md).

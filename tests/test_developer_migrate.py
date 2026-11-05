@@ -200,5 +200,127 @@ class MigrationEntrypointTests(unittest.TestCase):
         self.assertNotIn("driver details", output)
 
 
+class ExecutableSQLTests(unittest.TestCase):
+    """Transaction wrappers belong to the runner, never the tracked SQL files."""
+
+    def test_outer_wrapper_mask_preserves_comments_newlines_and_original_source(self):
+        sql = ("-- preserved prologue\r\nBEGIN /* keep this comment */ WORK;\r\n"
+               "SELECT 'synthetic'; -- body comment\r\n"
+               "COMMIT -- preserve this too\r\nTRANSACTION;\r\n-- preserved epilogue\r\n")
+        source = migration("migrations/synthetic_wrapped.sql", sql)
+        before = (source.name, source.sql, source.sha256)
+        expected = sql.replace("BEGIN", " " * 5).replace("WORK;", " " * 5)
+        expected = expected.replace("COMMIT", " " * 6).replace("TRANSACTION;", " " * 12)
+        self.assertEqual(runner.executable_sql(source), expected)
+        self.assertEqual((source.name, source.sql, source.sha256), before)
+
+    def test_supported_outer_wrapper_variants_are_masked(self):
+        for opening in ("BEGIN;", "begin work;", "BEGIN TRANSACTION;"):
+            for closing in ("COMMIT;", "commit work;", "COMMIT TRANSACTION;"):
+                with self.subTest(opening=opening, closing=closing):
+                    sql = f"{opening}\nSELECT 1;\n{closing}\n"
+                    expected = f"{' ' * len(opening)}\nSELECT 1;\n{' ' * len(closing)}\n"
+                    self.assertEqual(runner.executable_sql(migration("synthetic.sql", sql)), expected)
+
+    def test_plain_sql_with_quoted_or_commented_control_words_is_unchanged(self):
+        cases = [
+            "SELECT 'BEGIN; COMMIT; ROLLBACK;', \"END;\"; -- ABORT;\n",
+            "SELECT 'an ''END;'' string', \"a\"\"COMMIT;\";\n",
+            r"SELECT E'escaped \' COMMIT; still quoted'; SELECT 2;",
+            "/* outer BEGIN; /* nested COMMIT; */ still ROLLBACK; */ SELECT 1;\n",
+            "CREATE FUNCTION synthetic() RETURNS text AS $$ BEGIN; COMMIT; END; $$ LANGUAGE sql;\n",
+            "SELECT $synthetic$ BEGIN; COMMIT; 'quoted'; $synthetic$;\n",
+            "SELECT begin_work, commit_count FROM synthetic;\n",
+            "PREPARE synthetic_query AS SELECT 1;\n",
+        ]
+        for sql in cases:
+            with self.subTest(sql=sql):
+                self.assertEqual(runner.executable_sql(migration("synthetic.sql", sql)), sql)
+
+    def test_transaction_directives_are_rejected_unless_one_complete_outer_pair(self):
+        cases = [
+            "BEGIN; SELECT 1;", "SELECT 1; COMMIT;", "COMMIT;",
+            "BEGIN; BEGIN; SELECT 1; COMMIT; COMMIT;",
+            "BEGIN; SELECT 1; COMMIT; SELECT 2;",
+            "SELECT 1; BEGIN; SELECT 2; COMMIT;",
+            "BEGIN; SELECT 1; COMMIT; BEGIN; SELECT 2; COMMIT;",
+            "BEGIN; SELECT 1; ROLLBACK;", "START TRANSACTION; SELECT 1; COMMIT;",
+            "SAVEPOINT synthetic;", "RELEASE SAVEPOINT synthetic;", "ROLLBACK;", "ABORT;", "END;",
+            "PREPARE TRANSACTION 'synthetic';", "SET TRANSACTION ISOLATION LEVEL SERIALIZABLE;",
+            "SET SESSION CHARACTERISTICS AS TRANSACTION READ ONLY;",
+            "COMMIT AND CHAIN;", "BEGIN; SELECT 1; COMMIT AND CHAIN;",
+            "BEGIN ISOLATION LEVEL SERIALIZABLE; SELECT 1; COMMIT;",
+        ]
+        for sql in cases:
+            with self.subTest(sql=sql):
+                with self.assertRaises(ValueError):
+                    runner.executable_sql(migration("synthetic.sql", sql))
+
+    def test_unterminated_quoted_or_commented_constructs_are_rejected(self):
+        for sql in ("SELECT 'unterminated", 'SELECT "unterminated',
+                    "SELECT $$unterminated", "SELECT $tag$unterminated", "/* unterminated",
+                    "/* outer /* nested */ still open", r"SELECT E'escaped \'"):
+            with self.subTest(sql=sql):
+                with self.assertRaises(ValueError):
+                    runner.executable_sql(migration("synthetic.sql", sql))
+
+    def test_bom_crlf_file_digest_is_original_bytes_not_normalized_execution(self):
+        database = ROOT / "synthetic-in-memory-wrapped-database"
+        base = database / "exam_agent_schema.sql"
+        wrapped = database / "migrations/001_wrapped.sql"
+        raw = b"\xef\xbb\xbf-- preserved\r\nBEGIN;\r\nSELECT 1;\r\nCOMMIT;\r\n"
+        files = {base: b"SELECT 0;\r\n", wrapped: raw}
+        with patch.object(Path, "is_file", return_value=True), \
+                patch.object(Path, "glob", return_value=[wrapped]), \
+                patch.object(Path, "read_bytes", autospec=True, side_effect=lambda path: files[path]):
+            source = runner.load_migrations(database)[1]
+        original = raw.decode("utf-8-sig")
+        self.assertEqual(source.sql, original)
+        self.assertEqual(source.sha256, hashlib.sha256(raw).hexdigest())
+        executable = runner.executable_sql(source)
+        self.assertEqual(executable, original.replace("BEGIN;", " " * 6).replace("COMMIT;", " " * 7))
+        self.assertNotEqual(source.sha256, hashlib.sha256(executable.encode()).hexdigest())
+        self.assertEqual(files[wrapped], raw)
+
+
+@unittest.skipUnless(HAS_SQLALCHEMY, "Install backend requirements to exercise migration execution")
+class MigrationPreflightTests(unittest.TestCase):
+    def test_later_bad_migration_prevents_lock_ledger_and_every_earlier_script(self):
+        sources = [migration("exam_agent_schema.sql", "SELECT 'synthetic earlier SQL';"),
+                   migration("migrations/002_bad.sql", "SELECT 1; ROLLBACK;")]
+        connection = FakeConnection()
+        with self.assertRaises(ValueError):
+            runner.apply_migrations(connection, sources)
+        self.assertFalse(connection.lock_requested)
+        self.assertEqual(connection.tables, set())
+        self.assertEqual(connection.scripts, [])
+        self.assertEqual(connection.applied, {})
+
+    def test_wrapped_execution_records_raw_digest_and_restart_skips_it(self):
+        source = migration("migrations/001_synthetic.sql", "BEGIN;\nSELECT 'synthetic';\nCOMMIT;\n")
+        connection = FakeConnection()
+        self.assertEqual(runner.apply_migrations(connection, [source]), [source.name])
+        self.assertEqual(connection.scripts, ["      \nSELECT 'synthetic';\n       \n"])
+        self.assertEqual(connection.applied, {source.name: source.sha256})
+        self.assertEqual(runner.apply_migrations(connection, [source]), [])
+        self.assertEqual(len(connection.scripts), 1)
+
+    def test_tracked_wrapped_migrations_keep_original_bytes_hashes_and_body(self):
+        sources = {source.name: source for source in runner.load_migrations(ROOT / "database")}
+        for name in ("migrations/007_session_time_limit.sql", "migrations/008_student_eid_roster.sql"):
+            with self.subTest(name=name):
+                path = ROOT / "database" / name
+                before = path.read_bytes()
+                source = sources[name]
+                connection = FakeConnection()
+                runner.apply_migrations(connection, [source])
+                self.assertEqual(source.sql, before.decode("utf-8-sig"))
+                self.assertEqual(source.sha256, hashlib.sha256(before).hexdigest())
+                self.assertEqual(connection.applied[source.name], source.sha256)
+                expected = source.sql.replace("BEGIN;", " " * 6).replace("COMMIT;", " " * 7)
+                self.assertEqual(connection.scripts, [expected])
+                self.assertEqual(path.read_bytes(), before)
+
+
 if __name__ == "__main__":
     unittest.main()

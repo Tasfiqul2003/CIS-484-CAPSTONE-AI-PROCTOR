@@ -17,6 +17,14 @@ def demo_for_session(session) -> bool:
     return demo_enabled() and bool(session.get("developer_demo", False))
 
 
+def minimal_enabled() -> bool:
+    return demo_enabled() and os.getenv("DEVELOPER_MINIMAL_MODE") == "1"
+
+
+def minimal_for_session(session) -> bool:
+    return minimal_enabled() and bool(session.get("developer_demo", False))
+
+
 def ai_available(url=None, model=None) -> bool:
     """Probe installed model metadata only; never generate or download a model."""
     url = url or os.getenv("OLLAMA_URL", "http://ollama:11434")
@@ -67,5 +75,9 @@ def demo_summary(extracted_text) -> str:
 def capabilities():
     if not demo_enabled():
         return {"enabled": False}
-    return {"enabled": True, "ai_available": ai_available(),
+    minimal = minimal_enabled()
+    available = False if minimal else ai_available()
+    return {"enabled": True, "minimal": minimal, "ai_available": available,
+            "services": {"ai": available, "flashhead": False, "voice": False,
+                         "microphone": False, "camera": False},
             "substitutes": {"questions": True, "assistance": True, "material_summary": True}}

@@ -140,16 +140,23 @@ def test_only_mode_permitted_actions_are_released_without_private_policy(api):
     assert not any(key in data for key in ("settings", "policy", "behavior", "rubric", "input_hash"))
 
 
-def test_demo_assistance_preserves_permissions_quota_idempotency_and_pause(api, monkeypatch):
+@pytest.mark.parametrize("minimal", [False, True])
+def test_demo_assistance_preserves_permissions_quota_idempotency_and_pause(api, monkeypatch, minimal):
     client, engine, _, _, _ = api
     monkeypatch.setenv("DEVELOPER_DEMO_MODE", "1")
+    monkeypatch.setenv("DEVELOPER_MINIMAL_MODE", "1" if minimal else "0")
     update_settings(engine, "clarification", timerContinues=False)
     with engine.begin() as db:
         db.execute(text("UPDATE exam_sessions SET developer_demo = TRUE"))
     monkeypatch.setattr(assistance, "generate_assistance", REAL_GENERATOR)
     monkeypatch.setattr("backend.app.exam.load_exam_material_summaries", lambda *a: [])
     probes = []
-    monkeypatch.setattr(assistance, "ai_available", lambda *a: probes.append(True) or False)
+    def probe(*args):
+        assert not minimal, "Minimal demo assistance must never probe a provider"
+        probes.append(True)
+        return False
+    monkeypatch.setattr(assistance, "ai_available", probe)
+    monkeypatch.setattr(assistance.httpx, "post", lambda *a, **k: pytest.fail("No provider generation"))
     assert client.post(URL, json=body("hint"), headers=auth()).status_code == 403
     assert probes == [] and records(engine) == []
     request = body("clarification")
@@ -159,7 +166,7 @@ def test_demo_assistance_preserves_permissions_quota_idempotency_and_pause(api, 
     assert result["pause_until"] is not None
     replay = client.post(URL, json=request, headers=auth()).json()
     assert replay["text"] == result["text"] and replay["usage"] == result["usage"]
-    assert len(records(engine)) == 1 and len(probes) == 1
+    assert len(records(engine)) == 1 and len(probes) == (0 if minimal else 1)
     complete = client.post(f"{URL}/{request['request_id']}/complete",
         json={}, headers=auth())
     assert complete.status_code == 200 and complete.json()["pause_until"] is None
@@ -170,6 +177,7 @@ def test_demo_assistance_preserves_permissions_quota_idempotency_and_pause(api, 
 def test_demo_help_never_leaks_into_legacy_or_disabled_runtime(api, monkeypatch, saved_demo, flag):
     client, engine, _, _, _ = api
     monkeypatch.setenv("DEVELOPER_DEMO_MODE", flag)
+    monkeypatch.setenv("DEVELOPER_MINIMAL_MODE", "1")
     with engine.begin() as db:
         db.execute(text("UPDATE exam_sessions SET developer_demo = :demo"), {"demo": saved_demo})
     monkeypatch.setattr(assistance, "generate_assistance", REAL_GENERATOR)

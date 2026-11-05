@@ -42,6 +42,7 @@ services:
       ADMIN_BOOTSTRAP_TOKEN: ${DEVELOPER_ADMIN_BOOTSTRAP_TOKEN:?The developer launcher must supply a bootstrap token}
       AUTH_COOKIE_SECURE: "false"
       DEVELOPER_DEMO_MODE: "1"
+      DEVELOPER_MINIMAL_MODE: "1"
       OLLAMA_URL: ${DEVELOPER_OLLAMA_URL:-http://host.docker.internal:11434}
       OLLAMA_MODEL: ${DEVELOPER_OLLAMA_MODEL:-cybros-v2}
     depends_on:

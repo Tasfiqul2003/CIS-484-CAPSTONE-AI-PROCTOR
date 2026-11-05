@@ -25,10 +25,17 @@ CLAIMS = {"sub": STUDENT, "exam_template_id": EXAM, "session_id": SESSION}
 
 
 def set_flag(monkeypatch, value):
+    monkeypatch.delenv("DEVELOPER_MINIMAL_MODE", raising=False)
     if value is None:
         monkeypatch.delenv("DEVELOPER_DEMO_MODE", raising=False)
     else:
         monkeypatch.setenv("DEVELOPER_DEMO_MODE", value)
+
+
+def set_minimal(monkeypatch, value="1"):
+    set_flag(monkeypatch, "1")
+    if value is not None:
+        monkeypatch.setenv("DEVELOPER_MINIMAL_MODE", value)
 
 
 @pytest.mark.parametrize("value,expected", [(None, False), ("0", False), ("true", False),
@@ -38,8 +45,11 @@ def test_demo_requires_exact_explicit_opt_in(monkeypatch, value, expected):
     assert demo.demo_enabled() is expected
 
 
-def test_default_off_capabilities_does_not_probe_optional_ai(monkeypatch):
+@pytest.mark.parametrize("minimal", [None, "1"])
+def test_default_off_capabilities_does_not_probe_optional_ai(monkeypatch, minimal):
     set_flag(monkeypatch, None)
+    if minimal is not None:
+        monkeypatch.setenv("DEVELOPER_MINIMAL_MODE", minimal)
     monkeypatch.setattr(demo.httpx, "get", lambda *a, **k: pytest.fail("Disabled demo must not probe AI"))
     assert demo.capabilities() == {"enabled": False}
 
@@ -104,11 +114,16 @@ def test_ai_probe_returns_unavailable_for_optional_provider_failures(monkeypatch
     assert demo.ai_available("http://synthetic.invalid", "synthetic-examiner") is False
 
 
-def test_enabled_capability_report_distinguishes_demo_from_real_ai(monkeypatch):
+@pytest.mark.parametrize("available", [False, True])
+def test_enabled_capability_report_distinguishes_demo_from_real_ai(monkeypatch, available):
     set_flag(monkeypatch, "1")
-    monkeypatch.setattr(demo, "ai_available", lambda: False)
+    probes = []
+    monkeypatch.setattr(demo, "ai_available", lambda: probes.append(True) or available)
     report = demo.capabilities()
-    assert report["enabled"] is True and report["ai_available"] is False
+    assert report["enabled"] is True and report["ai_available"] is available
+    assert report["minimal"] is False and probes == [True]
+    assert report["services"] == {"ai": available, "flashhead": False, "voice": False,
+                                   "microphone": False, "camera": False}
     assert report["substitutes"]["questions"] and report["substitutes"]["assistance"]
     assert "grading" not in report["substitutes"] or not report["substitutes"]["grading"]
 
@@ -317,8 +332,9 @@ def test_default_off_start_without_bank_propagates_real_provider_failure(monkeyp
     assert db.question_params is None and not db.committed
 
 
-def test_demo_start_prefers_real_question_when_configured_model_is_available(monkeypatch):
-    set_flag(monkeypatch, "1")
+@pytest.mark.parametrize("minimal", [None, "0"])
+def test_demo_start_prefers_real_question_when_configured_model_is_available(monkeypatch, minimal):
+    set_minimal(monkeypatch, minimal)
     prepare_start(monkeypatch)
     probes, model_calls = [], []
     monkeypatch.setattr(exam, "ai_available", lambda *a, **k: probes.append(True) or True)
@@ -449,8 +465,9 @@ def test_demo_fallback_never_bypasses_saved_followup_cap(monkeypatch, streaming)
 
 
 @pytest.mark.parametrize("streaming", [False, True])
-def test_existing_real_attempt_never_uses_new_global_demo_substitutes(monkeypatch, streaming):
-    set_flag(monkeypatch, "1")
+@pytest.mark.parametrize("minimal", [None, "1"])
+def test_existing_real_attempt_never_uses_new_global_demo_substitutes(monkeypatch, streaming, minimal):
+    set_minimal(monkeypatch, minimal)
     db = demo_behavior_db(bank=False)
     db.marked_demo = False
     prepare_behavior(monkeypatch, db)
@@ -531,3 +548,81 @@ def test_demo_summary_still_requires_owned_material_before_substitution(monkeypa
     with pytest.raises(HTTPException) as error:
         summarize(MaterialDB(found=False))
     assert error.value.status_code == 404
+
+
+@pytest.mark.parametrize("flag,minimal,expected", [
+    (None, "1", False), ("0", "1", False), ("true", "1", False),
+    ("1", None, False), ("1", "0", False), ("1", "true", False),
+    ("1", " 1", False), ("1", "1 ", False), ("1", "1", True),
+])
+def test_minimal_runtime_requires_both_exact_opt_ins(monkeypatch, flag, minimal, expected):
+    set_flag(monkeypatch, flag)
+    if minimal is not None:
+        monkeypatch.setenv("DEVELOPER_MINIMAL_MODE", minimal)
+    assert demo.minimal_enabled() is expected
+    assert demo.minimal_for_session({"developer_demo": True}) is expected
+    assert demo.minimal_for_session({"developer_demo": False}) is False
+    assert demo.minimal_for_session({}) is False
+
+
+def test_minimal_capabilities_reports_no_optional_services_without_any_probe(monkeypatch):
+    set_minimal(monkeypatch)
+    monkeypatch.setattr(demo, "ai_available", lambda: pytest.fail("Minimal mode must not probe providers"))
+    monkeypatch.setattr(demo.httpx, "get", lambda *a, **k: pytest.fail("Minimal mode must not contact providers"))
+    report = demo.capabilities()
+    assert report["enabled"] is True and report["minimal"] is True
+    assert report["ai_available"] is False
+    assert report["services"] == dict.fromkeys(("ai", "flashhead", "voice", "microphone", "camera"), False)
+    assert report["substitutes"] == {"questions": True, "assistance": True, "material_summary": True}
+
+
+@pytest.mark.parametrize("bank", [False, True])
+def test_minimal_start_uses_saved_content_or_labeled_sample_without_optional_ai(monkeypatch, bank):
+    set_minimal(monkeypatch)
+    prepare_start(monkeypatch)
+    monkeypatch.setattr(exam, "ask_model", lambda *a, **k: pytest.fail("Minimal start must not generate with a provider"))
+    db = StartDB() if bank else EmptyBankStartDB()
+    response = start_attempt(db)
+    assert db.insert_params["developer_demo"] is True and db.committed
+    assert db.question_params["q"] == response["question"]
+    if bank:
+        assert response["question"] == "Professor-authored synthetic question?"
+    else:
+        assert response["question"].startswith("[Developer demo] ")
+
+
+@pytest.mark.parametrize("streaming", [False, True])
+@pytest.mark.parametrize("bank", [False, True])
+def test_minimal_answer_uses_saved_content_or_sample_without_provider_work(monkeypatch, streaming, bank):
+    set_minimal(monkeypatch)
+    db = demo_behavior_db(bank=bank, followups=1)
+    prepare_behavior(monkeypatch, db)
+    for module in (exam, stream):
+        monkeypatch.setattr(module, "ai_available", lambda *a, **k: pytest.fail("Minimal answers must not probe providers"))
+    monkeypatch.setattr(stream.httpx, "stream", lambda *a, **k: pytest.fail("Minimal answers must not stream from providers"))
+    result, events = run_answer(db, streaming)
+    assert result.get("kind", "bank" if bank else "sample") == ("bank" if bank else "sample")
+    if bank:
+        assert db.inserted["q"] == "First authored question" and db.inserted["src"] == "bank"
+        assert db.inserted["followup"] == 0
+    else:
+        assert db.inserted["q"].startswith("[Developer demo] ")
+        assert db.inserted["src"] == "generated" and db.inserted["followup"] == 1
+    if streaming:
+        assert any(event.startswith("event: complete") for event in events)
+
+
+@pytest.mark.parametrize("cached", [False, True])
+def test_minimal_material_summary_preserves_cache_or_returns_transient_excerpt_without_provider(monkeypatch, cached):
+    set_minimal(monkeypatch)
+    monkeypatch.setattr(exam, "ai_available", lambda *a, **k: pytest.fail("Minimal summaries must not probe providers"))
+    monkeypatch.setattr(exam.httpx, "AsyncClient", lambda *a, **k: pytest.fail("Minimal summaries must not call providers"))
+    db = MaterialDB(summary="Existing professor material summary" if cached else None)
+    response = summarize(db)
+    assert response["cached"] is cached and len(db.calls) == 1
+    if cached:
+        assert response["summary"] == db.summary and not response.get("demo", False)
+    else:
+        assert response["summary"].startswith("[Developer demo] ")
+        assert response["demo"] is True and response["persisted"] is False
+        assert db.summary is None

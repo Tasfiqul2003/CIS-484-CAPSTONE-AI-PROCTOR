@@ -22,7 +22,7 @@ from .exam import (
 )
 from .avatar_session import session_policy
 from .avatar_timing import pause_sum_sql, active_pause_until_sql
-from .developer_demo import demo_for_session, ai_available, demo_question
+from .developer_demo import demo_for_session, minimal_for_session, ai_available, demo_question
 
 router = APIRouter(prefix="/exam", tags=["streaming"])
 
@@ -142,6 +142,7 @@ def plan_turn(req: AnswerRequest, claims: dict) -> dict:
             "sid": sid,
             "developer_demo": bool(session.get("developer_demo", False)),
             "use_demo": demo_for_session(session),
+            "minimal": minimal_for_session(session),
             "claims": claims,
             "pending_id": pending["id"],
             "seq": pending["sequence_num"] + 1,
@@ -189,7 +190,7 @@ def plan_turn(req: AnswerRequest, claims: dict) -> dict:
         return {**plan, "kind": "bank", "question": chosen["text"], "source_id": chosen["id"],
                 "reasoning": "Developer demo uses an authored bank question first."}
     try:
-        if plan["use_demo"] and not ai_available(OLLAMA_URL, OLLAMA_MODEL):
+        if plan["use_demo"] and (plan["minimal"] or not ai_available(OLLAMA_URL, OLLAMA_MODEL)):
             raise HTTPException(502, "The configured model is unavailable.")
         decision = decide(plan, bank_remaining)
     except HTTPException as error:
@@ -256,6 +257,8 @@ def finish_question(plan, question, source, source_id):
 
 def event_stream(plan):
     kind = plan["kind"]
+    if kind == "generate" and plan.get("minimal") and plan.get("use_demo"):
+        kind = "sample"
 
     if kind == "done":
         try:

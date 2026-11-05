@@ -1,4 +1,4 @@
-export type DeveloperCapabilities = { enabled: boolean; aiAvailable?: boolean };
+export type DeveloperCapabilities = { enabled: boolean; aiAvailable?: boolean; minimal?: boolean };
 
 const disabled: DeveloperCapabilities = { enabled: false };
 
@@ -9,7 +9,8 @@ export async function loadDeveloperCapabilities(signal?: AbortSignal): Promise<D
     const value: unknown = await response.json();
     if (!value || typeof value !== "object" || !("enabled" in value) || value.enabled !== true) return disabled;
     return { enabled: true, ...("ai_available" in value && typeof value.ai_available === "boolean"
-      ? { aiAvailable: value.ai_available } : {}) };
+      ? { aiAvailable: value.ai_available } : {}),
+      ...("minimal" in value && typeof value.minimal === "boolean" ? { minimal: value.minimal } : {}) };
   } catch {
     // Older or unavailable backends must not enable demo controls in the browser.
     return disabled;

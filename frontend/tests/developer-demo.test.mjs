@@ -41,3 +41,15 @@ test('transient demo excerpts attach to the matching preview without mutating sa
   assert.match(demoAnswer, /^\[Developer demo answer/);
   assert.match(demoAnswer, /not a recording/);
 });
+
+test('minimal mode requires an explicit boolean from an enabled server capability', async () => {
+  const original = globalThis.fetch;
+  try {
+    for (const payload of [{enabled:true,minimal:'true'}, {enabled:true,minimal:1}, {enabled:false,minimal:true}]) {
+      globalThis.fetch = async () => new Response(JSON.stringify(payload));
+      assert.notEqual((await loadDeveloperCapabilities()).minimal, true);
+    }
+    globalThis.fetch = async () => new Response(JSON.stringify({enabled:true,minimal:true,ai_available:false}));
+    assert.deepEqual(await loadDeveloperCapabilities(), {enabled:true,minimal:true,aiAvailable:false});
+  } finally { globalThis.fetch = original; }
+});

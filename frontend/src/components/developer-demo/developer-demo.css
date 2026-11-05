@@ -2,9 +2,9 @@
   box-sizing: border-box;
   min-width: 0;
   max-width: 100%;
-  color: var(--oe-text, #242033);
-  background: var(--oe-accent-soft, #eee8f7);
-  border: 1px solid var(--oe-border, #dedbe7);
+  color: #1e3a8a;
+  background: #eff6ff;
+  border: 1px solid #93b8ea;
   padding: 16px;
   font-size: 1rem;
   line-height: 1.5;

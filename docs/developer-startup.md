@@ -1,108 +1,96 @@
-# Windows developer startup menu
+# Windows developer startup
 
-Open the repository's **Developer Mode** folder and double-click `Start_Developer.bat`. The [step-by-step guide](../Developer%20Mode/developer-mode-guide.docx) is in the same folder. The BAT opens a console menu before starting services. Type Y or N for each item; Enter accepts the displayed default. The launcher resolves the repository root from its own location, works from another working directory, and does not require virtual-environment activation.
+Open the repository's **Developer Mode** folder in Windows File Explorer and double-click `Start_Developer.bat`. The launcher starts the **core-only minimal developer workspace**: React/Vite, FastAPI, migrations and the isolated PostgreSQL database. AI, FlashHead, voice, microphone and camera services stay off. The launcher resolves paths from its own location and does not require virtual-environment activation. Keep the folder inside the repository.
 
-Use **Windows File Explorer** or a terminal to execute the BAT. A file link inside Codex opens the file for viewing; it does not execute the launcher. The root `Start_Developer.bat` remains a forwarding entry point for existing commands. From PowerShell in the repository root, run `& '.\Developer Mode\Start_Developer.bat'`; append `--show-menu` or `--dry-run` to inspect without starting services or saving settings. The launcher prints an immediate banner while checking versions. Keep the Developer Mode folder inside the repository; its dependencies remain in the parent project.
+A file link inside Codex opens a viewer; execute the BAT in File Explorer or a terminal. The root `Start_Developer.bat` remains a forwarding entry point. The [Word guide](../Developer%20Mode/developer-mode-guide.docx) is preserved but describes earlier startup behavior. This reference and the [Developer Mode README](../Developer%20Mode/README.md) describe the current runtime. Dated verification sections below retain their historical results.
 
-Each item shows its runtime version and configured model separately. Ollama's server version is read from its local API, or its CLI version is shown if the server is stopped. Faster-Whisper and Piper versions come from installed package metadata without importing the audio/model libraries. A missing package displays `Not installed`; an undetectable version displays `Unknown`. Configured model names do not prove that matching weights are installed.
+## Minimal runtime and optional services
 
-Each option also shows **HEAVY** or **LIGHT** as approximate relative resource guidance. HEAVY indicates higher expected RAM, CPU, or GPU demand; LIGHT indicates lower demand relative to the AI and avatar options. These labels are estimates, not measured benchmarks or guaranteed resource limits. An unavailable feature's label describes its intended workload if integrated; it does not mean that process is running.
+The dedicated `compose.developer.yaml` explicitly sets **both** `DEVELOPER_DEMO_MODE=1` and `DEVELOPER_MINIMAL_MODE=1`. Only the exact string `1` enables either flag, and minimal behavior also requires the demo flag. Neither flag is enabled by ordinary Compose.
 
-| Menu item | Estimated load | Displayed model/provider | What this checkout can activate |
-|---|---|---|---|
-| Start local AI model | HEAVY; depends on the selected model and quantization | Ollama version; `cybros-v2`, configured base `qwen3:14b` by default | Try to reuse local Ollama, or start `ollama serve` if installed. Missing runtime, model, readiness or container connectivity produces a demo-fallback warning while core startup continues. No model is downloaded. |
-| Speech recognition | LIGHT relative to local AI/avatar; CPU usage can still spike | Faster-Whisper version; `base.en`, CPU INT8 | Unavailable in the web exam. The standalone voice prototype remains separate. |
-| Voice playback | LIGHT | Piper version; `en_US-lessac-medium` | Piper is unavailable in the web exam. Existing standard English browser read-aloud is separate; this menu loads no voice/model. |
-| Animated avatar | HEAVY | SoulX-FlashHead checkout revision when configured; proposed Lite 1.3B | Unavailable: there is no FlashHead web adapter or service. |
-| Camera recording | LIGHT at normal settings; depends on resolution and encoding | Browser recording; no AI model | Unavailable in the web exam. No camera is opened. |
+In minimal mode, the launcher does not inspect optional package versions, query Ollama metadata, start an inference process or download a model. New demo-marked attempts use authored bank questions first, then clearly labeled fixed sample questions when permitted by the saved follow-up and question limits. They do not probe or generate through AI, even if a provider is installed or already running. Permitted assistance uses labeled sample text within the existing mode, quota, idempotency and timer rules. Real cached material summaries are preserved; uncached processing returns a labeled, temporary source excerpt without saving it as an authoritative summary.
 
-The always-on React/Vite frontend, FastAPI backend, and PostgreSQL core are labeled LIGHT for normal development use. The first Docker build and image downloads can still be heavy.
+The five older provider choices can remain in ignored `.developer-settings.json`. They are inactive in this launcher, including a saved `local_ai: true`; minimal startup neither prompts for new choices nor rewrites those defaults. Valid configured model and endpoint values are retained without activating them. Pre-existing independently started providers are left alone.
 
-**Recommended for light computers:** choose **N, N, N, N, N** for the five optional features. The core website still starts, with labeled developer substitutes available for missing optional services and exam content. This suggestion does not override saved defaults or your manual choices. Local AI set to N skips starting Ollama through this launcher; an independently running Ollama server is left running. Real providers are still used when available. The four optional media providers remain unavailable through this menu; their N status does not mean that a demo placeholder is a running provider.
+| Saved provider choice | Current minimal runtime |
+|---|---|
+| Local AI / Ollama | Off; no metadata, startup or inference for marked demo attempts. |
+| Speech recognition / Faster-Whisper | Off; no microphone or transcription connection. |
+| Voice playback / Piper | Off; no voice provider or browser read-aloud in the minimal exam view. |
+| Animated avatar / FlashHead | Off; the static examiner illustration is a presentation substitute. |
+| Camera recording | Off; no camera capture or recording connection. |
 
-Unavailable items require N. Typing Y explains the missing integration and repeats the prompt; the launcher never reports these features as enabled. Installing an audio package alone does not connect it to the web application. Existing Foundation/GUI launchers and Modelfiles are unchanged.
+The frontend obtains this state from `/developer/capabilities`. Enabled minimal mode reports `minimal: true`, `ai_available: false` and `services` with `ai`, `flashhead`, `voice`, `microphone` and `camera` all false, without checking an AI provider. A backend without demo opt-in returns only `enabled: false`.
+
+## Exam workspace
+
+The live exam places the examiner stage above a **blue question-and-response panel**. Students type their response below the question. The default stage uses a **static faceless SVG examiner**, not FlashHead video, facial animation or an AI-generated likeness. A permitted professor-selected image or geometric presentation remains a static presentation choice.
+
+Minimal mode shows a microphone-off status and keeps voice and media controls inactive. It does not display a pretend listening state or imply that text input was transcribed from a microphone. Sample questions, answers and assistance are visibly labeled developer content. Existing exam policy, student preference permissions, ownership, roster checks, question/exam timing and ODS rules remain enforced.
+
+## Normal and nonminimal behavior
+
+The dedicated BAT/launcher has **no minimal-mode opt-out switch**. Its Compose file sets both flags directly, so setting `DEVELOPER_MINIMAL_MODE=0` in the caller's shell alone does not override that stack.
+
+For a separately configured backend, leave `DEVELOPER_MINIMAL_MODE` unset or set it to `0` to retain nonminimal behavior. With `DEVELOPER_DEMO_MODE=1`, that runtime prefers available real providers and uses labeled fallbacks when optional AI or content is unavailable. Without the demo flag, normal runtime behavior is unchanged. Use the existing [setup workflow](setup.md) for a separately configured application rather than expecting the core-only launcher to activate providers.
+
+Demo status is saved on every attempt created while demo mode is enabled. A marked attempt remains a demo after reload, provider recovery or either flag being disabled, and both grading and grade confirmation reject it. Existing unmarked attempts never acquire synthetic substitutes when flags change; their original real-provider behavior remains in effect. Resume such attempts through an appropriately configured runtime if they require AI. There are no fake numeric grades or authentication/roster substitutes.
 
 ## Prerequisites
 
-- Windows, Python, the repository `.venv`, Node.js, and Docker Desktop running Linux containers with Docker Compose v2 supporting `up --wait`.
+- Windows, Python, the repository `.venv`, Node.js and Docker Desktop running Linux containers with Docker Compose v2 supporting `up --wait`.
 - Frontend dependencies installed with `npm ci` in `frontend/`.
-- Docker must be able to build the existing backend image and obtain `pgvector/pgvector:pg16`. The first application startup can download container images and Python dependencies. It never downloads AI weights or creates/replaces an Ollama model.
-- Ports 5173 (frontend), 8000 (backend), and 55432 (developer PostgreSQL) must be free. Existing services on those ports are left alone.
+- Docker must be able to build the existing backend image and obtain `pgvector/pgvector:pg16`. Initial container-image and Python dependency downloads can be substantial. The launcher never downloads AI weights or creates/replaces an Ollama model.
+- Ports 5173 (frontend), 8000 (backend) and 55432 (developer PostgreSQL) must be free. Existing services on those ports are left alone.
 
-The launcher checks Docker's Linux engine and these ports before asking for credentials. It can find Node, Docker, and Ollama in standard Windows installation folders when a recently opened shell has a stale PATH. Discovered tool directories are added only to child-process PATH values so Docker can also find its credential helper; the launcher does not change your system or user PATH.
+The launcher checks Docker's Linux engine and these ports before requesting credentials. It can find Node and Docker in standard Windows installation folders when the inherited PATH is stale. Discovered tool directories are added only to child-process PATH values, including Docker's credential helper; the launcher does not modify system or user PATH.
 
-If `.venv` does not exist, create it with your installed Python, as in [setup](setup.md). The launcher itself uses only Python's standard library; the backend runs in its existing Docker image. Audio packages are optional for inspecting their installed versions.
-
-For real local AI, install Ollama separately and provision the chosen model. This is optional for a labeled developer demo. The default is the preserved CYBROS V2 configuration. After obtaining the base weights through your normal permitted setup, create a separate `cybros-v2` model from `ollama/Modelfile-cybros-v2` if it is missing. Do not replace an existing locally customized model without saving it first. The launcher performs no inference during inspection or startup and does not assert that Qwen3 14B will run acceptably on a particular laptop.
+If `.venv` does not exist, create it with installed Python as described in [setup](setup.md). The launcher uses Python's standard library; the backend runs in its existing Docker image. Ollama, audio packages, FlashHead and model weights are not prerequisites for minimal startup. Original Foundation/GUI launchers and Modelfiles are preserved.
 
 ## Local settings and credentials
 
-Saving defaults writes only the five boolean choices and a settings-format version to ignored `.developer-settings.json`. It contains no passwords, tokens, model weights, or examination data. Invalid or unsupported saved settings stop startup and are left unchanged; fix or rename the file to use defaults again. Saved defaults do not bypass the menu.
+The older settings format contains only the five boolean provider choices and a version. Minimal startup reads but does not rewrite it. Invalid or unsupported saved settings still stop startup and remain unchanged; fix or rename that file to return to defaults.
 
-For actual startup, the launcher asks for a developer database password and an admin bootstrap token using hidden input. Reuse the database password on subsequent starts: PostgreSQL retains the original password in its persistent volume. The token must contain at least 16 characters. These values go only into child-process environment variables; the launcher does not write credential files or print them. Docker Desktop administrators can inspect container configuration, so use development credentials and synthetic records only.
+For actual startup, the launcher requests a developer database password and an admin bootstrap token using hidden input. Reuse the database password on subsequent starts because PostgreSQL retains the original password in its persistent volume. The bootstrap token must contain at least 16 characters. Values go into child-process environment variables; the launcher does not print them or write credential files. Docker Desktop administrators can inspect container configuration, so use development credentials and synthetic records only.
 
-These environment variables can also supply configuration before launching:
+These environment variables can supply configuration before launching:
 
 | Variable | Purpose |
 |---|---|
 | `DEVELOPER_POSTGRES_PASSWORD` | Password for the isolated developer database. |
 | `DEVELOPER_ADMIN_BOOTSTRAP_TOKEN` | Token for the existing `/auth/admin/bootstrap` endpoint and `X-Admin-Bootstrap-Token` header. |
-| `DEVELOPER_AUTH_SECRET_KEY` | Optional persistent session-signing secret. When absent, a secret is generated in memory for each launch, signing out prior sessions. |
-| `DEVELOPER_OLLAMA_MODEL` | Model name, default `cybros-v2`. Known saved configurations display their Modelfile's `FROM` base. Other names show an unknown base. |
-| `DEVELOPER_OLLAMA_URL` | Backend-reachable inference endpoint when local AI is N, default `http://host.docker.internal:11434`. URLs with embedded credentials, paths, query strings, or fragments are rejected. |
-| `DEVELOPER_FLASHHEAD_DIR` | Optional existing FlashHead checkout used only to inspect its Git revision. It does not enable rendering or verify weights. |
-| `DEVELOPER_DEMO_MODE` | Backend opt-in: only the exact value `1` enables developer substitutes. The dedicated developer Compose backend sets it to `1`; ordinary Compose is unchanged and does not enable it. A separately launched backend must opt in explicitly. This flag is not one of the five saved provider choices. |
+| `DEVELOPER_AUTH_SECRET_KEY` | Optional persistent signing secret. When absent, a secret is generated in memory for each launch, signing out prior sessions. |
+| `DEVELOPER_OLLAMA_MODEL` | Preserved optional model selection, default `cybros-v2`; not loaded or inspected in minimal startup. |
+| `DEVELOPER_OLLAMA_URL` | Preserved valid optional backend endpoint, default `http://host.docker.internal:11434`; not contacted for marked minimal attempts. |
+| `DEVELOPER_DEMO_MODE` | Backend opt-in, enabled only by exact `1`. Dedicated developer Compose sets `1`; ordinary Compose does not. Not a saved provider choice. |
+| `DEVELOPER_MINIMAL_MODE` | Minimal backend opt-in, active only with both flags exactly `1`. Dedicated developer Compose sets `1`; the launcher forces a core-only plan. Not a saved provider choice. |
 
-Choosing N for local AI means the launcher does not start or stop an inference server. The backend still tries its configured inference endpoint. In this explicitly enabled developer stack, unavailable optional services can fall back to labeled synthetic content for demo-marked attempts. Choosing Y selects local Ollama and uses `host.docker.internal:11434` from the container. The launcher keeps a newly started Ollama bound to host loopback and checks connectivity from the backend. If startup, the configured model, or connectivity is unavailable, it warns and continues core startup. A reachable endpoint can still be configured with local AI set to N. Existing Ollama settings are never modified.
+There are no pre-created accounts or authentication bypasses. Create an administrator through the existing bootstrap endpoint, then a synthetic professor through `/auth/admin/professors`, using the authenticated account workflow. Professor ownership, student roster eligibility, safe authentication configuration, the database, migrations and core startup errors remain real requirements.
 
-There are no pre-created accounts or authentication bypasses. Create an administrator through the existing bootstrap endpoint, then a synthetic professor through `/auth/admin/professors`, using the existing authenticated account workflow. All professor ownership and grading rules remain in effect.
+## Developer demo boundaries
 
-## Developer demo substitutes
+Demo text and presentation substitutes do not establish student grades, identity verification, microphone/camera capture, voice cloning, FlashHead rendering or a functioning unavailable provider. Use synthetic accounts, rosters, uploads and answers. Temporary material excerpts are not saved as authoritative course summaries.
 
-See [implemented behavior and measured application checks](developer-demo-verification-2026-11-05.md)
-for the API, media placeholder, durable marker and no-grading boundaries.
-
-The developer backend's `DEVELOPER_DEMO_MODE=1` permits clearly labeled substitutes
-for optional AI/media availability and missing exam content, such as sample exam
-questions or material context. Existing services are preferred when available.
-An attempt created with the demo marker remains a demo attempt across reloads and
-provider recovery; a later real response does not turn it into an assessed record.
-Normal backends remain off unless their process explicitly opts in with `1`.
-
-Demo text, feedback and media placeholders are synthetic. They do not establish
-student grades, identity verification, real microphone/camera capture, voice
-cloning, or a working unavailable provider. Temporary substitute material
-summaries are used only for the request and are not saved as authoritative course
-summaries. Use synthetic accounts, rosters, uploads and answers in this workflow.
-
-The real database, migrations, professor/student authorization, roster eligibility,
-configured credentials, Docker/Node installation and free ports are still required.
-Core startup errors remain errors. The original Word guide predates this behavior;
-use this Markdown reference and the Developer Mode README for current fallback rules.
+The earlier [developer-demo verification](developer-demo-verification-2026-11-05.md) records fallback behavior and its measured checks. It does not establish new browser results for the minimal layout described here. Actual avatar/time/ODS implementation and verification are documented separately in [Live avatar integration](avatar-live-integration.md).
 
 ## Services and shutdown
 
-The standalone `compose.developer.yaml` starts an isolated `oralexam-developer` project: PostgreSQL, a one-shot migration job, and FastAPI. It has no GPU reservation or mandatory Ollama dependency. Vite runs from the existing frontend installation with hot reload. The browser opens only after backend/frontend readiness checks succeed.
+The standalone `compose.developer.yaml` starts the separate `oralexam-developer` project: PostgreSQL, a one-shot migration job and FastAPI. It has no GPU reservation or Ollama dependency. Vite uses the existing frontend installation with hot reload. The browser opens only after backend/frontend readiness checks succeed.
 
-The developer database uses its own named volume; the team's existing Compose configuration and `pgdata` volume are not selected. The migration runner targets only `db/oralexam_developer`, applies the preserved base schema and full-filename-ordered migrations in one transaction, and records hashes. It refuses to adopt untracked schemas or silently change previously applied migrations. Migration 007 supplies the EID/roster storage already required by existing routes. No existing database is migrated just by opening or inspecting the menu.
+The developer database uses its own named volume; the team's existing Compose configuration and `pgdata` volume are not selected. The migration runner targets only `db/oralexam_developer`, applies the preserved base schema and full-filename-ordered migrations in one transaction, and records hashes. It refuses to adopt untracked schemas or silently change applied migrations. Opening or inspecting the launcher does not migrate an existing database.
 
-Keep the launcher window open. Ctrl+C stops the Vite process, developer Compose services started by this run, and an Ollama process only if this launcher started it. Pre-existing Ollama is left running. If the owned Ollama process exits, the launcher warns once and keeps core services running with labeled developer fallback available. Database contents are retained. If the console is forcibly closed or Windows terminates it, use Docker Desktop to stop the `oralexam-developer` project; shutdown cleanup cannot be guaranteed in that case. A session lock prevents simultaneous launches in the same checkout; a second launcher also refuses to take over an already running developer project. The ignored `.developer-session.lock` file can remain after exit; its OS lock is released when the process exits. Metadata and cleanup commands time out after 30 seconds; initial Docker builds can take longer and remain cancellable with Ctrl+C.
-
-The existing saved exam rules and authenticated workflows remain real requirements.
-Demo substitutions do not establish live-inference quality, media verification,
-production reliability, or final grades. Actual avatar/time/ODS implementation and
-verification are documented separately in [Live avatar integration](avatar-live-integration.md).
+Keep the launcher window open. Ctrl+C stops the Vite process and developer Compose services started by this run. Minimal startup owns no Ollama process, and pre-existing providers remain untouched. Database contents are retained. If Windows or a forced console close prevents cleanup, stop the `oralexam-developer` project through Docker Desktop. A session lock prevents simultaneous launches in the same checkout, and a second launcher refuses to take over a running developer project. The ignored `.developer-session.lock` file can remain after exit; its OS lock is released when the process exits. Metadata and cleanup commands time out after 30 seconds; initial Docker builds can take longer and remain cancellable with Ctrl+C.
 
 ## Inspect without starting anything
 
 From the repository root:
 
 ```powershell
-.\.venv\Scripts\python.exe -B scripts/developer_start.py --show-menu
-.\.venv\Scripts\python.exe -B scripts/developer_start.py --dry-run
+& '.\Developer Mode\Start_Developer.bat' --show-menu
+& '.\Developer Mode\Start_Developer.bat' --dry-run
 ```
 
-`--show-menu` detects local versions and displays defaults without prompting. `--dry-run` lets you answer the menu and prints the selected launch plan. Neither mode saves defaults, prompts for credentials, starts services, downloads models, performs inference, or opens media devices. They can read local Ollama metadata if it is already running.
+`--show-menu` displays the core-only minimal notice. `--dry-run` prints that launch plan without asking optional-provider or save-default questions. Neither command saves settings, requests credentials, starts services, probes optional providers, downloads models, performs inference or opens media devices.
 
 Offline regression checks:
 
@@ -110,7 +98,7 @@ Offline regression checks:
 .\.venv\Scripts\python.exe -B -m unittest discover -s tests -p 'test_*.py' -v
 ```
 
-Synthetic tests exercise menu/configuration decisions, literal process arguments, startup cleanup, and migration ledger behavior. They do not establish a successful Docker build, PostgreSQL SQL execution, host-to-container inference connectivity, live speech, avatar rendering, or camera recording. Record a configured-machine startup separately from these offline checks.
+Synthetic tests cover configuration decisions, literal process arguments, startup cleanup and migration ledger behavior. They do not establish a successful live stack, PostgreSQL execution, inference quality, speech or camera capture. Dated results below describe the versions tested at those times, including menus and optional-provider behavior that preceded minimal mode.
 
 ## Actual verification - October 27, 2026
 
@@ -169,3 +157,24 @@ the browser. The configured local AI service remains offline. See
 No Docker stack, model, microphone, camera or real student workflow was started
 for these launcher checks. Backend/API verification belongs to its separate
 synthetic checks and any later explicitly recorded application run.
+
+## Actual minimal-mode checks before publication - November 5, 2026
+
+- Root standard-library suite: **91 passed**.
+- Synthetic backend suite: **426 passed**, with 125 dependency deprecation warnings.
+  The completed run used the repository root and `backend` on `PYTHONPATH` and
+  host access. An initial collection lacked the `app` import path; a restricted
+  rerun stalled in the test client and was interrupted before the host run.
+- Frontend non-browser Node suite: **83 passed**, with no failures or skips.
+- `npm --prefix frontend run build`: TypeScript and Vite passed; the tracked
+  `frontend/dist` assets were rebuilt and their HTML references verified.
+- Launcher `--show-menu` and `--dry-run`: exit 0, with minimal mode active and
+  optional providers off. `git diff --check` passed.
+- The existing local PGlite database restarted with zero pending migrations.
+  The local frontend, proxied backend health and database health returned HTTP
+  200. Capabilities reported demo and minimal mode enabled, with AI, FlashHead,
+  voice, microphone and camera all false.
+
+These checks do not establish a new Docker startup, student browser walkthrough,
+live inference, media capture, speech output or grading reliability. Local
+settings, accounts, database files, backups and logs remain Git-ignored.

@@ -95,3 +95,43 @@
 @media (prefers-reduced-motion: reduce) {
   .student-exam-page *, .student-exam-page *::before, .student-exam-page *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
 }
+
+/* Avatar-first examination layout. Normal controls stay purple; saved demo controls are blue. */
+.student-exam-page .student-exam-logo { font-size: clamp(20px, 2vw, 28px); line-height: 1.2; }
+.student-exam-page .student-exam-logo > span { flex-basis: 40px; }
+.student-exam-page .student-exam-header { gap: 16px 24px; padding: 16px clamp(16px, 3vw, 48px); }
+.student-exam-page .student-exam-stage-content { width: min(calc(100% - 2 * var(--exam-ui-gutter)), 1360px); padding-top: 32px; }
+.exam-header-controls { display: flex; flex-wrap: wrap; align-items: stretch; justify-content: flex-end; gap: 12px; min-width: 0; }
+.exam-settings-slot { display: flex; align-items: stretch; min-width: 0; }
+.student-exam-page .exam-settings-slot .live-exam-settings-launch,
+.student-exam-page .exam-timer-chip {
+  min-height: 64px;
+  border: 1px solid var(--exam-ui-accent);
+  border-radius: 12px;
+  background: var(--exam-ui-accent-soft);
+  color: var(--exam-ui-accent-strong);
+  padding: 8px 20px;
+}
+.student-exam-page .exam-settings-slot .live-exam-settings-launch { font-size: 1rem; }
+.exam-timer-chip { display: grid; align-content: center; justify-items: center; min-width: 148px; line-height: 1.25; font-variant-numeric: tabular-nums; }
+.exam-timer-chip span { font-size: .875rem; font-weight: 650; }
+.exam-timer-chip strong { font-size: 1.5rem; }
+.exam-screen-reader { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+.developer-exam-panel, .exam-response-panel { min-width: 0; margin-top: 28px; padding: var(--exam-ui-panel-padding); border: 1px solid var(--exam-ui-border); border-radius: 16px; background: #fff; box-shadow: var(--exam-ui-shadow); }
+.developer-exam-panel { --exam-ui-accent: #1d4ed8; --exam-ui-accent-strong: #173e9c; --exam-ui-focus: #1d4ed8; --exam-ui-text: #1e3a8a; --exam-ui-muted: #315693; --exam-ui-border: #8eb8f0; --exam-ui-surface-muted: #dbeafe; background: #eff6ff; color: #1e3a8a; border-color: #3b82f6; }
+.developer-exam-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 20px; }
+.developer-exam-heading h2 { margin: 0; color: #1e3a8a; font-size: 1.5rem; line-height: 1.3; }
+.developer-exam-badge { padding: 5px 12px; border-radius: 8px; background: #1d4ed8; color: #fff; font-size: .875rem; line-height: 1.5; text-transform: uppercase; }
+.developer-exam-services { margin: 12px 0 24px; color: #1d4ed8; }
+.exam-answer-form .exam-question-number { margin: 0 0 4px; text-transform: uppercase; }
+.exam-current-question { margin: 0 0 20px; font-size: 1.25em; line-height: 1.4; color: inherit; }
+.exam-answer-form .student-answer-input { font-size: 1em; }
+.developer-exam-panel .student-answer-input { background: #fff; border-color: #60a5fa; color: #1e3a8a; }
+.developer-exam-panel .student-answer-input::placeholder { color: #315693; }
+.developer-exam-panel .exam-next-button:disabled { background: #dbeafe; color: #315693; border-color: #93b8ea; }
+.developer-exam-panel .exam-error { margin-top: 12px; padding: 12px 16px; border: 1px solid #1d4ed8; border-radius: 8px; color: #1e3a8a; background: #dbeafe; }
+.exam-response-panel > summary { min-height: 44px; color: var(--exam-ui-accent); font-weight: 650; cursor: pointer; }
+.exam-response-panel > p { margin: 4px 0 20px; color: var(--exam-ui-muted); }
+.student-exam-page summary:focus-visible { outline: 3px solid var(--exam-ui-focus); outline-offset: 3px; }
+@media (max-width: 850px) { .exam-header-controls { width: 100%; justify-content: start; } .exam-settings-slot { flex: 1 1 180px; } .exam-settings-slot button { width: 100%; } .exam-timer-chip { flex: 1 1 130px; min-width: 0; } }
+@media (max-width: 480px) { .student-exam-page .student-exam-stage-content { padding-top: 20px; } .exam-settings-slot { flex-basis: 100%; } .student-exam-page .exam-timer-chip { padding: 8px; } .exam-timer-chip span { font-size: .875rem; } .exam-timer-chip strong { font-size: 1.25rem; } .developer-exam-heading { align-items: start; flex-direction: column; } .developer-exam-badge { max-width: 100%; } }

@@ -1,8 +1,7 @@
 """Interactive laptop launcher. Importing this module starts no services.
 
-Only the local Ollama provider switch has an application integration here.
-Unavailable provider choices remain off; the dedicated developer stack's
-labeled substitutes and built-in browser presentation are separate.
+The dedicated startup uses minimal mode: optional providers stay off, and
+labeled samples support demo attempts. Core requirements remain real.
 """
 
 from __future__ import annotations
@@ -60,6 +59,11 @@ DEMO_NOTICE = (
     "or exam content are unavailable. Real providers are used when available.\n"
     "Demo-marked attempts stay demo; substitutes do not establish grades or real verification.\n"
     "Authentication, roster eligibility, the database, migrations, Docker, Node, and ports remain real requirements."
+)
+MINIMAL_NOTICE = (
+    "DEVELOPER MINIMAL MODE: core website only. AI, FlashHead, voice, microphone, and camera are OFF.\n"
+    "No optional provider is checked or started, even when a saved choice enables local AI.\n"
+    "Labeled developer samples keep demo attempts moving; authentication, roster checks, and the database remain real."
 )
 UNAVAILABLE = {
     "transcription": "The standalone voice prototype is not connected to the web exam.",
@@ -263,7 +267,14 @@ def model_description(root: Path, model: str) -> str:
     return f"{model} | base model Unknown"
 
 
-def discover(root: Path, environ: dict) -> dict:
+def discover(root: Path, environ: dict, *, minimal=False) -> dict:
+    if minimal:
+        model = environ.get("DEVELOPER_OLLAMA_MODEL", "cybros-v2").strip()
+        if not model or any(char.isspace() for char in model):
+            model = "cybros-v2"  # Invalid optional settings must not block core-only startup.
+        return {"labels": dict.fromkeys(FEATURES, "Off in developer minimal mode"),
+                "available": dict.fromkeys(FEATURES, False), "ollama": None,
+                "model": model, "minimal": True}
     python = root / ".venv" / "Scripts" / "python.exe"
     versions = package_versions(str(python) if python.exists() else sys.executable)
     ollama = find_tool("ollama", environ)
@@ -298,6 +309,10 @@ def discover(root: Path, environ: dict) -> dict:
 def show_menu(inventory: dict, defaults: dict, output_fn=print) -> None:
     output_fn("\nOralExam AI - Developer Startup\n")
     output_fn(CORE_LABEL)
+    if inventory.get("minimal"):
+        output_fn(MINIMAL_NOTICE)
+        output_fn("Saved optional-provider defaults are left unchanged.\n")
+        return
     output_fn(LOAD_GUIDANCE)
     output_fn(LIGHT_COMPUTER_GUIDANCE)
     output_fn(DEMO_NOTICE)
@@ -310,6 +325,9 @@ def show_menu(inventory: dict, defaults: dict, output_fn=print) -> None:
 
 
 def collect_choices(inventory: dict, defaults: dict, input_fn=input, output_fn=print) -> dict:
+    if inventory.get("minimal"):
+        output_fn(MINIMAL_NOTICE)
+        return dict.fromkeys(FEATURES, False)
     selected = {}
     for key in FEATURES:
         output_fn(f"\n{TITLES[key]} [{RESOURCE_LOAD[key]}]\n  ({inventory['labels'][key]})")
@@ -339,10 +357,15 @@ def validate_endpoint(value: str) -> str:
     return value.rstrip("/")
 
 
-def build_plan(root: Path, choices: dict, model: str, endpoint: str, docker="docker", node="node") -> dict:
+def build_plan(root: Path, choices: dict, model: str, endpoint: str, docker="docker", node="node", *, minimal=False) -> dict:
     validate_choices(choices)
-    endpoint = validate_endpoint(endpoint)
-    if choices["local_ai"]:
+    try:
+        endpoint = validate_endpoint(endpoint)
+    except StartupError:
+        if not minimal:
+            raise
+        endpoint = "http://host.docker.internal:11434"
+    if choices["local_ai"] and not minimal:
         endpoint = "http://host.docker.internal:11434"
     compose = [docker, "compose", "--env-file", str(root / ".env.example"),
                "-f", str(root / "compose.developer.yaml"), "-p", "oralexam-developer"]
@@ -351,7 +374,8 @@ def build_plan(root: Path, choices: dict, model: str, endpoint: str, docker="doc
         "core": compose + ["up", "--build", "-d", "--wait", "backend"],
         "frontend": [node, str(root / "frontend" / "node_modules" / "vite" / "bin" / "vite.js"),
                      "--host", "127.0.0.1", "--port", "5173", "--strictPort"],
-        "model": model, "endpoint": endpoint, "local_ai": choices["local_ai"],
+        "model": model, "endpoint": endpoint, "local_ai": choices["local_ai"] and not minimal,
+        "minimal": minimal,
     }
 
 
@@ -462,8 +486,8 @@ def launch_services(root: Path, inventory: dict, plan: dict, env: dict) -> None:
         if run_command(plan["compose"] + ["ps", "--status", "running", "-q"], root, env, capture=True):
             raise StartupError("The developer stack is already running. Stop it separately before using this launcher.")
         check_free_ports()
-        print(DEMO_NOTICE)
-        if plan["local_ai"]:
+        print(MINIMAL_NOTICE if plan.get("minimal") else DEMO_NOTICE)
+        if plan["local_ai"] and not plan.get("minimal"):
             try:
                 if local_json("/api/version") is None:
                     if not inventory["ollama"]:
@@ -487,7 +511,8 @@ def launch_services(root: Path, inventory: dict, plan: dict, env: dict) -> None:
             except (StartupError, OSError) as exc:
                 reason = str(exc) if isinstance(exc, StartupError) else "The optional Ollama process could not start."
                 print(f"Warning: {reason} Continuing core startup with labeled developer demo fallback available.")
-        print(f"Backend model: {plan['model']} at {plan['endpoint']}")
+        if not plan.get("minimal"):
+            print(f"Backend model: {plan['model']} at {plan['endpoint']}")
         print("Starting developer database, migrations, and backend...")
         core_started = True  # Also clean up partially started services if Compose fails.
         # Initial image builds may take longer than metadata/cleanup commands.
@@ -505,7 +530,8 @@ def launch_services(root: Path, inventory: dict, plan: dict, env: dict) -> None:
                                           shell=False, creationflags=hidden_flags())
         wait_for_http("http://127.0.0.1:5173", owned_frontend)
         print("\nDeveloper app: http://127.0.0.1:5173")
-        print("Optional Faster-Whisper, Piper, FlashHead, and recording providers remain off. Built-in web presentation and labeled demo substitutes are separate.")
+        print(MINIMAL_NOTICE if plan.get("minimal") else
+              "Optional Faster-Whisper, Piper, FlashHead, and recording providers remain off. Built-in web presentation and labeled demo substitutes are separate.")
         print("Keep this window open. Press Ctrl+C to stop services started by this launcher.")
         webbrowser.open("http://127.0.0.1:5173")
         while True:
@@ -538,25 +564,23 @@ def launch_services(root: Path, inventory: dict, plan: dict, env: dict) -> None:
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--show-menu", action="store_true", help="Inspect versions and choices without starting or saving anything.")
-    parser.add_argument("--dry-run", action="store_true", help="Answer the menu and inspect the plan without saving or starting services.")
+    parser.add_argument("--dry-run", action="store_true", help="Inspect the core-only plan without saving or starting services.")
     args = parser.parse_args(argv)
     try:
         defaults = load_choices(ROOT / CONFIG_NAME)
-        inventory = discover(ROOT, os.environ)
+        inventory = discover(ROOT, os.environ, minimal=True)
         if args.show_menu:
             show_menu(inventory, defaults)
             return 0
         print("\nOralExam AI - Developer Startup")
         print(CORE_LABEL)
-        print(LOAD_GUIDANCE)
-        print(LIGHT_COMPUTER_GUIDANCE)
-        print("Unavailable integrations require N; the menu does not simulate successful activation.")
+        print(MINIMAL_NOTICE)
         choices = collect_choices(inventory, defaults)
-        save = ask_yes_no("\nSave choices as defaults?", True)
+        save = False if inventory.get("minimal") else ask_yes_no("\nSave choices as defaults?", True)
         endpoint = os.environ.get("DEVELOPER_OLLAMA_URL", "http://host.docker.internal:11434")
         docker = find_tool("docker", os.environ)
         node = find_tool("node", os.environ)
-        plan = build_plan(ROOT, choices, inventory["model"], endpoint, docker or "docker", node or "node")
+        plan = build_plan(ROOT, choices, inventory["model"], endpoint, docker or "docker", node or "node", minimal=True)
         if args.dry_run:
             print("\nDry run: no choices saved; no services, model downloads, or recordings started.")
             print(json.dumps(plan, indent=2))

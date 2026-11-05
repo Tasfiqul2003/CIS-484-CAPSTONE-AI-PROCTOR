@@ -109,6 +109,22 @@ class DeveloperMenuTests(unittest.TestCase):
 
 
 class DeveloperDiscoveryTests(unittest.TestCase):
+    def test_minimal_discovery_never_checks_optional_providers(self):
+        with patch.object(launcher, "package_versions", side_effect=AssertionError("No provider discovery")), \
+                patch.object(launcher, "find_tool", side_effect=AssertionError("No provider lookup")), \
+                patch.object(launcher, "local_json", side_effect=AssertionError("No provider metadata")), \
+                patch.object(launcher, "command_output", side_effect=AssertionError("No provider commands")):
+            found = launcher.discover(ROOT, {"DEVELOPER_OLLAMA_MODEL": "unused"}, minimal=True)
+        self.assertTrue(found["minimal"])
+        self.assertEqual(found["model"], "unused")
+        self.assertFalse(any(found["available"].values()))
+        self.assertIsNone(found["ollama"])
+        defaults = choices(True)
+        selected = launcher.collect_choices(found, defaults,
+            Mock(side_effect=AssertionError("Minimal mode has no optional prompts")), lambda _: None)
+        self.assertEqual(selected, choices())
+        self.assertEqual(defaults, choices(True))
+
     def test_discovery_reports_runtime_and_model_without_generation_or_download(self):
         metadata = []
 
@@ -373,8 +389,21 @@ class DeveloperPlanTests(unittest.TestCase):
         developer = (ROOT / "compose.developer.yaml").read_text()
         normal = (ROOT / "docker-compose.yml").read_text()
         self.assertIn('DEVELOPER_DEMO_MODE: "1"', developer)
+        self.assertIn('DEVELOPER_MINIMAL_MODE: "1"', developer)
         self.assertNotIn("DEVELOPER_DEMO_MODE", normal)
+        self.assertNotIn("DEVELOPER_MINIMAL_MODE", normal)
         self.assertNotIn("DEVELOPER_DEMO_MODE", launcher.validate_choices(choices()))
+
+    def test_minimal_plan_keeps_saved_ai_choice_but_forces_provider_off(self):
+        saved = choices(True)
+        plan = launcher.build_plan(ROOT, saved, "unused-model", "unused endpoint", minimal=True)
+        self.assertTrue(plan["minimal"])
+        self.assertFalse(plan["local_ai"])
+        self.assertEqual(saved, choices(True))
+        self.assertEqual(plan["core"][-5:], ["up", "--build", "-d", "--wait", "backend"])
+        configured = launcher.build_plan(ROOT, saved, "configured-model", "https://synthetic.invalid:11434", minimal=True)
+        self.assertEqual(configured["model"], "configured-model")
+        self.assertEqual(configured["endpoint"], "https://synthetic.invalid:11434")
 
     def test_disabling_local_ai_preserves_configured_endpoint_and_no_unavailable_flags(self):
         plan = launcher.build_plan(ROOT, choices(), "synthetic-model", "https://synthetic.invalid:11434/")
@@ -471,6 +500,30 @@ class DeveloperProcessTests(unittest.TestCase):
         run.assert_called_once_with(self.plan["compose"] + ["ps", "--status", "running", "-q"], ROOT, {}, capture=True)
         ports.assert_not_called()
         popen.assert_not_called()
+
+    def test_minimal_launch_never_probes_or_starts_ai_even_with_stale_enabled_choice(self):
+        plan = launcher.build_plan(ROOT, choices(True), "unused", "http://synthetic.invalid", minimal=True)
+        plan["local_ai"] = True  # Defense against a stale caller, not a saved-file rewrite.
+        frontend = Mock()
+        frontend.poll.return_value = None
+        with patch.object(launcher, "run_command", return_value="") as run, \
+                patch.object(launcher, "check_free_ports"), \
+                patch.object(launcher, "local_json", side_effect=AssertionError("No AI metadata")), \
+                patch.object(launcher, "wait_for_http") as ready, \
+                patch.object(launcher.subprocess, "Popen", return_value=frontend) as popen, \
+                patch.object(launcher.webbrowser, "open"), \
+                patch.object(launcher.time, "sleep", side_effect=KeyboardInterrupt), \
+                redirect_stdout(self.output):
+            with self.assertRaises(KeyboardInterrupt):
+                launcher.launch(ROOT, inventory(), plan, {})
+        popen.assert_called_once()
+        self.assertEqual(popen.call_args.args[0], plan["frontend"])
+        self.assertEqual([call.args[0] for call in ready.call_args_list],
+                         ["http://127.0.0.1:8000/health", "http://127.0.0.1:5173"])
+        self.assertEqual([call.args[0] for call in run.call_args_list], [
+            plan["compose"] + ["ps", "--status", "running", "-q"], plan["core"],
+            plan["compose"] + ["stop"]])
+        self.assertIn("AI, FlashHead, voice, microphone, and camera are OFF", self.output.getvalue())
 
     def test_partial_compose_failure_stops_only_developer_project(self):
         def command(args, *_args, **_kwargs):
@@ -753,6 +806,25 @@ class DeveloperProcessTests(unittest.TestCase):
                 patch.dict(launcher.os.environ, {"DEVELOPER_OLLAMA_URL": "http://synthetic.invalid"}), \
                 redirect_stdout(self.output), redirect_stderr(self.output):
             self.assertEqual(launcher.main(["--dry-run"]), 0)
+        save.assert_not_called()
+        environment.assert_not_called()
+        launch.assert_not_called()
+
+    def test_dedicated_main_ignores_saved_ai_activation_without_rewriting_defaults(self):
+        saved = choices(True)
+        with patch.object(launcher, "load_choices", return_value=saved), \
+                patch.object(launcher, "package_versions", side_effect=AssertionError("No provider discovery")), \
+                patch.object(launcher, "local_json", side_effect=AssertionError("No provider probes")), \
+                patch.object(launcher, "find_tool", side_effect=lambda name, _env: f"C:/synthetic/{name}.exe"), \
+                patch.object(launcher, "ask_yes_no", side_effect=AssertionError("Minimal mode needs no optional/save prompts")), \
+                patch.object(launcher, "save_choices") as save, \
+                patch.object(launcher, "service_environment") as environment, \
+                patch.object(launcher, "launch") as launch, \
+                redirect_stdout(self.output), redirect_stderr(self.output):
+            self.assertEqual(launcher.main(["--dry-run"]), 0)
+        self.assertEqual(saved, choices(True))
+        self.assertIn('"local_ai": false', self.output.getvalue())
+        self.assertIn('"minimal": true', self.output.getvalue())
         save.assert_not_called()
         environment.assert_not_called()
         launch.assert_not_called()

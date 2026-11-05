@@ -14,7 +14,8 @@ from sqlalchemy.orm import Session
 from .student_auth import issue_student_token, read_student_token
 from .avatar_session import snapshot_for_exam, session_policy
 from .avatar_timing import pause_sum_sql, active_pause_until_sql
-from .developer_demo import demo_enabled, demo_for_session, ai_available, demo_question, demo_summary
+from .developer_demo import (demo_enabled, demo_for_session, minimal_enabled,
+                             minimal_for_session, ai_available, demo_question, demo_summary)
 
 from .db import get_db
 
@@ -279,7 +280,7 @@ def start_exam(req: StartRequest, db: Session = Depends(get_db)):
         summaries = load_exam_material_summaries(db, req.exam_template_id)
         use_demo = demo_for_session(snapshot)
         try:
-            if use_demo and not ai_available(OLLAMA_URL, OLLAMA_MODEL):
+            if use_demo and (minimal_for_session(snapshot) or not ai_available(OLLAMA_URL, OLLAMA_MODEL)):
                 raise HTTPException(502, "The configured model is unavailable.")
             decision = ask_model(template, [], [], summaries)
         except HTTPException as error:
@@ -458,7 +459,7 @@ def submit_answer(
                 "developer_demo": bool(session.get("developer_demo", False))}
     use_demo = demo_for_session(session)
     try:
-        if use_demo and not bank_remaining and not ai_available(OLLAMA_URL, OLLAMA_MODEL):
+        if use_demo and not bank_remaining and (minimal_for_session(session) or not ai_available(OLLAMA_URL, OLLAMA_MODEL)):
             raise HTTPException(502, "The configured model is unavailable.")
         decision = (ask_model(template, history, bank_remaining, summaries)
                     if can_follow_up and not (use_demo and bank_remaining) else {
@@ -1449,7 +1450,7 @@ async def summarize_exam_material(
                 "demo": True, "persisted": False}
 
     try:
-        if demo_enabled() and not ai_available(OLLAMA_URL, OLLAMA_MODEL):
+        if demo_enabled() and (minimal_enabled() or not ai_available(OLLAMA_URL, OLLAMA_MODEL)):
             return sample_summary()
         async with httpx.AsyncClient(timeout=180) as client:
             response = await client.post(

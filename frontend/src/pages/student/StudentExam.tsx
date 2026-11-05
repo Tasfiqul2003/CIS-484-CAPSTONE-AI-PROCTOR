@@ -4,7 +4,6 @@ import type { ExamClock, ExamTiming, RemainingTime } from "./examTiming";
 import LiveExamPresentation from "../../components/avatar/LiveExamPresentation";
 import OralExamMark from "../../components/brand/OralExamMark";
 import { DemoAttemptNotice, useDeveloperDemo } from "../../components/developer-demo/DemoWorkspace";
-import { demoAnswer } from "../../components/developer-demo/developerDemo";
 import "./StudentExam.css";
 
 type StartResponse = ExamTiming & {
@@ -43,6 +42,8 @@ async function apiRequest<T>(
 export default function StudentExam() {
   const developer = useDeveloperDemo();
   const [demoAttempt, setDemoAttempt] = useState(false);
+  const [settingsTarget, setSettingsTarget] = useState<HTMLDivElement | null>(null);
+  const developerMinimal = demoAttempt && developer.enabled && developer.minimal === true;
   const [sessionId, setSessionId] = useState("");
   const [question, setQuestion] = useState("");
   const [questionNumber, setQuestionNumber] = useState(1);
@@ -234,6 +235,7 @@ export default function StudentExam() {
           <div className="exam-question-card">
             <h1>Preparing your examination...</h1>
             <p>Connecting to the exam server and loading your first question.</p>
+            <p>Speak naturally. Take your time.</p>
           </div>
         </main>
       </div>
@@ -330,90 +332,56 @@ export default function StudentExam() {
     );
   }
 
-  return (
-    <div className="student-exam-page">
-      <header className="student-exam-header">
-        <div className="student-exam-logo">
-          <span aria-hidden="true"><OralExamMark size={34} /></span>
-          <strong>OralExam AI</strong>
-        </div>
-        <div className="student-exam-progress">
-          Question {questionNumber}
-          <div className="exam-countdown" role="timer" aria-label="Exam time remaining" aria-live="off">
-            {remaining.exam === null ? "No exam time limit" : `Exam time left: ${formatRemaining(remaining.exam)}`}
-          </div>
-          {remaining.question !== null && <div className="exam-countdown" role="timer" aria-label="Question time remaining" aria-live="off">
-            Question time left: {formatRemaining(remaining.question)}
-          </div>}
-        </div>
-      </header>
-
-      <main className="student-exam-content">
-        <div className="exam-question-card" style={{ fontSize: textSize }}>
-          {demoAttempt && <DemoAttemptNotice />}
-          <div className="exam-question-number">
-            QUESTION {questionNumber}
-          </div>
-
-          <h1 style={{ fontSize: `${textSize * 1.5}px` }}>{question}</h1>
-          {remaining.question !== null && !expired && <p>
-            Submit before the question timer reaches zero. When it expires, this question is marked unanswered.
-          </p>}
-          {expired && !assisting && <p role="status">{remaining.exam === 0
-            ? "Exam time has expired. Finishing your attempt."
-            : "Question time has expired. Continuing with this question marked unanswered."}
-            {error && " Use Retry submission to continue."}
-          </p>}
-
-          <LiveExamPresentation sessionId={sessionId} token={sessionToken.current} question={question}
-            developerDemo={demoAttempt}
-            sequence={questionNumber} answer={answer} expired={expired && !assisting} submitting={submitting}
-            onTiming={updateClock} onBusyChange={setAssisting} onTextSizeChange={setTextSize} />
-
-          <label className="student-answer-label" htmlFor="student-exam-answer">Your answer</label>
-          <textarea
-            id="student-exam-answer"
-            className="student-answer-input"
-            value={answer}
-            onChange={(event) => setAnswer(event.target.value)}
-            placeholder="Type your response..."
-            disabled={submitting || (expired && !assisting)}
-            style={{ fontSize: textSize }}
-          />
-          {demoAttempt && developer.enabled && <section className="developer-demo-media" aria-label="Demo transcription substitute">
-            <strong>Demo transcription substitute</strong>
-            <p>Microphone transcription is not connected. Type your own response, or insert a labeled sample answer to test this flow. No audio is recorded.</p>
-            <button type="button" disabled={!!answer.trim() || submitting || expired || assisting}
-              onClick={() => setAnswer(demoAnswer)}>Insert demo answer (no recording)</button>
-            {!!answer.trim() && <p>Clear the answer first to insert the sample.</p>}
-          </section>}
-
-          {error && (
-            <p role="alert" className="exam-error">
-              {error}
-            </p>
-          )}
-
-          <div className="exam-question-footer">
-            <span>
-              {submitting
-                ? "Submitting response..."
-                : answer.trim()
-                  ? "Response ready to submit"
-                  : "Waiting for response..."}
-            </span>
-
-            <button
-              type="button"
-              className="exam-next-button"
-              onClick={handleNext}
-              disabled={(!answer.trim() && !expired) || submitting || assisting}
-            >
-              {submitting ? "Please wait..." : expired ? "Retry submission →" : "Submit Answer →"}
-            </button>
-          </div>
-        </div>
-      </main>
+  const sampleQuestion = question.startsWith("[Developer demo] ");
+  const questionText = sampleQuestion ? question.slice("[Developer demo] ".length) : question;
+  const answerForm = <form className="exam-answer-form" onSubmit={event => { event.preventDefault(); void handleNext(); }} style={{ fontSize: textSize }}>
+    <p className="exam-question-number">{sampleQuestion ? "Sample question" : `Question ${questionNumber}`}</p>
+    <h2 className="exam-current-question" aria-live="polite">{questionText}</h2>
+    <label className="student-answer-label" htmlFor="student-exam-answer">{demoAttempt ? "Test answer" : "Your answer"}</label>
+    <textarea id="student-exam-answer" className="student-answer-input" value={answer}
+      onChange={event => setAnswer(event.target.value)} placeholder={demoAttempt ? "Type your test answer here…" : "Type your response…"}
+      disabled={submitting || (expired && !assisting)} />
+    {expired && !assisting && <p role="status">{remaining.exam === 0
+      ? "Exam time has expired. Finishing your attempt."
+      : "Question time has expired. Continuing with this question marked unanswered."}
+      {error && " Use Retry submission to continue."}</p>}
+    {error && <p role="alert" className="exam-error">{error}</p>}
+    <div className="exam-question-footer">
+      <span role="status">{submitting ? "Saving response…" : ""}</span>
+      <button type="submit" className="exam-next-button" disabled={(!answer.trim() && !expired) || submitting || assisting}>
+        {submitting ? "Saving…" : expired ? "Retry submission →" : demoAttempt ? "Submit test answer →" : "Submit answer →"}
+      </button>
     </div>
-  );
+  </form>;
+
+  return <div className="student-exam-page">
+    <header className="student-exam-header">
+      <div className="student-exam-logo"><span aria-hidden="true"><OralExamMark size={40} /></span><strong>OralExam AI</strong></div>
+      <div className="exam-header-controls">
+        <div className="exam-settings-slot" ref={setSettingsTarget} />
+        <div className="exam-timer-chip" role="timer" aria-label="Exam time remaining" aria-live="off">
+          <span>Exam time left</span><strong>{remaining.exam === null ? "No limit" : formatRemaining(remaining.exam).padStart(5, "0")}</strong>
+        </div>
+        <div className="exam-timer-chip" role="timer" aria-label="Question time remaining" aria-live="off">
+          <span>Question time left</span><strong>{remaining.question === null ? "No limit" : formatRemaining(remaining.question).padStart(5, "0")}</strong>
+        </div>
+      </div>
+    </header>
+    <main className="student-exam-content student-exam-stage-content">
+      <h1 className="exam-screen-reader">Oral examination · Question {questionNumber}</h1>
+      <LiveExamPresentation sessionId={sessionId} token={sessionToken.current} question={question}
+        developerDemo={demoAttempt} developerMinimal={developerMinimal} settingsTarget={settingsTarget}
+        sequence={questionNumber} answer={answer} expired={expired && !assisting} submitting={submitting}
+        onTiming={updateClock} onBusyChange={setAssisting} onTextSizeChange={setTextSize} />
+      {demoAttempt ? <section className="developer-exam-panel" aria-labelledby="developer-exam-heading">
+        <div className="developer-exam-heading"><h2 id="developer-exam-heading">Developer mode</h2><strong className="developer-exam-badge">Test attempt · no grading</strong></div>
+        <p className="developer-exam-services">{developerMinimal ? "AI, FlashHead, voice, microphone and camera are off." : "Developer test attempt. Optional service availability follows this server’s configuration."}</p>
+        {answerForm}
+      </section> : <details className="exam-response-panel" open>
+        <summary>Question and answer</summary>
+        <p>Microphone transcription is not connected. Your typed answer is saved when you submit.</p>
+        {answerForm}
+      </details>}
+    </main>
+  </div>;
 }

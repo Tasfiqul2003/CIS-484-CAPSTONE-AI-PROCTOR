@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import AIAvatar from "../AIAvatar";
+import { createPortal } from "react-dom";
+import { Keyboard, Settings } from "lucide-react";
+import ExamStageAvatar from "./ExamStageAvatar";
 import type { AIAvatarState } from "../AIAvatar";
 import StudentSettingsPanel from "../student-settings/StudentSettingsPanel";
 import type { StudentPreferences } from "../student-settings/studentSettings";
@@ -17,10 +19,12 @@ const actionLabels: Record<AssistanceAction, string> = {
 };
 
 export default function LiveExamPresentation({ sessionId, token, question, sequence, answer, expired, submitting,
-  developerDemo = false, onTiming, onBusyChange, onTextSizeChange,
+  developerDemo = false, developerMinimal = false, settingsTarget = null, onTiming, onBusyChange, onTextSizeChange,
 }: {
   sessionId: string; token: string; question: string; sequence: number; answer: string; expired: boolean; submitting: boolean;
   developerDemo?: boolean;
+  developerMinimal?: boolean;
+  settingsTarget?: HTMLElement | null;
   onTiming: (timing: ExamTiming) => void; onBusyChange: (busy: boolean) => void; onTextSizeChange: (size: number) => void;
 }) {
   const [presentation, setPresentation] = useState<SessionPresentation | null>(null);
@@ -49,8 +53,13 @@ export default function LiveExamPresentation({ sessionId, token, question, seque
   const alive = useRef(true);
   const pauseCap = useRef<number | null>(null);
   const launchButton = useRef<HTMLButtonElement>(null);
-  const latestSpeech = useRef({ presentation, preferences, audioEnabled, speechSupported });
-  latestSpeech.current = { presentation, preferences, audioEnabled, speechSupported };
+  const options = useRef<HTMLDetailsElement>(null);
+  const latestSpeech = useRef({ presentation, preferences, audioEnabled, speechSupported, developerMinimal });
+  latestSpeech.current = { presentation, preferences, audioEnabled, speechSupported, developerMinimal };
+  useEffect(() => {
+    // Reveal recovery/help without closing a disclosure the student opened after reading ends.
+    if (options.current && (assistanceBusy || assistanceError || speechError)) options.current.open = true;
+  }, [assistanceBusy, assistanceError, speechError]);
 
   const watchPauseCap = useCallback((state: AssistanceState, request: { id: string; sequence: number }) => {
     if (pauseCap.current !== null) window.clearTimeout(pauseCap.current);
@@ -105,7 +114,9 @@ export default function LiveExamPresentation({ sessionId, token, question, seque
 
   useEffect(() => {
     alive.current = true;
-    if ("speechSynthesis" in window && "SpeechSynthesisUtterance" in window) {
+    setSpeechSupported(false);
+    if (developerMinimal) setAudioEnabled(false);
+    if (!developerMinimal && "speechSynthesis" in window && "SpeechSynthesisUtterance" in window) {
       speaker.current = createExamSpeaker(window.speechSynthesis, text => new SpeechSynthesisUtterance(text));
       setSpeechSupported(true);
     }
@@ -115,6 +126,7 @@ export default function LiveExamPresentation({ sessionId, token, question, seque
     return () => {
       alive.current = false;
       speaker.current?.stop();
+      speaker.current = null;
       const current = reading.current;
       reading.current = null;
       if (current) void completeAssistance(sessionId, token, current.sequence, current.id).catch(() => undefined);
@@ -122,7 +134,7 @@ export default function LiveExamPresentation({ sessionId, token, question, seque
       query.removeEventListener("change", update);
       onBusyChange(false);
     };
-  }, [sessionId, token, onBusyChange]);
+  }, [sessionId, token, developerMinimal, onBusyChange]);
 
   const loadPresentation = useCallback(async (signal?: AbortSignal) => {
     setPresentationError("");
@@ -142,6 +154,7 @@ export default function LiveExamPresentation({ sessionId, token, question, seque
   }, [loadPresentation]);
 
   const reloadAssistance = useCallback(async (signal?: AbortSignal) => {
+    if (developerMinimal) return;
     setAssistanceError("");
     try {
       const value = await loadAssistance(sessionId, token, sequence, signal);
@@ -158,7 +171,7 @@ export default function LiveExamPresentation({ sessionId, token, question, seque
     } catch (failure) {
       if (!signal?.aborted && alive.current) setAssistanceError(failure instanceof Error ? failure.message : "Unable to load assistance allowances.");
     }
-  }, [sessionId, token, sequence, onTiming, onBusyChange, finishReading, watchPauseCap]);
+  }, [sessionId, token, sequence, developerMinimal, onTiming, onBusyChange, finishReading, watchPauseCap]);
   useEffect(() => {
     questionGeneration.current += 1;
     speaker.current?.stop(); setSpeechState("Idle"); setSpeechError("");
@@ -172,7 +185,7 @@ export default function LiveExamPresentation({ sessionId, token, question, seque
 
   const speak = useCallback((text: string, after?: () => void) => {
     const current = latestSpeech.current;
-    if (!speaker.current || !current.presentation || !current.preferences || current.preferences.volume === 0) { after?.(); return; }
+    if (current.developerMinimal || !speaker.current || !current.presentation || !current.preferences || current.preferences.volume === 0) { after?.(); return; }
     setSpeechError("");
     try {
       speaker.current.speak(text, current.presentation.voice_profile, current.preferences.speed, current.preferences.volume,
@@ -184,10 +197,10 @@ export default function LiveExamPresentation({ sessionId, token, question, seque
   }, []);
 
   useEffect(() => {
-    if (!audioEnabled || !presentation || !preferences || preferences.volume === 0 || expired || submitting || assistanceBusy || readQuestions.current.has(sequence)) return;
+    if (developerMinimal || !audioEnabled || !presentation || !preferences || preferences.volume === 0 || expired || submitting || assistanceBusy || readQuestions.current.has(sequence)) return;
     readQuestions.current.add(sequence);
     speak(question);
-  }, [audioEnabled, presentation, preferences, expired, submitting, assistanceBusy, sequence, question, speak]);
+  }, [developerMinimal, audioEnabled, presentation, preferences, expired, submitting, assistanceBusy, sequence, question, speak]);
   useEffect(() => { if ((expired || submitting) && !assistanceBusy) stopSpeech(); }, [expired, submitting, assistanceBusy, stopSpeech]);
 
   const updatePreferences = (next: StudentPreferences) => {
@@ -210,6 +223,7 @@ export default function LiveExamPresentation({ sessionId, token, question, seque
   };
 
   async function ask(action: AssistanceAction) {
+    if (developerMinimal) return;
     const allowed = assistance?.actions[action];
     const recovering = retry.current?.action === action && retry.current.sequence === sequence;
     if ((!allowed && !recovering) || (allowed?.remaining === 0 && !recovering) ||
@@ -222,7 +236,12 @@ export default function LiveExamPresentation({ sessionId, token, question, seque
     reading.current = { id: request.id, sequence };
     try {
       const result = await requestAssistance(sessionId, token, sequence, action, request.id, request.answer);
-      if (!alive.current || generation !== questionGeneration.current) return;
+      if (!alive.current || generation !== questionGeneration.current) {
+        // A mode/question change can happen while a reserved request is preparing.
+        // Its eventual response must release its old pause without updating this UI.
+        if (result.status !== "reserved") void completeAssistance(sessionId, token, sequence, request.id).catch(() => undefined);
+        return;
+      }
       onTiming(result); setAssistance(result);
       watchPauseCap(result, request);
       preparing.current = false;
@@ -233,9 +252,10 @@ export default function LiveExamPresentation({ sessionId, token, question, seque
       }
       retry.current = null; setAssistanceText(result.text);
       const currentSpeech = latestSpeech.current;
-      if (currentSpeech.audioEnabled && currentSpeech.speechSupported && currentSpeech.preferences && currentSpeech.preferences.volume > 0) speak(result.text, () => void finishReading(request.id));
+      if (!currentSpeech.developerMinimal && currentSpeech.audioEnabled && currentSpeech.speechSupported && currentSpeech.preferences && currentSpeech.preferences.volume > 0) speak(result.text, () => void finishReading(request.id));
       else await finishReading(request.id);
     } catch (failure) {
+      if (!alive.current || generation !== questionGeneration.current) return;
       preparing.current = false;
       await reloadAssistance();
       if (alive.current && generation === questionGeneration.current) setAssistanceError(`${failure instanceof Error ? failure.message : "Unable to request assistance."} Retry the same assistance request to recover its result.`);
@@ -244,58 +264,71 @@ export default function LiveExamPresentation({ sessionId, token, question, seque
     }
   }
 
+  const settingsButton = <button type="button" className="live-exam-settings-launch" ref={launchButton}
+    disabled={!presentation || !preferences} onClick={() => setPanelOpen(true)}><Settings size={22} aria-hidden="true" />Student settings</button>;
+  const settingsAccess = settingsTarget ? createPortal(settingsButton, settingsTarget) : <div className="live-exam-settings-access">{settingsButton}</div>;
+
   if (!presentation || !preferences) return <section className="live-exam-presentation" aria-label="Examiner">
-    <AIAvatar state={presentationError ? "Error" : "Thinking"} reducedMotion />
-    <p role={presentationError ? "alert" : "status"}>{presentationError || "Loading your examiner settings..."}</p>
+    {settingsAccess}
+    <div className="exam-avatar-stage">
+      <ExamStageAvatar state={presentationError ? "Error" : "Thinking"} reducedMotion developerMinimal={developerMinimal} />
+    </div>
+    <p className="live-exam-load-status" role={presentationError ? "alert" : "status"}>{presentationError || "Loading your examiner settings..."}</p>
     {presentationError && <button type="button" onClick={() => void loadPresentation()}>Reload examiner settings</button>}
   </section>;
 
   const reducedMotion = browserReducedMotion || preferences.reducedMotion || presentation.policy.defaults.reducedMotion;
-  const state = submitting || (assistanceBusy && speechState !== "Speaking") ? "Thinking" : speechState;
-  return <section className="live-exam-presentation" aria-label="Examiner and assistance" style={{ fontSize: preferences.textSize }}>
-    <div className="live-exam-avatar-row">
-      <AIAvatar avatar={preferences.avatar} background={preferences.background}
+  const state = developerMinimal ? "Idle" : submitting || (assistanceBusy && speechState !== "Speaking") ? "Thinking" : speechState;
+  const status = developerMinimal ? "Typed answer mode" : submitting ? "Submitting answer" : speechState === "Speaking"
+    ? "Reading aloud" : assistanceBusy ? "Preparing assistance" : expired ? "Answering window ended" : "Ready for your answer";
+  return <section className={`live-exam-presentation${developerMinimal ? " live-exam-presentation-minimal" : ""}`} aria-label="Examiner and assistance" style={{ fontSize: preferences.textSize }}>
+    {settingsAccess}
+    <div className="exam-avatar-stage">
+      <ExamStageAvatar avatar={preferences.avatar} background={preferences.background}
         customAvatar={presentation.policy.defaults.customAvatar} customBackground={presentation.policy.defaults.customBackground}
-        animation={presentation.policy.defaults.animation} reducedMotion={reducedMotion} state={state} />
-      <div>
-        <strong>OralExam AI</strong>
-        <p>Read the question or enable the browser's standard English voice.</p>
+        animation={!developerMinimal && presentation.policy.defaults.animation} reducedMotion={developerMinimal || reducedMotion}
+        state={state} developerMinimal={developerMinimal} />
+      <p className="live-exam-stage-status" role="status">{developerMinimal ? <Keyboard size={24} aria-hidden="true" /> : <span aria-hidden="true" />}{status}</p>
+    </div>
+    {!developerMinimal && <details className="live-exam-options" ref={options}>
+      <summary>Examiner controls and assistance</summary>
+      <div className="live-exam-options-content">
+        <p>Use the question and typed answer below. Optional read-aloud uses your browser's standard English voice; microphone capture is not connected.</p>
         <div className="live-exam-controls">
-          <button type="button" ref={launchButton} onClick={() => setPanelOpen(true)}>Student settings</button>
-          {speechSupported && <button type="button" aria-pressed={audioEnabled} disabled={expired || submitting || assistanceBusy} onClick={() => {
-            if (audioEnabled) { latestSpeech.current.audioEnabled = false; setAudioEnabled(false); stopSpeech(); }
-            else { latestSpeech.current.audioEnabled = true; setAudioEnabled(true); if (preferences.volume > 0 && !readQuestions.current.has(sequence)) { readQuestions.current.add(sequence); speak(question); } }
-          }}>{audioEnabled ? "Disable question audio" : "Enable question audio"}</button>}
+          {speechSupported && <button type="button" disabled={expired || submitting || assistanceBusy || preferences.volume === 0} onClick={() => {
+            latestSpeech.current.audioEnabled = true; setAudioEnabled(true); readQuestions.current.add(sequence); speak(question);
+          }}>Read question aloud</button>}
           {(speechState === "Speaking" || (assistanceBusy && assistanceText)) && <button type="button" onClick={stopSpeech}>Stop reading</button>}
           {speechError && speechSupported && !assistanceBusy && <button type="button" disabled={expired || submitting} onClick={() => speak(question)}>Retry question audio</button>}
         </div>
+        {preferences.volume === 0 && <p>Question audio is muted. Change volume in Student settings to use read-aloud.</p>}
         {!speechSupported && <p>Speech is unavailable in this browser. All questions and assistance remain readable.</p>}
         {speechError && <p role="alert">{speechError}</p>}
         {developerDemo && <p className="developer-demo-note">Demo media: the on-screen examiner works without an external avatar service. If browser speech is unavailable, use the readable question and assistance text. No voice cloning or video recording is simulated.</p>}
         <small>Saved examiner policy revision {presentation.revision}{assistance ? ` · ${assistance.mode} rules` : ""}{developerDemo ? " · demo attempt" : ""}</small>
+        {assistance && Object.keys(assistance.actions).length > 0 && <section className="live-exam-assistance" aria-labelledby="live-assistance-heading">
+          <h2 id="live-assistance-heading">Question assistance</h2>
+          <p>Allowances apply to this question. Preference changes and reloads do not restore uses.</p>
+          {assistanceActions.filter(action => assistance.actions[action]).map(action => {
+            const allowance = assistance.actions[action]!;
+            return <div className="live-exam-assistance-item" key={action}>
+              <div><strong>{actionLabels[action]}</strong><span id={`live-assistance-${action}-remaining`} aria-live="polite">{allowance.remaining} of {allowance.limit} remaining</span></div>
+              <button type="button" disabled={allowance.remaining === 0 || expired || submitting || assistanceBusy || (action === "correctness" && !answer.trim())}
+                aria-describedby={`live-assistance-${action}-remaining`}
+                onClick={() => void ask(action)}>{actionLabels[action]}</button>
+            </div>;
+          })}
+          {assistanceBusy && <p role="status">{assistanceText ? "Reading assistance. Select Stop reading to continue." : "Preparing assistance..."}</p>}
+          {assistanceText && <div className="live-exam-assistance-text" role="status">{assistanceText}</div>}
+        </section>}
+        {assistanceError && <p role="alert">{assistanceError}</p>}
+        <div className="live-exam-controls">
+          <button type="button" disabled={preparing.current || submitting} onClick={() => void reloadAssistance()}>Reload assistance</button>
+          {retry.current && <button type="button" disabled={preparing.current || submitting} onClick={() => void ask(retry.current!.action)}>Retry assistance request</button>}
+          {reading.current && !preparing.current && <button type="button" disabled={!!releasing.current} onClick={() => { speaker.current?.stop(); setSpeechState("Idle"); void finishReading(reading.current?.id); }}>Retry resume</button>}
+        </div>
       </div>
-    </div>
-    {assistance && Object.keys(assistance.actions).length > 0 && <section className="live-exam-assistance" aria-labelledby="live-assistance-heading">
-      <h2 id="live-assistance-heading">Question assistance</h2>
-      <p>Allowances apply to this question. Preference changes and reloads do not restore uses.</p>
-      {assistanceActions.filter(action => assistance.actions[action]).map(action => {
-        const allowance = assistance.actions[action]!;
-        return <div className="live-exam-assistance-item" key={action}>
-          <div><strong>{actionLabels[action]}</strong><span id={`live-assistance-${action}-remaining`} aria-live="polite">{allowance.remaining} of {allowance.limit} remaining</span></div>
-          <button type="button" disabled={allowance.remaining === 0 || expired || submitting || assistanceBusy || (action === "correctness" && !answer.trim())}
-            aria-describedby={`live-assistance-${action}-remaining`}
-            onClick={() => void ask(action)}>{actionLabels[action]}</button>
-        </div>;
-      })}
-      {assistanceBusy && <p role="status">{assistanceText ? "Reading assistance. Select Stop reading to continue." : "Preparing assistance..."}</p>}
-      {assistanceText && <div className="live-exam-assistance-text" role="status">{assistanceText}</div>}
-    </section>}
-    {assistanceError && <p role="alert">{assistanceError}</p>}
-    <div className="live-exam-controls">
-      <button type="button" disabled={preparing.current || submitting} onClick={() => void reloadAssistance()}>Reload assistance</button>
-      {retry.current && <button type="button" disabled={preparing.current || submitting} onClick={() => void ask(retry.current!.action)}>Retry assistance request</button>}
-      {reading.current && !preparing.current && <button type="button" disabled={!!releasing.current} onClick={() => { speaker.current?.stop(); setSpeechState("Idle"); void finishReading(reading.current?.id); }}>Retry resume</button>}
-    </div>
+    </details>}
     <StudentSettingsPanel open={panelOpen} policy={presentation.policy} preferences={preferences}
       onChange={updatePreferences} onClose={() => { setPanelOpen(false); launchButton.current?.focus(); }}
       onSave={() => void savePreferences()} onReset={() => {

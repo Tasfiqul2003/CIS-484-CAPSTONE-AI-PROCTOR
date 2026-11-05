@@ -6,32 +6,96 @@
 
 .live-exam-presentation {
   max-width: 100%;
-  margin: 22px 0;
+  margin: 0;
   color: var(--exam-ui-text, #172033);
   font-size: var(--exam-ui-font-size-base, 1rem);
   line-height: 1.6;
   overflow-wrap: anywhere;
 }
 
-.live-exam-presentation .live-exam-avatar-row {
+.live-exam-presentation .exam-avatar-stage {
+  display: grid;
+  gap: 0;
+  padding: clamp(12px, 2vw, 24px);
+  padding-bottom: 0;
+  border: 1px solid var(--exam-ui-border, #dedbe7);
+  border-radius: 20px;
+  background: #fff;
+  box-shadow: var(--exam-ui-shadow, 0 2px 8px #2420330d);
+}
+
+.live-exam-presentation .live-exam-stage-status {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: 22px;
-  padding: var(--exam-ui-panel-padding, clamp(16px, 2.2vw, 28px));
+  justify-content: center;
+  gap: 9px;
+  width: max-content;
+  max-width: 100%;
+  justify-self: center;
+  margin: clamp(16px, 2vw, 28px) 0;
+  padding: 10px 18px;
+  border: 1px solid #d8c9ed;
+  border-radius: 999px;
+  background: #fcfaff;
+  color: #594477;
+  font-size: 1em;
+  font-weight: 600;
+  line-height: 1.4;
+  text-align: center;
+  box-shadow: 0 3px 12px #3921590d;
+}
+
+.live-exam-presentation .live-exam-stage-status > span {
+  flex: 0 0 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.live-exam-presentation-minimal .live-exam-stage-status {
+  border-color: #a7c9ef;
+  background: #eff6ff;
+  color: #1c4d82;
+}
+
+.live-exam-presentation .live-exam-settings-access {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 12px;
+}
+.live-exam-settings-launch { display: inline-flex; align-items: center; justify-content: center; gap: 10px; }
+.live-exam-settings-launch > svg, .live-exam-stage-status > svg { flex: 0 0 auto; }
+
+.live-exam-presentation .live-exam-options {
+  margin-top: 16px;
   border: 1px solid var(--exam-ui-border, #d8dee8);
-  border-radius: var(--exam-ui-radius, 14px);
+  border-radius: 10px;
   background: var(--exam-ui-surface, #fff);
 }
 
-.live-exam-presentation .live-exam-avatar-row > div:last-child { flex: 1 1 16rem; }
+.live-exam-presentation .live-exam-options > summary {
+  min-height: var(--exam-ui-target-size, 44px);
+  padding: 12px 16px;
+  color: var(--exam-ui-accent-strong, #5b21b6);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.live-exam-presentation .live-exam-options-content {
+  padding: 0 var(--exam-ui-panel-padding, clamp(16px, 2.2vw, 28px)) 16px;
+}
+
 .live-exam-presentation p { margin: .5em 0; font-size: 1em; }
+.live-exam-presentation .live-exam-stage-status { margin: clamp(16px, 2vw, 28px) 0; }
+.live-exam-presentation .live-exam-load-status { margin: 16px 0 8px; }
 .live-exam-presentation small {
   color: var(--exam-ui-muted, #53627a);
   font-size: max(var(--exam-ui-font-size-small, .875rem), .875em);
 }
 
-.live-exam-presentation button {
+.live-exam-presentation button,
+.live-exam-settings-launch {
+  box-sizing: border-box;
   min-height: var(--exam-ui-target-size, 44px);
   min-width: var(--exam-ui-target-size, 44px);
   max-width: 100%;
@@ -50,13 +114,15 @@
 }
 
 .live-exam-presentation button:hover:not(:disabled),
-.live-exam-presentation button[aria-pressed="true"] {
+.live-exam-presentation button[aria-pressed="true"],
+.live-exam-settings-launch:hover:not(:disabled) {
   border-color: var(--exam-ui-accent, #6d28d9);
   background: var(--oe-accent-soft, #f5f0ff);
   color: var(--exam-ui-accent-strong, #5b21b6);
 }
 
-.live-exam-presentation button:disabled {
+.live-exam-presentation button:disabled,
+.live-exam-settings-launch:disabled {
   border-color: var(--exam-ui-border, #d8dee8);
   background: var(--oe-surface-muted, #f1f3f6);
   color: var(--exam-ui-muted, #53627a);
@@ -64,7 +130,8 @@
   opacity: 1;
 }
 
-.live-exam-presentation :is(button, input, select, a, [tabindex]):focus-visible {
+.live-exam-presentation :is(button, input, select, a, summary, [tabindex]):focus-visible,
+.live-exam-settings-launch:focus-visible {
   outline: 3px solid var(--exam-ui-focus, #6d28d9);
   outline-offset: 3px;
 }

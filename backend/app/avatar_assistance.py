@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from .avatar_session import session_policy
 from .db import get_db
-from .developer_demo import demo_for_session, ai_available, demo_assistance
+from .developer_demo import demo_for_session, minimal_for_session, ai_available, demo_assistance
 from .student_auth import read_student_token
 
 
@@ -161,7 +161,7 @@ def generate_assistance(db, session, pending, action, answer_transcript):
         "topics": template["topic_coverage_required"], "course_material_summaries": summaries,
         "student_answer": answer_transcript if action == "correctness" else None}
     use_demo = demo_for_session(session)
-    if use_demo and not ai_available(OLLAMA_URL, OLLAMA_MODEL):
+    if use_demo and (minimal_for_session(session) or not ai_available(OLLAMA_URL, OLLAMA_MODEL)):
         return demo_assistance(action, pending["question_text"])
     try:
         response = httpx.post(f"{OLLAMA_URL}/api/chat", json={

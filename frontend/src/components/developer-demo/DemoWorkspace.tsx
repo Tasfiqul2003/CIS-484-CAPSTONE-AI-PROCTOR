@@ -24,10 +24,11 @@ export function DeveloperDemoProvider({ children }: { children: ReactNode }) {
     return () => controller.abort();
   }, []);
   return <DeveloperContext.Provider value={capabilities}>
-    {capabilities.enabled && <aside className="developer-demo-banner" aria-label="Developer demo workspace">
+    {capabilities.enabled && window.location.pathname !== "/student/exam" && <aside className="developer-demo-banner" aria-label="Developer demo workspace">
       <strong>Developer demo workspace</strong>
       <p>New attempts are marked as demos and cannot be graded. Missing optional AI or media can use labeled substitutes. Sign-in and exam access are still required.</p>
-      {capabilities.aiAvailable === false && <p>AI model unavailable: sample content is available for new demo attempts.</p>}
+      {capabilities.minimal ? <p>Minimal developer mode: optional AI and media services are off.</p>
+        : capabilities.aiAvailable === false && <p>AI model unavailable: sample content is available for new demo attempts.</p>}
     </aside>}
     {children}
   </DeveloperContext.Provider>;

@@ -19,6 +19,7 @@ type StudentProgress = {
   status: string | null;
   started_at: string | null;
   ended_at: string | null;
+  developer_demo?: boolean;
 };
 
 function formatDate(value: string | null) {
@@ -136,6 +137,7 @@ export default function ExamSubmissions() {
   }, [loadProgress]);
 
   const counts = {
+    demos: students.filter(student => student.developer_demo === true).length,
     total: students.length,
     notStarted: students.filter(
       (student) => !student.session_id || !student.status,
@@ -144,7 +146,7 @@ export default function ExamSubmissions() {
       (student) => student.status === "in_progress",
     ).length,
     awaitingReview: students.filter(
-      (student) => student.status === "pending_grading",
+      (student) => student.status === "pending_grading" && !student.developer_demo,
     ).length,
     completed: students.filter(
       (student) => student.status === "graded",
@@ -213,6 +215,10 @@ export default function ExamSubmissions() {
             </div>
           </section>
         )}
+        {counts.demos > 0 && <aside className="developer-demo-note" aria-label="Saved developer demos">
+          <strong>{counts.demos} developer demo attempt{counts.demos === 1 ? "" : "s"}</strong>
+          <p>Labeled demos cannot receive grades and are excluded from the awaiting review count.</p>
+        </aside>}
 
         <section className="progress-summary" aria-label="Exam progress summary">
           <article className="progress-summary-card">
@@ -265,7 +271,7 @@ export default function ExamSubmissions() {
               <p>Upload a student roster for this exam to see participation here.</p>
             </div>
           ) : !error ? (
-            <div className="progress-table-wrap">
+            <div className="progress-table-wrap" role="region" aria-label="Student examination status" tabIndex={0}>
               <table className="progress-table">
                 <thead>
                   <tr>
@@ -296,7 +302,7 @@ export default function ExamSubmissions() {
                       <td>{student.eid || "—"}</td>
                       <td>
                         <span className={statusClass(student)}>
-                          {getStatus(student)}
+                          {student.developer_demo ? "Demo · no grading" : getStatus(student)}
                         </span>
                       </td>
                       <td>{formatDate(student.started_at)}</td>

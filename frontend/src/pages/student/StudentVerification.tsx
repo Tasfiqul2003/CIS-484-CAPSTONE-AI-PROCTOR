@@ -42,6 +42,8 @@ export default function StudentVerification() {
       sessionStorage.setItem("oralexam_student_name", result.student.name);
       sessionStorage.removeItem("oralexam_face_check_passed");
       sessionStorage.removeItem("oralexam_exam_session_id");
+      sessionStorage.removeItem("oralexam_exam_session_token");
+      sessionStorage.removeItem("oralexam_developer_demo");
       setStudent(result.student);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to verify this card.");

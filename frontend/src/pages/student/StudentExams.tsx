@@ -118,6 +118,8 @@ export default function StudentExams() {
       "oralexam_student_name",
       "oralexam_face_check_passed",
       "oralexam_exam_session_id",
+      "oralexam_exam_session_token",
+      "oralexam_developer_demo",
     ]) sessionStorage.removeItem(key);
     window.location.href = "/student/verification";
   }

@@ -1,0 +1,27 @@
+/* Shared exam surfaces reuse the established OralExam palette. */
+:where(.manage-exam-page, .student-exam-page, .student-settings-preview-page, .student-settings-panel) {
+  --exam-ui-page: var(--oe-bg, #f6f5fa);
+  --exam-ui-surface: var(--oe-surface, #fff);
+  --exam-ui-surface-muted: var(--oe-surface-muted, #f0eef5);
+  --exam-ui-text: var(--oe-text, #242033);
+  --exam-ui-muted: var(--oe-text-muted, #625d70);
+  --exam-ui-border: var(--oe-border, #dedbe7);
+  --exam-ui-accent: var(--oe-accent, #5b3a91);
+  --exam-ui-accent-strong: var(--oe-accent-hover, #482b78);
+  --exam-ui-accent-soft: var(--oe-accent-soft, #eee8f7);
+  --exam-ui-focus: var(--oe-accent, #5b3a91);
+  --exam-ui-danger: var(--oe-danger, #a32632);
+  --exam-ui-radius: var(--oe-radius-md, 12px);
+  --exam-ui-shadow: var(--oe-shadow-sm, 0 2px 8px rgb(36 32 51 / 5%));
+  --exam-ui-font-size-base: 1rem;
+  --exam-ui-font-size-small: .875rem;
+  --exam-ui-target-size: 44px;
+  --exam-ui-space-1: 4px;
+  --exam-ui-space-2: 8px;
+  --exam-ui-space-3: 12px;
+  --exam-ui-space-4: 16px;
+  --exam-ui-space-6: 24px;
+  --exam-ui-panel-padding: clamp(16px, 2.2vw, 28px);
+  --exam-ui-gutter: clamp(16px, 3vw, 32px);
+  --exam-ui-content-max: 1180px;
+}

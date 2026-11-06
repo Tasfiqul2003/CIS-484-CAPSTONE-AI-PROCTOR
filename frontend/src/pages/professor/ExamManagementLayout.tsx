@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { examManagementPath } from "./examSettingsNavigation";
+import OralExamMark from "../../components/brand/OralExamMark";
 import "./exam-management.css";
 
 type Exam = {
@@ -48,7 +49,7 @@ export default function ExamManagementLayout({ examId, category, children }: {
 
   return <div className="professor-dashboard-page manage-exam-page">
     <header className="simple-header">
-      <div className="logo"><span className="logo-icon">◉</span><span>OralExam AI</span></div>
+      <div className="logo"><span className="logo-icon" aria-hidden="true"><OralExamMark size={34} /></span><span>OralExam AI</span></div>
       <button type="button" className="dashboard-logout" onClick={async () => {
         try { await fetch("/api/auth/logout", { method: "POST", credentials: "include" }); }
         finally { window.location.href = "/professor/login"; }

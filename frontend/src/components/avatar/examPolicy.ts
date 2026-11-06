@@ -11,6 +11,7 @@ export type ExamPolicy = {
   effective_for: 'new_attempts'
   assistance_scope: 'per_question'
   updated_at: string | null
+  exam_mode?: 'practice' | 'assessed'
 }
 
 type PolicyStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>
@@ -67,12 +68,14 @@ function parsePolicy(value: unknown, expectedExamId?: string): ExamPolicy {
     || (expectedExamId !== undefined && value.exam_id !== expectedExamId)
     || typeof value.revision !== 'number' || !Number.isSafeInteger(value.revision) || value.revision < 0
     || value.effective_for !== 'new_attempts' || value.assistance_scope !== 'per_question'
+    || (value.exam_mode !== undefined && value.exam_mode !== 'practice' && value.exam_mode !== 'assessed')
     || (value.updated_at !== null && (typeof value.updated_at !== 'string' || !Number.isFinite(Date.parse(value.updated_at))))) {
     throw new ExamPolicyError('The saved exam policy has an invalid or unsupported format.')
   }
   return {
     exam_id: value.exam_id, revision: value.revision, settings: cleanSettings(value.settings),
     effective_for: 'new_attempts', assistance_scope: 'per_question', updated_at: value.updated_at as string | null,
+    ...(value.exam_mode !== undefined ? { exam_mode: value.exam_mode as 'practice' | 'assessed' } : {}),
   }
 }
 
@@ -87,7 +90,7 @@ export function toStudentPolicy(settings: Settings, mode: 'practice' | 'assessed
   if (mode !== 'practice' && mode !== 'assessed') throw new ExamPolicyError('Choose practice or assessed exam mode.')
   const { presentation: p, student: s } = source
   const allAvatars = [
-    ...AVATARS.map(({ id }) => ({ id: String(id), label: id === 'guide' ? 'Person icon (preview)' : 'Diamond icon (preview)' })),
+    ...AVATARS.map(({ id, label }) => ({ id: String(id), label })),
     ...(p.customAvatar ? [{ id: 'custom', label: 'Instructor-uploaded avatar (preview)' }] : []),
   ]
   const allBackgrounds = [
@@ -188,12 +191,13 @@ export async function loadExamPolicy(examId: string, signal?: AbortSignal): Prom
   }), examId)
 }
 
-export async function saveExamPolicy(examId: string, settings: Settings, expectedRevision: number): Promise<ExamPolicy> {
+export async function saveExamPolicy(examId: string, settings: Settings, expectedRevision: number, examMode?: 'practice' | 'assessed'): Promise<ExamPolicy> {
   identifier(examId)
   revision(expectedRevision)
   const cleaned = cleanSettings(settings)
+  if (examMode !== undefined && examMode !== 'practice' && examMode !== 'assessed') throw new ExamPolicyError('Choose practice or assessed exam mode.')
   return readResponse(await fetch(`/api/exam/templates/${encodeURIComponent(examId)}/avatar-policy`, {
     method: 'PUT', credentials: 'include', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ settings: cleaned, expected_revision: expectedRevision }),
+    body: JSON.stringify({ settings: cleaned, expected_revision: expectedRevision, ...(examMode !== undefined ? { exam_mode: examMode } : {}) }),
   }), examId)
 }

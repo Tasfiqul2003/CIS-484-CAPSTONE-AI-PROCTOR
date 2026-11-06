@@ -8,6 +8,9 @@
 - All five assistance actions have configurable 1–10 allowances per question when enabled.
 - Policy changes apply to new attempts. Synthetic previews pin their starting revision until Restart preview; new starts reconcile personal preferences with the latest rules.
 - Essential accessibility controls remain available; policy-disallowed controls are omitted entirely.
+- Live exam presentation now uses a server snapshot and per-attempt preferences, with a shared SVG examiner and optional standard English browser speech. Assistance calls and usage recovery use the authenticated session API. Live behavior is configured separately from preview mode.
+
+The November 4, 2026 update adds `live-avatar.test.mjs` for synthetic transport, restrictions, speech cancellation, and retry payload checks. Browser fixture selectors were adjusted for the shared renderer; browser automation was not rerun. Historical checks below describe the earlier preview-policy implementation.
 
 Review through **Manage Exam → Avatar & Interaction Settings → Share Preview Policy → Open shared student preview**. The plain student preview URL remains an independent fixed demonstration.
 

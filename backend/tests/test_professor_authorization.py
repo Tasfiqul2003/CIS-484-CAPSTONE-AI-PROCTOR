@@ -52,11 +52,12 @@ class FakeDB:
             })
 
         if (
-            "SELECT s.status, t.professor_id" in sql
+            "SELECT s.status, s.developer_demo, t.professor_id" in sql
             and "AS exam_professor_id" not in sql
         ):
             return FakeResult({
                 "status": "pending_grading",
+                "developer_demo": False,
                 "professor_id": OTHER_PROFESSOR_ID,
                 "rubric": {"criteria": []},
                 "title": "Synthetic exam",

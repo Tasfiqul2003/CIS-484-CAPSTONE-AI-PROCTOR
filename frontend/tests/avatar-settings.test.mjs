@@ -59,10 +59,10 @@ test('proposed defaults validate and reset returns independent nested values', (
   assert.deepEqual(validateSettings(first), [])
   first.student.avatars.pop()
   first.assistance.repeat.limit = 9
-  first.presentation.voice = 'clear'
+  first.presentation.voice = 'calm'
   assert.equal(second.student.avatars.length, 2)
   assert.equal(second.assistance.repeat.limit, 2)
-  assert.equal(second.presentation.voice, 'calm')
+  assert.equal(second.presentation.voice, 'clear')
   assert.deepEqual(defaultSettings(), second)
 })
 
@@ -424,8 +424,8 @@ test('reset removes only the selected draft and defaults do not mutate saved dat
   const original = defaultSettings()
   store.save('exam-a', 'instructor', original)
   store.save('exam-b', 'instructor', defaultSettings())
-  original.presentation.voice = 'clear'
-  assert.equal(store.load('exam-a', 'instructor').settings.presentation.voice, 'calm')
+  original.presentation.voice = 'calm'
+  assert.equal(store.load('exam-a', 'instructor').settings.presentation.voice, 'clear')
   const loaded = store.load('exam-a', 'instructor').settings
   loaded.assistance.repeat.limit = 7
   assert.equal(store.load('exam-a', 'instructor').settings.assistance.repeat.limit, 2)

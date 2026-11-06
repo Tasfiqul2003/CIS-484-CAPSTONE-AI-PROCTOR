@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import AvatarSettings from "../../components/avatar/AvatarSettings";
 import ExamCategorySettings from "../../components/exam-settings/ExamCategorySettings";
+import OdsAccommodations from "../../components/exam-settings/OdsAccommodations";
 import ExamManagementLayout from "./ExamManagementLayout";
 import { examSettingsCategories, examSettingsPath, type ExamSettingsSlug } from "./examSettingsNavigation";
 
@@ -16,6 +17,8 @@ export default function ExamSettingsPage({ examId, category }: { examId: string;
   return <ExamManagementLayout examId={examId} category={selected.title}>{exam =>
     category === "avatar-interaction"
       ? <AvatarSettings examId={exam.id} defaultOpen />
-      : <ExamCategorySettings examId={exam.id} category={category} />
+      : category === "ods-accommodations"
+        ? <OdsAccommodations key={exam.id} examId={exam.id} />
+        : <ExamCategorySettings examId={exam.id} category={category} />
   }</ExamManagementLayout>;
 }

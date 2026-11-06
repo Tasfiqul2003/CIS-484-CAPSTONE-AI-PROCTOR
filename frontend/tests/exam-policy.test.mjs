@@ -45,10 +45,10 @@ test('student adapter exposes selected choices, current mode actions, and indepe
   settings.assistance.explanation = { enabled: true, modes: 'assessed', limit: 1, timerContinues: true }
   const practice = toStudentPolicy(settings, 'practice')
   const assessed = toStudentPolicy(settings, 'assessed')
-  assert.deepEqual(practice.avatarChoices, [{ id: 'guide', label: 'Person icon (preview)' }])
+  assert.deepEqual(practice.avatarChoices, [{ id: 'guide', label: 'Guide examiner' }])
   assert.deepEqual(practice.backgroundChoices.map(({ id }) => id), ['neutral', 'library'])
   assert.deepEqual([practice.minSpeed, practice.maxSpeed], [0.8, 1.2])
-  assert.equal(practice.defaults.voiceLabel, 'Calm voice (preview)')
+  assert.equal(practice.defaults.voiceLabel, 'Clear English voice')
   assert.deepEqual(practice.assistance.hint, { enabled: true, limit: 3, timerContinues: false })
   assert.equal(assessed.assistance.hint.enabled, false)
   assert.equal(practice.assistance.explanation.enabled, false)
@@ -56,7 +56,7 @@ test('student adapter exposes selected choices, current mode actions, and indepe
   practice.assistance.hint.limit = 99
   practice.avatarChoices[0].label = 'changed'
   assert.equal(settings.assistance.hint.limit, 3)
-  assert.equal(toStudentPolicy(settings, 'practice').avatarChoices[0].label, 'Person icon (preview)')
+  assert.equal(toStudentPolicy(settings, 'practice').avatarChoices[0].label, 'Guide examiner')
   assert.equal('voice' in practice, false)
   assert.equal('behavior' in practice, false)
 })
@@ -231,3 +231,20 @@ test('server transport rejects mismatched, malformed, and invalid response polic
     assert.equal(calls, before)
   } finally { globalThis.fetch = originalFetch }
 })
+
+test('live exam mode is saved separately from synthetic preview mode and survives snapshots', async () => {
+  const originalFetch = globalThis.fetch;
+  let savedBody;
+  try {
+    globalThis.fetch = async (_url, options) => {
+      savedBody = JSON.parse(options.body);
+      return new Response(JSON.stringify({ ...envelope(), exam_mode: savedBody.exam_mode }));
+    };
+    const result = await saveExamPolicy('synthetic-exam', defaultSettings(), 0, 'assessed');
+    assert.equal(savedBody.exam_mode, 'assessed');
+    assert.equal(snapshotPolicy(result).exam_mode, 'assessed');
+    assert.equal(snapshotPolicy(envelope()).exam_mode, undefined, 'Legacy preview envelopes remain readable');
+    assert.throws(() => snapshotPolicy({ ...envelope(), exam_mode: 'student-selected' }), /format/);
+    await assert.rejects(saveExamPolicy('synthetic-exam', defaultSettings(), 0, 'student-selected'), /exam mode/);
+  } finally { globalThis.fetch = originalFetch; }
+});

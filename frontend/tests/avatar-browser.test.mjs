@@ -162,7 +162,7 @@ await check('Open settings through dashboard and exam management', async () => {
   await page.getByRole('link', { name: /Avatar & Interaction Settings/ }).click();
   await ensureAvatarEditor();
   assert.match(await page.locator('.avatar-settings').innerText(), /exam permissions/i);
-  assert.match(await page.locator('.avatar-settings').innerText(), /live exam delivery is not connected yet/i);
+  assert.match(await page.locator('.avatar-settings').innerText(), /new exam attempts/i);
   return { screenshot: await screenshot('avatar-settings-desktop.png') };
 });
 
@@ -500,7 +500,7 @@ await check('Delayed identity refresh hides the previous instructor controls', a
 await check('Student preview reflects approved choices, limits, and exam behavior', async () => {
   await openSettings();
   await field('Allow students to choose avatar').check();
-  await page.getByRole('group', { name: 'Allowed avatar options', exact: true }).getByLabel('Geometric avatar (preview)', { exact: true }).uncheck();
+  await page.getByRole('group', { name: 'Allowed avatar options', exact: true }).getByLabel('Geometric examiner', { exact: true }).uncheck();
   await field('Default background').selectOption('library');
   await field('Allow students to choose background').check();
   await page.getByRole('group', { name: 'Allowed background options', exact: true }).getByLabel('Neutral background (preview)', { exact: true }).uncheck();
@@ -518,7 +518,7 @@ await check('Student preview reflects approved choices, limits, and exam behavio
   assert.equal(await preview.getByLabel('Background', { exact: true }).inputValue(), 'library');
   assert.equal(await preview.getByLabel('Background', { exact: true }).locator('option').count(), 1);
   assert.equal(await preview.getByLabel('Voice', { exact: true }).count(), 0);
-  assert.match(await preview.locator('.avatar-stage').innerText(), /Clear voice \(preview\)/);
+  assert.match(await preview.locator('.avatar-stage').innerText(), /Clear English voice/);
   const speed = preview.getByLabel(/^Speaking speed:/);
   assert.equal(await speed.getAttribute('min'), '0.9');
   assert.equal(await speed.getAttribute('max'), '1.3');
@@ -598,7 +598,7 @@ await check('Synthetic assistance policies, counters, states, and focus', async 
   await page.waitForFunction(() => document.querySelector('#avatar-preview-reduced-motion')?.disabled === true);
   assert(await preview.getByLabel('Reduce motion', { exact: true }).isChecked());
   assert(await preview.getByLabel('Reduce motion', { exact: true }).isDisabled());
-  assert.equal(await preview.locator('.avatar-figure').evaluate((element) => getComputedStyle(element).animationName), 'none');
+  assert.equal(await preview.locator('.exam-avatar-portrait').evaluate((element) => getComputedStyle(element).animationName), 'none');
   await page.emulateMedia({ reducedMotion: 'no-preference' });
   await button('Close Student Preview').click();
   assert(await button('Preview as Student').evaluate((element) => element === document.activeElement));

@@ -2,6 +2,12 @@
 
 James Madison University capstone exploring oral assessment with professor-controlled questions and rubrics. CIS 454 contributes requirements, analysis, and design; CIS 484 implements the MVP. Professors decide final grades.
 
+## Developer startup menu
+
+On Windows, open the [Developer Mode folder](Developer%20Mode/) and double-click its `Start_Developer.bat` for Y/N startup choices with detected software versions and configured model names. The [step-by-step developer guide](Developer%20Mode/developer-mode-guide.docx) is beside the launcher. It can start an isolated CPU developer web/database stack and optionally local Ollama, and saves boolean defaults locally. Web speech, FlashHead, and camera recording are marked unavailable until their application integrations exist. Inspect the menu without starting services with `.venv/Scripts/python.exe -B scripts/developer_start.py --show-menu`. See [developer setup, credentials, startup, and limitations](docs/developer-startup.md).
+
+Run the BAT from Windows File Explorer or a terminal. The root `Start_Developer.bat` forwards to the same launcher for existing commands. Clicking its file link inside Codex opens it for viewing rather than running it.
+
 ## Current capabilities
 
 Saved Qwen3 4B Ollama configurations, separate examiner/follow-up/grading prompt designs, synthetic text fixtures, and a Python rubric experiment. This configures an existing model; it does not train one. **Version 2.0 names a model configuration, not a completed application release.** V2.1 is an experimental rubric prompt, not a reliable grading service.

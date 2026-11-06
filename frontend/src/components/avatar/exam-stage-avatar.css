@@ -1,0 +1,20 @@
+.exam-stage-viewport {
+  display: grid;
+  grid-template-areas: "viewport";
+  grid-template-rows: minmax(0, 1fr);
+  align-items: end;
+  min-width: 0;
+  width: 100%;
+  height: clamp(270px, 53vw, 610px);
+  border-radius: 16px;
+  background: linear-gradient(120deg, #d5bdec, #c5a7e4);
+  background-position: center;
+  background-size: cover;
+  overflow: hidden;
+}
+.exam-stage-portrait, .exam-stage-photo { grid-area: viewport; justify-self: center; align-self: end; display: block; width: min(100%, 580px); height: 100%; min-height: 0; object-fit: contain; object-position: center bottom; }
+.exam-stage-portrait { fill: none; }
+.exam-stage-background-library { background-color: #ded4eb; background-image: repeating-linear-gradient(90deg, #d6c6e4 0 6%, #c1b3d2 6% 7%, #e4dbe9 7% 13%); }
+.exam-stage-static-label, .exam-stage-substitute { grid-area: viewport; align-self: end; justify-self: start; z-index: 1; max-width: calc(100% - 24px); margin: 0 12px 12px; padding: 4px 10px; border-radius: 20px; background: #fff; color: #482b78; font-size: .875rem; line-height: 1.5; font-weight: 650; }
+.exam-stage-substitute { background: #1d4ed8; color: #fff; border: 1px solid #fff; }
+@media (max-width: 480px) { .exam-stage-viewport { border-radius: 10px; height: 300px; } .exam-stage-substitute, .exam-stage-static-label { margin: 0 8px 8px; font-size: .875rem; } }

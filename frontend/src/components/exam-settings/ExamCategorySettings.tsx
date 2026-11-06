@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import {
   defaultExamSettings, hasCategoryChanges, loadExamSettings,
-  saveExamSettingsCategory, validMaxFollowUps, validTimeLimit, odsTimeLimit,
+  saveExamSettingsCategory, validMaxFollowUps, validTimeLimit, validQuestionTimeLimit,
 } from "./examSettings";
 import type { ExamSettings, ExamSettingsCategory } from "./examSettings";
+import "./category-settings.css";
 
 export default function ExamCategorySettings({ examId, category }: {
   examId: string;
@@ -16,7 +17,6 @@ export default function ExamCategorySettings({ examId, category }: {
   const [saved, setSaved] = useState(false);
   const [settingsError, setSettingsError] = useState("");
   const dirty = loaded && hasCategoryChanges(category, settings, savedSettings);
-  const extendedMinutes = odsTimeLimit(settings.timeLimit, savedSettings);
 
   useEffect(() => {
     setLoaded(false);
@@ -30,12 +30,17 @@ export default function ExamCategorySettings({ examId, category }: {
           const response = await fetch(`/api/exam/templates/${encodeURIComponent(examId)}/time-settings`, {
             credentials: "include", signal: controller.signal,
           });
-          if (!response.ok) throw new Error("Unable to load the saved exam time from the server.");
+          if (!response.ok) throw new Error("Unable to load the saved time limits from the server.");
           const data = await response.json();
-          if (data.time_limit_minutes !== null && !validTimeLimit(data.time_limit_minutes)) {
-            setSettingsError("The saved time is outside 1-240 minutes. Enter a valid time and save to correct it.");
+          if (!data || typeof data !== "object" || Array.isArray(data)) {
+            throw new Error("The server returned invalid time settings. Reload to try again.");
+          }
+          if ((data.time_limit_minutes !== null && !validTimeLimit(data.time_limit_minutes)) ||
+              !validQuestionTimeLimit(data.question_time_limit_minutes)) {
+            setSettingsError("A saved time limit is outside 1-240 minutes. Enter a valid time or disable the question limit, then save to correct it.");
           }
           draft.timeLimit = validTimeLimit(data.time_limit_minutes) ? data.time_limit_minutes : NaN;
+          draft.questionTimeLimit = validQuestionTimeLimit(data.question_time_limit_minutes) ? data.question_time_limit_minutes : NaN;
         }
         if (controller.signal.aborted) return;
         setSettings(draft);
@@ -74,8 +79,13 @@ export default function ExamCategorySettings({ examId, category }: {
   const saveSettings = async () => {
     if (!loaded || saving) return;
     if (category === "time-scheduling" && !validTimeLimit(settings.timeLimit)) {
-      setSettingsError("Standard Time Limit must be a whole number from 1 to 240 minutes.");
+      setSettingsError("Time per exam must be a whole number from 1 to 240 minutes.");
       document.getElementById("exam-time-limit")?.focus();
+      return;
+    }
+    if (category === "time-scheduling" && !validQuestionTimeLimit(settings.questionTimeLimit)) {
+      setSettingsError("Time per question must be a whole number from 1 to 240 minutes, or disabled.");
+      document.getElementById("question-time-limit")?.focus();
       return;
     }
     if (category === "ai-questioning" && settings.followUpQuestions && !validMaxFollowUps(settings.maxFollowUps)) {
@@ -89,12 +99,14 @@ export default function ExamCategorySettings({ examId, category }: {
       if (category === "time-scheduling") {
         const response = await fetch(`/api/exam/templates/${encodeURIComponent(examId)}/time-settings`, {
           method: "PUT", credentials: "include", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ time_limit_minutes: settings.timeLimit }),
+          body: JSON.stringify({ time_limit_minutes: settings.timeLimit, question_time_limit_minutes: settings.questionTimeLimit }),
         });
-        if (!response.ok) throw new Error("Unable to save the exam time to the server. Your changes remain unsaved.");
+        if (!response.ok) throw new Error("Unable to save the time limits to the server. Your changes remain unsaved.");
         const data = await response.json();
-        if (!validTimeLimit(data.time_limit_minutes)) throw new Error("The server returned an invalid time limit. Reload to verify the saved value.");
-        next = { ...settings, timeLimit: data.time_limit_minutes };
+        if (!data || !validTimeLimit(data.time_limit_minutes) || !validQuestionTimeLimit(data.question_time_limit_minutes)) {
+          throw new Error("The server returned invalid time limits. Reload to verify the saved values.");
+        }
+        next = { ...settings, timeLimit: data.time_limit_minutes, questionTimeLimit: data.question_time_limit_minutes };
       } else {
         next = saveExamSettingsCategory(localStorage, examId, category, settings);
       }
@@ -110,25 +122,25 @@ export default function ExamCategorySettings({ examId, category }: {
   };
 
   return (
-    <section className="exam-settings-container" aria-label="Category settings">
+    <section className="exam-settings-container category-settings" aria-label="Category settings" aria-busy={saving}>
       <div className="exam-settings-header">
         <div>
           <p className="eyebrow">CONFIGURATION</p>
           <h2>Exam Settings</h2>
-          <p>{category === "time-scheduling" ? "Save the standard time limit to the server for new exam attempts." : "Save this category as a browser-local draft for this exam."}</p>
-          <p role="status">{dirty ? "Unsaved changes" : loaded ? "No unsaved changes" : "Settings unavailable"}</p>
+          <p>{category === "time-scheduling" ? "Set time per question and time per exam for new attempts." : "Save this category as a browser-local draft for this exam."}</p>
+          <p role="status">{dirty ? "Unsaved changes" : loaded ? "No unsaved changes" : settingsError ? "Settings unavailable" : "Loading settings..."}</p>
         </div>
         <button type="button" disabled={!loaded || saving} className={saved ? "settings-save-button saved" : "settings-save-button"} onClick={saveSettings}>
           {saving ? "Saving..." : saved ? "✓ Settings Saved" : "Save Settings"}
         </button>
       </div>
-      <p className="settings-notice">{category === "time-scheduling" ? "The standard time limit applies to new attempts. Existing attempts keep their starting limit. ODS adjustments below are browser-local previews and are not applied to live attempts." : <>These settings remain separate from Avatar &amp; Interaction drafts, shared previews, and saved exam policies. Saving this category does not change live exam behavior.</>}</p>
+      <p className="settings-notice">{category === "time-scheduling" ? "Saved time limits apply to new attempts. Existing attempts keep their starting limits. The exam ends when its total time runs out, even if time remains for a question." : <>These settings remain separate from Avatar &amp; Interaction drafts, shared previews, and saved exam policies. Saving this category does not change live exam behavior.</>}</p>
       {settingsError && <p id="category-settings-error" role="alert">{settingsError}</p>}
       {loaded && <>
       {category === "time-scheduling" && (
         <div className="settings-section">
           <div className="settings-section-heading">
-            <div className="settings-section-icon">
+            <div className="settings-section-icon" aria-hidden="true">
               ⏱
             </div>
             <div>
@@ -141,11 +153,11 @@ export default function ExamCategorySettings({ examId, category }: {
               </p>
             </div>
           </div>
-          <p>The server may have no time limit yet; enter a value to set one. Browser-local time drafts are not imported automatically.</p>
+          <p>Choose a total exam time and, optionally, a separate limit for each question.</p>
           <div className="settings-grid">
             <label className="settings-field">
               <span>
-                Standard Time Limit
+                Time per exam
               </span>
               <div className="settings-input-with-unit">
                 <input
@@ -157,7 +169,7 @@ export default function ExamCategorySettings({ examId, category }: {
                   step="1"
                   required
                   aria-invalid={!validTimeLimit(settings.timeLimit)}
-                  aria-describedby={settingsError ? "category-settings-error" : undefined}
+                  aria-describedby={`exam-time-help${settingsError ? " category-settings-error" : ""}`}
                   value={Number.isNaN(settings.timeLimit) ? "" : settings.timeLimit}
                   onChange={(e) =>
                     updateSetting(
@@ -170,162 +182,52 @@ export default function ExamCategorySettings({ examId, category }: {
                   minutes
                 </small>
               </div>
+              <small id="exam-time-help">1–240 minutes for the whole exam.</small>
             </label>
-            {extendedMinutes !== null && (
-              <div className="settings-notice" role="status" aria-live="polite" aria-atomic="true">
-                <strong>ODS extended time: {extendedMinutes} minutes</strong>
-                <span>
-                  {settings.timeLimit} minutes × {savedSettings.extendedTimeMultiplier} = {extendedMinutes} minutes.
-                  {" "}Based on saved ODS accommodations, for students with approved extended time.
-                  {" "}The standard time limit stays unchanged. This ODS adjustment is a preview and is not applied to live attempts.
-                </span>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {category === "ods-accommodations" && (
-        <div className="settings-section">
-          <div className="settings-section-heading">
-            <div className="settings-section-icon">
-              ♿
-            </div>
-            <div>
-              <h3>
-                ODS Accommodations
-              </h3>
-              <p>
-                Configure exam features that can support
-                approved testing accommodations.
-              </p>
-            </div>
-          </div>
-          <div className="settings-notice">
-            <strong>
-              Accommodation reminder
-            </strong>
-            <span>
-              These settings provide exam capabilities.
-              They do not determine a student's approved
-              accommodations.
-            </span>
-          </div>
-          <div className="settings-toggle-list">
-            <label className="settings-toggle">
-              <div>
-                <strong>
-                  Extended Time
-                </strong>
-                <small>
-                  Allow the student's approved extended
-                  testing time to be applied.
-                </small>
-              </div>
-              <input
-                type="checkbox"
-                checked={settings.extendedTime}
-                onChange={(e) =>
-                  updateSetting(
-                    "extendedTime",
-                    e.target.checked
-                  )
-                }
-              />
-            </label>
-            {settings.extendedTime && (
-              <label className="settings-field nested-setting">
-                <span>
-                  Extended Time Multiplier
-                </span>
-                <select
-                  value={settings.extendedTimeMultiplier}
-                  onChange={(e) =>
-                    updateSetting(
-                      "extendedTimeMultiplier",
-                      Number(e.target.value)
-                    )
-                  }
-                >
-                  <option value={1.25}>
-                    1.25×
-                  </option>
-                  <option value={1.5}>
-                    1.5×
-                  </option>
-                  <option value={2}>
-                    2×
-                  </option>
-                  <option value={3}>
-                    3×
-                  </option>
-                </select>
+            <div className="category-question-limit">
+              <label className="settings-toggle">
+                <div>
+                  <strong>Limit time per question</strong>
+                  <small>Give each question its own answering time.</small>
+                </div>
+                <input
+                  id="question-time-limit-enabled"
+                  type="checkbox"
+                  disabled={saving}
+                  checked={settings.questionTimeLimit !== null}
+                  aria-controls={settings.questionTimeLimit !== null ? "question-time-limit-controls" : undefined}
+                  onChange={(event) => updateSetting("questionTimeLimit", event.target.checked ? 2 : null)}
+                />
               </label>
-            )}
-            <label className="settings-toggle">
-              <div>
-                <strong>
-                  Breaks
-                </strong>
-                <small>
-                  Allow approved testing breaks without
-                  treating them as answering time.
-                </small>
-              </div>
-              <input
-                type="checkbox"
-                checked={settings.breaksAllowed}
-                onChange={(e) =>
-                  updateSetting(
-                    "breaksAllowed",
-                    e.target.checked
-                  )
-                }
-              />
-            </label>
-            <label className="settings-toggle">
-              <div>
-                <strong>
-                  Reduced-Distraction Mode
-                </strong>
-                <small>
-                  Minimize unnecessary visual and audio
-                  distractions during the examination.
-                </small>
-              </div>
-              <input
-                type="checkbox"
-                checked={settings.reducedDistraction}
-                onChange={(e) =>
-                  updateSetting(
-                    "reducedDistraction",
-                    e.target.checked
-                  )
-                }
-              />
-            </label>
-            <label className="settings-toggle">
-              <div>
-                <strong>
-                  Assistive Technology
-                </strong>
-                <small>
-                  Allow compatible accessibility and
-                  assistive technology features.
-                </small>
-              </div>
-              <input
-                type="checkbox"
-                checked={settings.assistiveTechnology}
-                onChange={(e) =>
-                  updateSetting(
-                    "assistiveTechnology",
-                    e.target.checked
-                  )
-                }
-              />
-            </label>
+              {settings.questionTimeLimit !== null && (
+                <label id="question-time-limit-controls" className="settings-field nested-setting">
+                  <span>Time per question</span>
+                  <div className="settings-input-with-unit">
+                    <input
+                      id="question-time-limit"
+                      type="number"
+                      min="1"
+                      max="240"
+                      step="1"
+                      required
+                      disabled={saving}
+                      value={Number.isFinite(settings.questionTimeLimit) ? settings.questionTimeLimit : ""}
+                      aria-invalid={!validTimeLimit(settings.questionTimeLimit)}
+                      aria-describedby={`question-time-help${settingsError ? " category-settings-error" : ""}`}
+                      onChange={(event) => updateSetting("questionTimeLimit", event.target.valueAsNumber)}
+                    />
+                    <small>minutes</small>
+                  </div>
+                  <small id="question-time-help">1–240 minutes per question. When time runs out, the question advances as unanswered. Submit before the timer reaches zero.</small>
+                </label>
+              )}
+              {settings.questionTimeLimit === null && <p className="settings-notice">No separate question limit. The total exam time still applies.</p>}
+            </div>
           </div>
+          <p className="settings-notice">Approved extended time is assigned by student EID in{" "}
+            <a href={`/professor/exams/${encodeURIComponent(examId)}/settings/ods-accommodations`}>ODS Accommodations</a>.
+            {" "}It applies only to the total exam time for that student's new attempts. Time per question stays unchanged.
+          </p>
         </div>
       )}
 

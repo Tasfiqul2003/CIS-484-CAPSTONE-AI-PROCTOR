@@ -14,7 +14,7 @@ const compiled = ts.transpileModule(source, {
 assert.deepEqual(compiled.diagnostics.filter(item => item.category === ts.DiagnosticCategory.Error), []);
 const {
   defaultExamSettings, categorySettingKeys, examSettingsStorageKey,
-  loadExamSettings, saveExamSettingsCategory, hasCategoryChanges, odsTimeLimit,
+  loadExamSettings, saveExamSettingsCategory, hasCategoryChanges, odsTimeLimit, validQuestionTimeLimit,
 } = await import(`data:text/javascript;base64,${Buffer.from(compiled.outputText).toString('base64')}`);
 
 const EXAM_A = 'synthetic-exam-a';
@@ -57,6 +57,47 @@ test('invalid time limits cannot overwrite a saved draft', () => {
   }
 });
 
+test('question timing is optional and saves independently of total exam time', () => {
+  const storage = memoryStorage();
+  assert.equal(loadExamSettings(storage, EXAM_A).questionTimeLimit, null);
+  for (const questionTimeLimit of [1, 240, null]) {
+    const saved = saveExamSettingsCategory(storage, EXAM_A, 'time-scheduling', {
+      ...loadExamSettings(storage, EXAM_A), timeLimit: 30, questionTimeLimit,
+    });
+    assert.equal(saved.timeLimit, 30);
+    assert.equal(saved.questionTimeLimit, questionTimeLimit);
+    assert.equal(loadExamSettings(storage, EXAM_A).questionTimeLimit, questionTimeLimit);
+    assert.equal(loadExamSettings(storage, EXAM_B).questionTimeLimit, null);
+  }
+});
+
+test('invalid question limits cannot overwrite saved exam or question limits', () => {
+  const storage = memoryStorage();
+  seed(storage, EXAM_A, { ...defaultExamSettings, timeLimit: 40, questionTimeLimit: 3 });
+  const before = storage.getItem(examSettingsStorageKey(EXAM_A));
+  for (const questionTimeLimit of [0, -1, 241, 1.5, NaN, Infinity, undefined, true, '2']) {
+    assert.equal(validQuestionTimeLimit(questionTimeLimit), false);
+    assert.throws(() => saveExamSettingsCategory(storage, EXAM_A, 'time-scheduling', {
+      ...defaultExamSettings, timeLimit: 60, questionTimeLimit,
+    }), /Time per question must be a whole number/);
+    assert.equal(storage.getItem(examSettingsStorageKey(EXAM_A)), before);
+  }
+  assert.equal(storage.writes, 0);
+});
+
+test('question-only edits are unsaved time changes and other category saves preserve them', () => {
+  const storage = memoryStorage();
+  const saved = { ...defaultExamSettings, questionTimeLimit: 4 };
+  seed(storage, EXAM_A, saved);
+  assert.equal(hasCategoryChanges('time-scheduling', { ...saved, questionTimeLimit: 5 }, saved), true);
+  assert.equal(hasCategoryChanges('time-scheduling', { ...saved, questionTimeLimit: null }, saved), true);
+  const next = saveExamSettingsCategory(storage, EXAM_A, 'ai-results', {
+    ...defaultExamSettings, questionTimeLimit: null, recommendedGrade: false,
+  });
+  assert.equal(next.questionTimeLimit, 4);
+  assert.equal(next.timeLimit, 30);
+});
+
 function memoryStorage() {
   const values = new Map();
   let writes = 0;
@@ -77,6 +118,7 @@ test('defaults retain the existing controls and canonical Manage Exam storage ke
   assert.equal(examSettingsStorageKey(EXAM_A), 'oralExamSettings-/professor/exams/synthetic-exam-a');
   assert.deepEqual(loadExamSettings(storage, EXAM_A), {
     timeLimit: 30,
+    questionTimeLimit: null,
     extendedTime: false,
     extendedTimeMultiplier: 1.5,
     breaksAllowed: true,
@@ -106,6 +148,7 @@ test('loading an existing partial draft supplies defaults without rewriting save
   const before = storage.getItem(examSettingsStorageKey(EXAM_A));
   const loaded = loadExamSettings(storage, EXAM_A);
   assert.equal(loaded.timeLimit, 48);
+  assert.equal(loaded.questionTimeLimit, null);
   assert.equal(loaded.recordAudio, false);
   assert.equal(loaded.maxFollowUps, 2);
   assert.equal(loaded.difficulty, 3);
@@ -116,7 +159,7 @@ test('loading an existing partial draft supplies defaults without rewriting save
 
 test('category keys partition every existing field exactly once', () => {
   assert.deepEqual(categorySettingKeys, {
-    'time-scheduling': ['timeLimit'],
+    'time-scheduling': ['timeLimit', 'questionTimeLimit'],
     'ods-accommodations': ['extendedTime', 'extendedTimeMultiplier', 'breaksAllowed', 'reducedDistraction', 'assistiveTechnology'],
     'ai-questioning': ['questionCount', 'followUpQuestions', 'maxFollowUps', 'allowRephrase', 'allowHints'],
     'recording-transcript': ['recordVideo', 'recordAudio', 'generateTranscript'],

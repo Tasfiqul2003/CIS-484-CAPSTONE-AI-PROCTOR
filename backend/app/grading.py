@@ -55,7 +55,7 @@ def grade_session(
     sid = str(req.session_id)
 
     session = db.execute(
-        text("""SELECT s.status, t.professor_id, t.rubric, t.title,
+        text("""SELECT s.status, s.developer_demo, t.professor_id, t.rubric, t.title,
                        t.topic_coverage_required
                 FROM exam_sessions s
                 JOIN exam_templates t ON t.id = s.exam_template_id
@@ -72,6 +72,8 @@ def grade_session(
     ):
         raise HTTPException(404, "Session not found")
 
+    if session.get("developer_demo", False):
+        raise HTTPException(409, "Developer demo attempts cannot receive assessment grades.")
     if session["status"] not in ("pending_grading", "flagged"):
         raise HTTPException(409, f"Session is {session['status']}, not ready for grading")
 

@@ -21,8 +21,8 @@ const rootPath = `/professor/exams/${EXAM}`;
 const settingsKey = `oralExamSettings-${rootPath}`;
 const categories = [
   { slug: 'avatar-interaction', title: 'Avatar & Interaction Settings', field: 'Default avatar' },
-  { slug: 'time-scheduling', title: 'Time & Scheduling', field: 'Standard Time Limit' },
-  { slug: 'ods-accommodations', title: 'ODS Accommodations', field: 'Extended Time' },
+  { slug: 'time-scheduling', title: 'Time & Scheduling', field: 'Time per exam' },
+  { slug: 'ods-accommodations', title: 'ODS Accommodations', field: 'Student EID' },
   { slug: 'ai-questioning', title: 'AI Questioning', field: 'Number of Questions' },
   { slug: 'recording-transcript', title: 'Recording & Transcript', field: 'Record Video' },
   { slug: 'ai-results', title: 'AI Results', field: 'Recommended Grade' },
@@ -50,6 +50,11 @@ const legacySettings = {
   recommendedGrade: false, generateFeedback: true, professorReview: true,
   futureTeamSetting: { marker: 'preserve-synthetic-extension' }, difficulty: 'removed-legacy-field',
 };
+let savedTime = { time_limit_minutes: 37, question_time_limit_minutes: null };
+let savedOdsAssignments = [];
+const odsState = () => ({ ...savedTime, assignments: savedOdsAssignments.map(assignment => ({
+  ...assignment, effective_time_limit_minutes: savedTime.time_limit_minutes * assignment.extended_time_multiplier,
+})) });
 function observe(target) {
   target.setDefaultTimeout(10000);
   target.on('pageerror', error => pageErrors.push(error.message));
@@ -77,7 +82,23 @@ await context.route('**/*', async route => {
     if (url.pathname === '/api/auth/me') return respond({ id: 'synthetic-account', professor_id: INSTRUCTOR, username: 'Synthetic Instructor', role: 'professor' });
     if (url.pathname === `/api/exam/templates/${EXAM}/avatar-policy`) return respond({ detail: 'Synthetic fixture has no saved server policy.' }, 503);
     if (url.pathname === `/api/exam/templates/${EXAM}/questions`) return respond([{ id: 'synthetic-question', question_text: 'Explain a synthetic topic.', topic: 'Synthetic', difficulty: 2, created_at: '2026-10-24T12:00:00Z' }]);
+    if (url.pathname === `/api/exam/templates/${EXAM}/time-settings`) return respond(savedTime);
+    if (url.pathname === `/api/exam/templates/${EXAM}/ods-accommodations`) return respond(odsState());
     if ([`/api/exam/templates/${EXAM}/materials`, `/api/exam/templates/${EXAM}/roster`].includes(url.pathname)) return respond([]);
+  }
+  if (request.method() === 'PUT' && url.pathname === `/api/exam/templates/${EXAM}/time-settings`) {
+    savedTime = request.postDataJSON();
+    return respond(savedTime);
+  }
+  if (request.method() === 'PUT' && url.pathname === `/api/exam/templates/${EXAM}/ods-accommodations`) {
+    const assignment = request.postDataJSON();
+    savedOdsAssignments = [{ student_id: 'synthetic-ods-student', eid: assignment.eid,
+      name: 'Synthetic ODS Student', extended_time_multiplier: assignment.extended_time_multiplier }];
+    return respond(odsState());
+  }
+  if (request.method() === 'DELETE' && url.pathname === `/api/exam/templates/${EXAM}/ods-accommodations/synthetic-ods-student`) {
+    savedOdsAssignments = [];
+    return respond(odsState());
   }
   unexpectedApi.push(details);
   return respond({ detail: 'Synthetic navigation test blocks this API request.' }, 403);
@@ -165,17 +186,20 @@ await check('Legacy exam-key data loads without rewriting and category saves pre
   await visitHub();
   await page.evaluate(({ key, settings }) => localStorage.setItem(key, JSON.stringify(settings)), { key: settingsKey, settings: legacySettings });
   await visitCategory('time-scheduling');
-  assert.equal(await field('Standard Time Limit').inputValue(), '37');
+  assert.equal(await field('Time per exam').inputValue(), '37');
   assert.deepEqual(await snapshot(), legacySettings, 'Loading a new URL must not rewrite the old saved draft');
-  await field('Standard Time Limit').fill('47');
+  await field('Time per exam').fill('47');
   await save().click();
-  assert.deepEqual(await snapshot(), { ...legacySettings, timeLimit: 47 });
+  await page.getByRole('button', { name: '✓ Settings Saved', exact: true }).waitFor();
+  assert.equal(savedTime.time_limit_minutes, 47);
+  assert.deepEqual(await snapshot(), legacySettings, 'Live time settings must not rewrite legacy browser drafts');
   await back().click();
   await page.getByRole('link', { name: /ODS Accommodations/ }).click();
-  await field('Extended Time').check();
-  await field('Extended Time Multiplier').selectOption('2');
-  await field('Breaks').uncheck();
-  await save().click();
+  await field('Student EID').fill('000123');
+  await field('Extended time multiplier').selectOption('2');
+  await page.getByRole('button', { name: 'Save student accommodation', exact: true }).click();
+  await page.getByRole('cell', { name: '000123', exact: true }).waitFor();
+  assert.deepEqual(await snapshot(), legacySettings, 'Live ODS assignments must not rewrite legacy browser drafts');
   await visitCategory('ai-questioning');
   assert.equal(await field('Number of Questions').inputValue(), '17');
   await field('Number of Questions').fill('19');
@@ -192,7 +216,7 @@ await check('Legacy exam-key data loads without rewriting and category saves pre
   await field('Generate Feedback').uncheck();
   await field('Professor Review Required').uncheck();
   await save().click();
-  const expected = { ...legacySettings, timeLimit: 47, extendedTime: true, extendedTimeMultiplier: 2, breaksAllowed: false, questionCount: 19, maxFollowUps: 4, allowHints: true, recordAudio: false, generateTranscript: false, generateFeedback: false, professorReview: false };
+  const expected = { ...legacySettings, questionTimeLimit: null, questionCount: 19, maxFollowUps: 4, allowHints: true, recordAudio: false, generateTranscript: false, generateFeedback: false, professorReview: false };
   delete expected.difficulty;
   assert.deepEqual(await snapshot(), expected);
   await page.reload();
@@ -210,15 +234,17 @@ await check('Concurrent category pages merge into the latest stored exam draft',
   try {
     await visitCategory('time-scheduling');
     await visitCategory('recording-transcript', other);
-    await field('Standard Time Limit').fill('61');
+    await field('Time per exam').fill('61');
     await field('Record Video', other).check();
     await save().click();
+    await page.getByRole('button', { name: '✓ Settings Saved', exact: true }).waitFor();
     await save(other).click();
-    assert.equal((await snapshot()).timeLimit, 61);
+    assert.equal(savedTime.time_limit_minutes, 61);
+    assert.equal((await snapshot()).timeLimit, legacySettings.timeLimit);
     assert.equal((await snapshot()).recordVideo, true);
     await page.reload();
-    await field('Standard Time Limit').waitFor();
-    assert.equal(await field('Standard Time Limit').inputValue(), '61');
+    await field('Time per exam').waitFor();
+    assert.equal(await field('Time per exam').inputValue(), '61');
     await other.reload();
     await field('Record Video', other).waitFor();
     assert(await field('Record Video', other).isChecked());
@@ -228,8 +254,9 @@ await check('Concurrent category pages merge into the latest stored exam draft',
 await check('Unsaved category changes guard links, reload, and browser back', async () => {
   await visitHub();
   await page.getByRole('link', { name: /Time & Scheduling/ }).click();
-  await field('Standard Time Limit').fill('73');
+  await field('Time per exam').fill('73');
   const saved = await snapshot();
+  const savedExamMinutes = savedTime.time_limit_minutes;
   for (const navigate of [
     () => back().click({ noWaitAfter: true }),
     () => page.reload().catch(() => null),
@@ -241,15 +268,16 @@ await check('Unsaved category changes guard links, reload, and browser back', as
     assert.equal((await notice).type(), 'beforeunload');
     await navigation;
     assert.equal(new URL(page.url()).pathname, categoryPath('time-scheduling'));
-    assert.equal(await field('Standard Time Limit').inputValue(), '73');
+    assert.equal(await field('Time per exam').inputValue(), '73');
     assert.deepEqual(await snapshot(), saved);
   }
   nextDialog = 'accept';
   await back().click();
   await page.getByRole('link', { name: /Time & Scheduling/ }).click();
-  assert.equal(await field('Standard Time Limit').inputValue(), String(saved.timeLimit));
-  await field('Standard Time Limit').fill('67');
+  assert.equal(await field('Time per exam').inputValue(), String(savedExamMinutes));
+  await field('Time per exam').fill('67');
   await save().click();
+  await page.getByRole('button', { name: '✓ Settings Saved', exact: true }).waitFor();
   const dialogCount = dialogs.length;
   await back().click();
   await page.getByRole('link', { name: /View Question Bank/ }).waitFor();
@@ -343,11 +371,13 @@ await check('Overview and all six settings pages fit a 360px screen', async () =
   return { width: 360, screenshots };
 });
 
-await check('Only synthetic configured API reads occurred and there were no runtime errors', async () => {
+await check('Only synthetic configured API requests occurred and there were no runtime errors', async () => {
   assert.deepEqual(unexpectedApi, []);
   assert.deepEqual(externalRequests, []);
   assert.deepEqual(pageErrors, []);
-  assert(requests.every(request => request.method === 'GET'));
+  assert(requests.every(request => request.method === 'GET' ||
+    (request.method === 'PUT' && /\/(time-settings|ods-accommodations)$/.test(request.path)) ||
+    (request.method === 'DELETE' && request.path.endsWith('/ods-accommodations/synthetic-ods-student'))));
 });
 
 await mkdir(outputDir, { recursive: true });

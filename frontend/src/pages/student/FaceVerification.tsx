@@ -1,5 +1,7 @@
 import OralExamMark from "../../components/brand/OralExamMark";
+import { useDeveloperDemo } from "../../components/developer-demo/DemoWorkspace";
 export default function FaceVerification() {
+  const developer = useDeveloperDemo();
   const studentId = sessionStorage.getItem("oralexam_student_id") || "";
   const studentName = sessionStorage.getItem("oralexam_student_name") || "";
 
@@ -37,7 +39,7 @@ export default function FaceVerification() {
           <p className="eyebrow">STEP 2 OF 3</p>
           <h1>Video / Face Check</h1>
           <p>Welcome, {studentName}. Please position yourself in front of the camera.</p>
-          <div className="camera-preview">Camera preview is not connected</div>
+          <div className="camera-preview">{developer.enabled ? "Demo camera placeholder · no capture or identity check" : "Camera preview is not connected"}</div>
           <p role="note">
             Prototype limitation: camera capture and facial identity matching
             are not implemented. Continuing does not verify your face.

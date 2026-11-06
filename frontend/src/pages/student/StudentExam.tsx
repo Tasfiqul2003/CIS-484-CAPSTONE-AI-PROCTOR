@@ -1,22 +1,22 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { formatRemaining, readExamClock, remainingTime } from "./examTiming";
+import type { ExamClock, ExamTiming, RemainingTime } from "./examTiming";
+import LiveExamPresentation from "../../components/avatar/LiveExamPresentation";
+import OralExamMark from "../../components/brand/OralExamMark";
+import { DemoAttemptNotice, useDeveloperDemo } from "../../components/developer-demo/DemoWorkspace";
+import "./StudentExam.css";
 
-
-type StartResponse = {
+type StartResponse = ExamTiming & {
   session_id: string;
   session_token?: string;
   status: string;
-  deadline: string | null;
-  server_now: string;
   sequence_num: number;
   question: string;
+  developer_demo?: boolean;
 };
 
-type AnswerResponse = {
-  done: boolean;
-  sequence_num?: number;
-  question?: string;
-  reason?: string;
-};
+type AnswerResponse = { done: true; reason?: string }
+  | (ExamTiming & { done: false; sequence_num: number; question: string });
 
 async function apiRequest<T>(
   endpoint: string,
@@ -40,6 +40,10 @@ async function apiRequest<T>(
 }
 
 export default function StudentExam() {
+  const developer = useDeveloperDemo();
+  const [demoAttempt, setDemoAttempt] = useState(false);
+  const [settingsTarget, setSettingsTarget] = useState<HTMLDivElement | null>(null);
+  const developerMinimal = demoAttempt && developer.enabled && developer.minimal === true;
   const [sessionId, setSessionId] = useState("");
   const [question, setQuestion] = useState("");
   const [questionNumber, setQuestionNumber] = useState(1);
@@ -48,16 +52,30 @@ export default function StudentExam() {
   const [showConfirmation, setShowConfirmation] = useState(false);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [assisting, setAssisting] = useState(false);
+  const [textSize, setTextSize] = useState(16);
   const [error, setError] = useState("");
   const started = useRef(false);
   const sessionToken = useRef("");
-  const [remaining, setRemaining] = useState<number | null>(null);
-  const clock = useRef<{ deadline: number; serverNow: number; received: number } | null>(null);
+  const [remaining, setRemaining] = useState<RemainingTime>({ exam: null, question: null });
+  const clock = useRef<ExamClock | null>(null);
+  const submittingRequest = useRef(false);
+  const automaticSubmission = useRef<number | null>(null);
+  const expired = remaining.exam === 0 || remaining.question === 0;
+
+  const updateClock = useCallback((timing: ExamTiming) => {
+    const value = readExamClock(timing, performance.now());
+    clock.current = value;
+    setRemaining(remainingTime(value, performance.now()));
+  }, []);
 
   useEffect(() => {
     const tick = () => {
       const value = clock.current;
-      if (value) setRemaining(Math.max(0, Math.ceil((value.deadline - value.serverNow - (performance.now() - value.received)) / 1000)));
+      if (value) {
+        const next = remainingTime(value, performance.now());
+        setRemaining(current => current.exam === next.exam && current.question === next.question ? current : next);
+      }
     };
     const timer = window.setInterval(tick, 250);
     tick();
@@ -105,8 +123,13 @@ export default function StudentExam() {
         sessionToken.current = result.session_token;
         sessionStorage.setItem(storageKey, JSON.stringify({ id: result.session_id, token: result.session_token }));
       }
+      if (result.status === "in_progress") updateClock(result);
       setSessionId(result.session_id);
+      setDemoAttempt(result.developer_demo === true);
       sessionStorage.setItem("oralexam_exam_session_id", result.session_id);
+      sessionStorage.setItem("oralexam_exam_session_token", sessionToken.current);
+      // Display only: permission to use substitutes and to grade is enforced by the server.
+      sessionStorage.setItem("oralexam_developer_demo", String(result.developer_demo === true));
       setQuestion(result.question);
       setQuestionNumber(result.sequence_num);
       if (result.status !== "in_progress") {
@@ -114,32 +137,30 @@ export default function StudentExam() {
         setShowConfirmation(true);
         return;
       }
-      if (result.deadline !== null) {
-        const deadline = Date.parse(result.deadline);
-        const serverNow = Date.parse(result.server_now);
-        if (!Number.isFinite(deadline) || !Number.isFinite(serverNow)) throw new Error("The server returned invalid timing information.");
-        clock.current = { deadline, serverNow, received: performance.now() };
-        setRemaining(Math.max(0, Math.ceil((deadline - serverNow) / 1000)));
-      }
     }
     void loadAttempt().catch((err: unknown) => {
       setError(err instanceof Error ? err.message : "Unable to start the exam.");
     }).finally(() => setLoading(false));
-  }, []);
+  }, [updateClock]);
 
-  const handleNext = async () => {
-    if (!sessionId || !answer.trim() || submitting) return;
+  const handleNext = useCallback(async () => {
+    const current = clock.current ? remainingTime(clock.current, performance.now()) : remaining;
+    const timedOut = current.exam === 0 || current.question === 0;
+    if (!sessionId || (!answer.trim() && !timedOut) || submittingRequest.current || assisting) return;
 
+    submittingRequest.current = true;
     setSubmitting(true);
     setError("");
 
     try {
       const result = await apiRequest<AnswerResponse>("/exam/answer", {
         session_id: sessionId,
-        answer_transcript: answer.trim(),
+        answer_transcript: timedOut ? "" : answer.trim(),
+        question_sequence_num: questionNumber,
       }, sessionToken.current);
 
       if (result.done) {
+        clock.current = null;
         setCompletedQuestions(questionNumber);
         setShowConfirmation(true);
         return;
@@ -149,19 +170,52 @@ export default function StudentExam() {
         throw new Error("The server did not return the next question.");
       }
 
+      updateClock(result);
       setQuestion(result.question);
-      setQuestionNumber(result.sequence_num ?? questionNumber + 1);
+      setQuestionNumber(result.sequence_num);
       setAnswer("");
     } catch (err: unknown) {
+      // A submission may have committed even when its response was lost. Resume
+      // before retrying so an old sequence cannot answer the following question.
+      try {
+        const response = await fetch(`/api/exam/sessions/${encodeURIComponent(sessionId)}`, {
+          headers: { Authorization: `Bearer ${sessionToken.current}` },
+        });
+        if (!response.ok) throw new Error("Unable to resume the attempt.");
+        const state = await response.json() as StartResponse;
+        if (state.status !== "in_progress") {
+          clock.current = null;
+          setCompletedQuestions(state.sequence_num);
+          setShowConfirmation(true);
+          return;
+        }
+        updateClock(state);
+        if (state.sequence_num !== questionNumber) {
+          setQuestion(state.question);
+          setQuestionNumber(state.sequence_num);
+          setAnswer("");
+          return;
+        }
+      } catch {
+        // Keep the submitted question and show the original error for retry.
+      }
       setError(
         err instanceof Error
           ? err.message
           : "Your answer could not be submitted. Please try again.",
       );
     } finally {
+      submittingRequest.current = false;
       setSubmitting(false);
     }
-  };
+  }, [sessionId, answer, questionNumber, remaining, updateClock, assisting]);
+
+  useEffect(() => {
+    if (!expired || loading || showConfirmation || submitting || assisting || !sessionId
+        || automaticSubmission.current === questionNumber) return;
+    automaticSubmission.current = questionNumber;
+    void handleNext();
+  }, [expired, loading, showConfirmation, submitting, assisting, sessionId, questionNumber, handleNext]);
 
   const submitExam = () => {
     // The backend has already ended the session when it returns done: true.
@@ -173,7 +227,7 @@ export default function StudentExam() {
       <div className="student-exam-page">
         <header className="student-exam-header">
           <div className="student-exam-logo">
-            <span>◉</span>
+            <span aria-hidden="true"><OralExamMark size={34} /></span>
             <strong>OralExam AI</strong>
           </div>
         </header>
@@ -181,6 +235,7 @@ export default function StudentExam() {
           <div className="exam-question-card">
             <h1>Preparing your examination...</h1>
             <p>Connecting to the exam server and loading your first question.</p>
+            <p>Speak naturally. Take your time.</p>
           </div>
         </main>
       </div>
@@ -192,7 +247,7 @@ export default function StudentExam() {
       <div className="student-exam-page">
         <header className="student-exam-header">
           <div className="student-exam-logo">
-            <span>◉</span>
+            <span aria-hidden="true"><OralExamMark size={34} /></span>
             <strong>OralExam AI</strong>
           </div>
         </header>
@@ -220,7 +275,7 @@ export default function StudentExam() {
       <div className="student-exam-page">
         <header className="student-exam-header">
           <div className="student-exam-logo">
-            <span>◉</span>
+            <span aria-hidden="true"><OralExamMark size={34} /></span>
             <strong>OralExam AI</strong>
           </div>
           <div className="student-exam-progress">Exam Complete</div>
@@ -233,6 +288,7 @@ export default function StudentExam() {
             <p className="confirmation-eyebrow">FINAL CONFIRMATION</p>
 
             <h1>Are you ready to continue?</h1>
+            {demoAttempt && <DemoAttemptNotice />}
 
             <p className="confirmation-message">
               You have reached the end of your oral examination. Your
@@ -250,14 +306,14 @@ export default function StudentExam() {
               </div>
               <div className="confirmation-row">
                 <span>Exam status</span>
-                <strong>Pending professor review</strong>
+                <strong>{demoAttempt ? "Demo saved · no grading" : "Pending professor review"}</strong>
               </div>
             </div>
 
             <div className="confirmation-warning">
               <strong>You cannot return to the completed exam.</strong>
               <span>
-                Your professor will review your recorded responses.
+                {demoAttempt ? "This developer demo is saved separately from assessed work and cannot receive grades." : "Your professor will review your recorded responses."}
               </span>
             </div>
 
@@ -276,72 +332,56 @@ export default function StudentExam() {
     );
   }
 
-  return (
-    <div className="student-exam-page">
-      <header className="student-exam-header">
-        <div className="student-exam-logo">
-          <span>◉</span>
-          <strong>OralExam AI</strong>
-        </div>
-        <div className="student-exam-progress">
-          Question {questionNumber}
-          <div className="exam-countdown" role="timer" aria-label="Time remaining" aria-live="off">
-            {remaining === null ? "No time limit" : `Time left: ${Math.floor(remaining / 60)}:${String(remaining % 60).padStart(2, "0")}`}
-          </div>
-        </div>
-      </header>
-
-      <main className="student-exam-content">
-        <div className="exam-question-card">
-          <div className="exam-question-number">
-            QUESTION {questionNumber}
-          </div>
-
-          <h1>{question}</h1>
-          {remaining === 0 && <p role="status">Time has expired. Submit your current response to finish the attempt.</p>}
-
-          <div className="ai-avatar-container">
-            <div className="ai-avatar">AI</div>
-            <div>
-              <strong>OralExam AI</strong>
-              <p>Take your time and explain your answer clearly.</p>
-            </div>
-          </div>
-
-          <textarea
-            className="student-answer-input"
-            value={answer}
-            onChange={(event) => setAnswer(event.target.value)}
-            placeholder="Speak your answer or type your response..."
-            disabled={submitting}
-          />
-
-          {error && (
-            <p role="alert" className="exam-error">
-              {error}
-            </p>
-          )}
-
-          <div className="exam-question-footer">
-            <span>
-              {submitting
-                ? "Submitting response..."
-                : answer.trim()
-                  ? "Response ready to submit"
-                  : "Waiting for response..."}
-            </span>
-
-            <button
-              type="button"
-              className="exam-next-button"
-              onClick={handleNext}
-              disabled={!answer.trim() || submitting}
-            >
-              {submitting ? "Please wait..." : "Submit Answer →"}
-            </button>
-          </div>
-        </div>
-      </main>
+  const sampleQuestion = question.startsWith("[Developer demo] ");
+  const questionText = sampleQuestion ? question.slice("[Developer demo] ".length) : question;
+  const answerForm = <form className="exam-answer-form" onSubmit={event => { event.preventDefault(); void handleNext(); }} style={{ fontSize: textSize }}>
+    <p className="exam-question-number">{sampleQuestion ? "Sample question" : `Question ${questionNumber}`}</p>
+    <h2 className="exam-current-question" aria-live="polite">{questionText}</h2>
+    <label className="student-answer-label" htmlFor="student-exam-answer">{demoAttempt ? "Test answer" : "Your answer"}</label>
+    <textarea id="student-exam-answer" className="student-answer-input" value={answer}
+      onChange={event => setAnswer(event.target.value)} placeholder={demoAttempt ? "Type your test answer here…" : "Type your response…"}
+      disabled={submitting || (expired && !assisting)} />
+    {expired && !assisting && <p role="status">{remaining.exam === 0
+      ? "Exam time has expired. Finishing your attempt."
+      : "Question time has expired. Continuing with this question marked unanswered."}
+      {error && " Use Retry submission to continue."}</p>}
+    {error && <p role="alert" className="exam-error">{error}</p>}
+    <div className="exam-question-footer">
+      <span role="status">{submitting ? "Saving response…" : ""}</span>
+      <button type="submit" className="exam-next-button" disabled={(!answer.trim() && !expired) || submitting || assisting}>
+        {submitting ? "Saving…" : expired ? "Retry submission →" : demoAttempt ? "Submit test answer →" : "Submit answer →"}
+      </button>
     </div>
-  );
+  </form>;
+
+  return <div className="student-exam-page">
+    <header className="student-exam-header">
+      <div className="student-exam-logo"><span aria-hidden="true"><OralExamMark size={40} /></span><strong>OralExam AI</strong></div>
+      <div className="exam-header-controls">
+        <div className="exam-settings-slot" ref={setSettingsTarget} />
+        <div className="exam-timer-chip" role="timer" aria-label="Exam time remaining" aria-live="off">
+          <span>Exam time left</span><strong>{remaining.exam === null ? "No limit" : formatRemaining(remaining.exam).padStart(5, "0")}</strong>
+        </div>
+        <div className="exam-timer-chip" role="timer" aria-label="Question time remaining" aria-live="off">
+          <span>Question time left</span><strong>{remaining.question === null ? "No limit" : formatRemaining(remaining.question).padStart(5, "0")}</strong>
+        </div>
+      </div>
+    </header>
+    <main className="student-exam-content student-exam-stage-content">
+      <h1 className="exam-screen-reader">Oral examination · Question {questionNumber}</h1>
+      <LiveExamPresentation sessionId={sessionId} token={sessionToken.current} question={question}
+        developerDemo={demoAttempt} developerMinimal={developerMinimal} settingsTarget={settingsTarget}
+        sequence={questionNumber} answer={answer} expired={expired && !assisting} submitting={submitting}
+        onTiming={updateClock} onBusyChange={setAssisting} onTextSizeChange={setTextSize} />
+      {demoAttempt ? <section className="developer-exam-panel" aria-labelledby="developer-exam-heading">
+        <div className="developer-exam-heading"><h2 id="developer-exam-heading">Developer mode</h2><strong className="developer-exam-badge">Test attempt · no grading</strong></div>
+        <p className="developer-exam-services">{developerMinimal ? "AI, FlashHead, voice, microphone and camera are off." : "Developer test attempt. Optional service availability follows this server’s configuration."}</p>
+        {answerForm}
+      </section> : <details className="exam-response-panel" open>
+        <summary>Question and answer</summary>
+        <p>Microphone transcription is not connected. Your typed answer is saved when you submit.</p>
+        {answerForm}
+      </details>}
+    </main>
+  </div>;
 }

@@ -326,7 +326,7 @@ export default function ProfessorDashboard() {
               <div className="dashboard-overview-label">Awaiting grading</div>
               <strong>{awaitingGradingCount}</strong>
               <span className="dashboard-overview-detail">
-                {submissionCount} total submission{submissionCount === 1 ? "" : "s"}
+                Submitted exams not yet graded · {submissionCount} total submission{submissionCount === 1 ? "" : "s"}
               </span>
             </article>
           </div>

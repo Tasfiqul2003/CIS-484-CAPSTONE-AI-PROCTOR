@@ -109,7 +109,7 @@ export default function StudentExams() {
     }
   }
 
-      function changeStudent() {
+  function changeStudent() {
     for (const key of [
       "oralexam_student_eid",
       "oralexam_student_id",
@@ -123,28 +123,28 @@ export default function StudentExams() {
     window.location.href = "/student/verification";
   }
 
-    async function handleLogout() {
-      try {
-        await fetch("/api/auth/logout", {
-          method: "POST",
-          credentials: "include",
-        });
-      } catch {
-        // Continue clearing local student data if the request fails.
-      } finally {
-        for (const key of [
-          "oralexam_student_eid",
-          "oralexam_student_id",
-          "oralexam_student_name",
-          "oralexam_face_check_passed",
-          "oralexam_exam_session_id",
-        ]) {
-          sessionStorage.removeItem(key);
-        }
-
-        window.location.href = "/";
+  async function handleLogout() {
+    try {
+      await fetch("/api/auth/logout", {
+        method: "POST",
+        credentials: "include",
+      });
+    } catch {
+      // Continue clearing local student data if the request fails.
+    } finally {
+      for (const key of [
+        "oralexam_student_eid",
+        "oralexam_student_id",
+        "oralexam_student_name",
+        "oralexam_face_check_passed",
+        "oralexam_exam_session_id",
+      ]) {
+        sessionStorage.removeItem(key);
       }
+
+      window.location.href = "/";
     }
+  }
 
   return (
     <div className="student-exams-page">

@@ -18,6 +18,7 @@ button {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
+  background: #ffffff;
 }
 
 .home-header {
@@ -9129,4 +9130,29 @@ code {
   color: var(--oe-text-muted);
   transform: none;
   text-decoration: none;
+}
+
+
+/* Stable card interactions: retain color feedback without movement. */
+.role-card,
+.exam-card,
+.dashboard-action,
+.professor-dashboard-page .professor-exam-card {
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.role-card:hover,
+.role-card:active,
+.exam-card:hover,
+.exam-card:active,
+.professor-dashboard-page .professor-exam-card:hover,
+.professor-dashboard-page .professor-exam-card:active {
+  transform: none;
+  box-shadow: none;
+}
+
+.student-exams-page .exam-list article.exam-card:hover,
+.professor-exams-content .professor-exam-card:hover {
+  transform: none;
+  box-shadow: none;
 }

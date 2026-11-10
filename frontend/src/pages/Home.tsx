@@ -59,8 +59,7 @@ export default function Home() {
                   <UserRound size={22} strokeWidth={1.9} />
                 </span>
                 <span className="role-card-content">
-                  <span className="home-role-label">Student portal</span>
-                  <span className="role-card-title">I’m a student</span>
+                  <span className="role-card-title">Student Portal</span>
                   <span className="role-card-description">
                     Verify your identity and access the exams assigned to you.
                   </span>
@@ -79,8 +78,7 @@ export default function Home() {
                   <GraduationCap size={23} strokeWidth={1.9} />
                 </span>
                 <span className="role-card-content">
-                  <span className="home-role-label">Professor portal</span>
-                  <span className="role-card-title">I’m a professor</span>
+                  <span className="role-card-title">Professor Portal</span>
                   <span className="role-card-description">
                     Sign in to create exams, manage course materials, and
                     review submissions.

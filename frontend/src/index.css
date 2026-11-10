@@ -9448,3 +9448,226 @@ code {
   width: 48px;
   height: 48px;
 }
+
+/* Student identity confirmation panel refinement */
+.student-exams-page .identity-confirmation-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 24px;
+  row-gap: 6px;
+  margin-bottom: 22px;
+  padding: 20px 24px;
+  border: 1px solid var(--oe-accent-border);
+  border-left: 4px solid var(--oe-success);
+  border-radius: 6px;
+  background: var(--oe-surface);
+  box-shadow: none;
+}
+
+.student-exams-page .identity-confirmation-card .eyebrow,
+.student-exams-page .identity-confirmation-card h2,
+.student-exams-page .identity-confirmation-card p:not(.eyebrow) {
+  grid-column: 1;
+  margin: 0;
+  text-align: left;
+}
+
+.student-exams-page .identity-confirmation-card .eyebrow {
+  color: var(--oe-success);
+}
+
+.student-exams-page .identity-confirmation-card h2 {
+  font-size: 19px;
+}
+
+.student-exams-page .identity-confirmation-card p:not(.eyebrow) {
+  color: var(--oe-text-muted);
+  font-size: 13px;
+}
+
+.student-exams-page .identity-confirmation-card button {
+  grid-column: 2;
+  grid-row: 1 / span 3;
+  justify-self: end;
+}
+
+@media (max-width: 520px) {
+  .student-exams-page .identity-confirmation-card {
+    grid-template-columns: 1fr;
+    gap: 8px;
+    padding: 16px;
+  }
+
+  .student-exams-page .identity-confirmation-card button {
+    grid-column: 1;
+    grid-row: auto;
+    justify-self: start;
+    margin-top: 6px;
+  }
+}
+
+
+/* Student assigned exam card refinement */
+.student-exams-page .exam-list article.exam-card {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 16px;
+  padding: 26px;
+  border: 1px solid var(--oe-border);
+  border-radius: var(--oe-radius-lg);
+  background: var(--oe-surface);
+  box-shadow: var(--oe-shadow-sm);
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.student-exams-page .exam-list article.exam-card:hover {
+  border-color: var(--oe-accent-border);
+  box-shadow: var(--oe-shadow-sm);
+}
+
+.student-exams-page .exam-list .exam-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 16px;
+}
+
+.student-exams-page .exam-list .exam-icon {
+  width: 48px;
+  height: 48px;
+  border: 1px solid var(--oe-border);
+  border-radius: 10px;
+  background: var(--oe-surface-muted);
+  font-size: 21px;
+}
+
+.student-exams-page .exam-list .exam-status {
+  display: inline-flex;
+  margin-bottom: 7px;
+  padding: 5px 9px;
+  border-radius: 4px;
+  font-size: 10px;
+  letter-spacing: 0.07em;
+}
+
+.student-exams-page .exam-list article.exam-card h2 {
+  margin: 0;
+  font-size: 20px;
+  line-height: 1.35;
+  text-align: left;
+}
+
+.student-exams-page .exam-list .exam-details {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+}
+
+.student-exams-page .exam-list .exam-course,
+.student-exams-page .exam-list .exam-duration {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 5px 10px;
+  border: 1px solid var(--oe-border);
+  border-radius: 5px;
+  background: var(--oe-surface-muted);
+  color: var(--oe-text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+.student-exams-page .exam-list article.exam-card > p {
+  margin: 0;
+  color: var(--oe-text-muted);
+  font-size: 13px;
+  line-height: 1.65;
+  text-align: left;
+}
+
+.student-exams-page .exam-list .exam-start-button {
+  width: 100%;
+  min-height: 46px;
+  justify-content: center;
+  margin-top: auto;
+  padding: 12px 18px;
+  border-radius: var(--oe-radius-sm);
+  font-size: 13px;
+}
+
+.student-exams-page .exam-list .exam-start-button:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+
+@media (max-width: 520px) {
+  .student-exams-page .exam-list article.exam-card {
+    gap: 14px;
+    padding: 19px;
+  }
+
+  .student-exams-page .exam-list article.exam-card h2 {
+    font-size: 18px;
+  }
+
+  .student-exams-page .exam-list .exam-card-top {
+    gap: 12px;
+  }
+}
+
+.student-exams-page .student-logout-button {
+  padding: 0;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  color: var(--oe-text-muted);
+  font-size: 13px;
+  cursor: pointer;
+  appearance: none;
+  outline: none;
+}
+
+.student-exams-page .student-logout-button:hover,
+.student-exams-page .student-logout-button:focus,
+.student-exams-page .student-logout-button:focus-visible,
+.student-exams-page .student-logout-button:active {
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  color: var(--oe-text-muted);
+  text-decoration: none;
+  outline: none;
+}
+
+/* Static student welcome panel — no card hover interaction */
+.student-exams-page .identity-confirmation-card,
+.student-exams-page .identity-confirmation-card:hover {
+  background: var(--oe-surface);
+  border-color: var(--oe-accent-border);
+  box-shadow: none;
+  transform: none;
+  cursor: default;
+  transition: none;
+}
+
+.student-exams-page .identity-confirmation-card h2 {
+  margin: 0;
+  color: var(--oe-text);
+  font-size: 19px;
+  font-weight: 600;
+}
+
+.student-exams-page .identity-confirmation-card .student-logout-button,
+.student-exams-page .identity-confirmation-card .student-logout-button:hover {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  color: var(--oe-text-muted);
+  transform: none;
+  text-decoration: none;
+}

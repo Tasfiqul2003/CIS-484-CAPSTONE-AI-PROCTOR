@@ -109,16 +109,42 @@ export default function StudentExams() {
     }
   }
 
-  function changeStudent() {
+      function changeStudent() {
     for (const key of [
       "oralexam_student_eid",
       "oralexam_student_id",
       "oralexam_student_name",
       "oralexam_face_check_passed",
       "oralexam_exam_session_id",
-    ]) sessionStorage.removeItem(key);
+    ]) {
+      sessionStorage.removeItem(key);
+    }
+
     window.location.href = "/student/verification";
   }
+
+    async function handleLogout() {
+      try {
+        await fetch("/api/auth/logout", {
+          method: "POST",
+          credentials: "include",
+        });
+      } catch {
+        // Continue clearing local student data if the request fails.
+      } finally {
+        for (const key of [
+          "oralexam_student_eid",
+          "oralexam_student_id",
+          "oralexam_student_name",
+          "oralexam_face_check_passed",
+          "oralexam_exam_session_id",
+        ]) {
+          sessionStorage.removeItem(key);
+        }
+
+        window.location.href = "/";
+      }
+    }
 
   return (
     <div className="student-exams-page">
@@ -142,16 +168,20 @@ export default function StudentExams() {
           </section>
         ) : (
           <>
-            {student && (
-              <section className="exam-card">
-                <p className="eyebrow">IDENTITY CONFIRMED</p>
-                <h2>Welcome, {student.name}</h2>
-                <p>JMU EID: {student.eid}</p>
-                <button type="button" className="back-button" onClick={changeStudent}>
-                  End Session
-                </button>
-              </section>
-            )}
+
+        {student && (
+          <section className="exam-card identity-confirmation-card">
+            <h2>Welcome, {student.name}</h2>
+            <p>JMU EID: {student.eid}</p>
+            <button
+              type="button"
+              className="student-logout-button"
+              onClick={handleLogout}
+            >
+              End Session
+            </button>
+          </section>
+        )}
 
             {error && <p className="exam-error" role="alert">{error}</p>}
 
@@ -175,9 +205,10 @@ export default function StudentExams() {
                     </div>
                   </div>
                   <div className="exam-details">
-                    {exam.course && <span>{exam.course}</span>}
-                    {exam.course && exam.time_limit_minutes != null && <span>•</span>}
-                    {exam.time_limit_minutes != null && <span>{exam.time_limit_minutes} minutes</span>}
+                    {exam.course && <span className="exam-course">{exam.course}</span>}
+                    {exam.time_limit_minutes != null && (
+                      <span className="exam-duration">{exam.time_limit_minutes} minutes</span>
+                    )}
                   </div>
                   {exam.description && <p>{exam.description}</p>}
                   <button

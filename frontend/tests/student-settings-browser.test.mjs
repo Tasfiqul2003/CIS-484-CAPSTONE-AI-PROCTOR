@@ -140,17 +140,10 @@ async function activeFocusDetails() {
   });
 }
 
-await check('Student entry link opens the isolated preview without starting an exam', async () => {
-  await page.goto(`${baseUrl}/student/exams`, { waitUntil: 'domcontentloaded', timeout: 30000 });
-  const entry = page.getByRole('link', { name: 'Student Settings Preview', exact: true });
-  await entry.waitFor({ timeout: 30000 });
-  assert.equal(await entry.getAttribute('href'), '/student/settings-preview');
-  await entry.focus();
-  await Promise.all([
-    page.waitForURL(`${baseUrl}/student/settings-preview`, { waitUntil: 'domcontentloaded', timeout: 30000 }),
-    entry.press('Enter', { timeout: 30000 }),
-  ]);
-  await page.locator('.student-settings-preview-page').waitFor({ timeout: 30000 });
+await check('Direct student preview entry opens without starting an exam', async () => {
+  // The roster/verification integration now protects /student/exams and removed
+  // its former public preview link. The standalone synthetic route remains public.
+  await visitPreview();
   assert.equal(new URL(page.url()).pathname, '/student/settings-preview');
   assert.match(await page.locator('main').innerText(), /preview/i);
   assert.equal(await page.locator('.student-demo-question h2').innerText(), QUESTION);
@@ -176,7 +169,7 @@ await check('Student settings update presentation immediately and keep policy co
   assert.equal(await page.locator('.student-demo-surface').evaluate((element) => getComputedStyle(element).fontSize), '24px');
   assert.match(await page.locator('.student-demo-speed').innerText(), /1\.20/);
   assert.match(await page.locator('.student-demo-volume').innerText(), /35/);
-  assert.equal(await page.locator('.student-demo-avatar').evaluate((element) => getComputedStyle(element).animationName), 'none');
+  assert.equal(await page.locator('.exam-avatar-mouth').evaluate((element) => getComputedStyle(element).animationName), 'none');
   for (const label of ['Voice', 'Default voice', 'Exam mode', 'Instructor simulation mode', 'Response timing', 'Response window', 'Follow-up limit per question', 'Exact question repeats limit per question', 'Clarification limit per question', 'Rubric']) {
     assert.equal(await page.getByLabel(label, { exact: true }).count(), 0, `${label} must not be an editable student control`);
   }
@@ -408,13 +401,13 @@ await check('Native dialog supports labels, focus cycling, Escape, and focus ret
 await check('Browser reduced motion is respected without enabling media services', async () => {
   await visitPreview();
   await button('Repeat exact question').click();
-  assert.notEqual(await page.locator('.student-demo-avatar').evaluate((element) => getComputedStyle(element).animationName), 'none');
+  assert.notEqual(await page.locator('.exam-avatar-mouth').evaluate((element) => getComputedStyle(element).animationName), 'none');
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await openSettings();
   await dialogField('Reduce motion').waitFor({ state: 'detached' });
   assert.equal(await dialogField('Reduce motion').count(), 0);
   assert.doesNotMatch(await dialog().innerText(), /browser requests|reduced motion stays on/i);
-  assert.equal(await page.locator('.student-demo-avatar').evaluate((element) => getComputedStyle(element).animationName), 'none');
+  assert.equal(await page.locator('.exam-avatar-mouth').evaluate((element) => getComputedStyle(element).animationName), 'none');
   await closeSettings();
   await page.emulateMedia({ reducedMotion: 'no-preference' });
   assert.deepEqual(mediaCalls, []);

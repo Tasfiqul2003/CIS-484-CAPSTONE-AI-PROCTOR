@@ -1,6 +1,7 @@
 
 import { useEffect, useState } from "react";
 import OralExamMark from "../../components/brand/OralExamMark";
+import { withTransientSummary } from "../../components/developer-demo/developerDemo";
 
 type Material = {
   id: string;
@@ -16,6 +17,7 @@ type MaterialPreview = {
   filename: string;
   extracted_text: string;
   summary?: string | null;
+  demo?: boolean;
 };
 
 function getExamId() {
@@ -130,7 +132,7 @@ export default function MaterialUpload() {
     }
   }
 
-  async function previewMaterial(material: Material) {
+  async function previewMaterial(material: Material, transientSummary?: unknown) {
     if (!examId) return;
 
     try {
@@ -140,7 +142,7 @@ export default function MaterialUpload() {
       );
 
       const data = await readResponse(response);
-      setPreview(data);
+      setPreview(withTransientSummary(data, transientSummary));
     } catch (err) {
       setError(
         err instanceof Error
@@ -165,9 +167,9 @@ export default function MaterialUpload() {
         }
       );
 
-      await readResponse(response);
+      const summary = await readResponse(response);
       await loadMaterials();
-      await previewMaterial(material);
+      await previewMaterial(material, summary);
     } catch (err) {
       setError(
         err instanceof Error
@@ -395,7 +397,8 @@ export default function MaterialUpload() {
               <div className="question-preview-body material-preview-body">
                 {preview.summary && (
                   <section className="material-summary">
-                    <h3>Summary</h3>
+                    <h3>{preview.demo ? "Developer demo excerpt" : "Summary"}</h3>
+                    {preview.demo && <p className="developer-demo-note">AI summary is unavailable. This labeled excerpt is temporary, is not saved, and is not used as course reference material.</p>}
                     <p>{preview.summary}</p>
                   </section>
                 )}

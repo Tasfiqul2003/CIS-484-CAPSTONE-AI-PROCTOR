@@ -181,7 +181,12 @@ export default function CreateExam() {
             </div>
           </div>
 
-          <div className="form-grid">
+          <div className="create-context-group">
+            <div className="create-context-heading">
+              <h3>Course context</h3>
+              <p>Identify the course this examination belongs to.</p>
+            </div>
+
             <div className="form-field">
               <label htmlFor="course">Course</label>
               <input
@@ -191,51 +196,60 @@ export default function CreateExam() {
                 placeholder="CIS 484"
               />
             </div>
+          </div>
+
+          <div className="create-context-group">
+            <div className="create-context-heading">
+              <h3>Exam details</h3>
+              <p>Define the examination students will take.</p>
+            </div>
+
+            <div className="form-grid">
+              <div className="form-field">
+                <label htmlFor="exam-name">Exam Name</label>
+                <input
+                  id="exam-name"
+                  value={examName}
+                  onChange={(e) => setExamName(e.target.value)}
+                  placeholder="Final Oral Examination"
+                />
+              </div>
+            </div>
 
             <div className="form-field">
-              <label htmlFor="exam-name">Exam Name</label>
-              <input
-                id="exam-name"
-                value={examName}
-                onChange={(e) => setExamName(e.target.value)}
-                placeholder="Final Oral Examination"
+              <label htmlFor="description">Description</label>
+              <textarea
+                id="description"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="Describe what this examination covers..."
+                rows={4}
               />
             </div>
-          </div>
 
-          <div className="form-field">
-            <label htmlFor="description">Description</label>
-            <textarea
-              id="description"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="Describe what this examination covers..."
-              rows={4}
-            />
-          </div>
+            <div className="form-field">
+              <label>Exam Icon</label>
+              <p className="icon-selection-description">
+                Choose an icon students will see for this exam.
+              </p>
 
-          <div className="form-field">
-            <label>Exam Icon</label>
-            <p className="icon-selection-description">
-              Choose an icon students will see for this exam.
-            </p>
-
-            <div className="exam-icon-grid">
-              {examIcons.map((item) => (
-                <button
-                  type="button"
-                  key={item.icon}
-                  className={
-                    selectedIcon === item.icon
-                      ? "exam-icon-option selected"
-                      : "exam-icon-option"
-                  }
-                  onClick={() => setSelectedIcon(item.icon)}
-                >
-                  <span className="exam-icon">{item.icon}</span>
-                  <span className="exam-icon-name">{item.name}</span>
-                </button>
-              ))}
+              <div className="exam-icon-grid">
+                {examIcons.map((item) => (
+                  <button
+                    type="button"
+                    key={item.icon}
+                    className={
+                      selectedIcon === item.icon
+                        ? "exam-icon-option selected"
+                        : "exam-icon-option"
+                    }
+                    onClick={() => setSelectedIcon(item.icon)}
+                  >
+                    <span className="exam-icon">{item.icon}</span>
+                    <span className="exam-icon-name">{item.name}</span>
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
         </section>
@@ -261,14 +275,14 @@ export default function CreateExam() {
             <strong>
               {questionFile ? questionFile.name : "Upload Question Bank"}
             </strong>
-            <p>CSV, Excel, or TXT</p>
+            <p>CSV, TXT, DOCX, PDF, or PPTX</p>
             <span className="choose-file-button">Choose Question File</span>
           </label>
 
           {questionFile && (
             <p role="status">
-              Selected: {questionFile.name}. It will need to be uploaded
-              after the exam is created.
+              Selected: {questionFile.name}. It will be uploaded
+              when you create the exam.
             </p>
           )}
         </section>

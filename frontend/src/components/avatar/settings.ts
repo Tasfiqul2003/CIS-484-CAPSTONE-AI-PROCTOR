@@ -1,17 +1,17 @@
-/** Validated exam permission settings. Live exam delivery and attempt enforcement are separate integrations. */
+/** Validated professor configuration; active attempts retain their saved server snapshot. */
 export const AVATARS = [
-  { id: 'guide', label: 'Guide avatar (preview)' },
-  { id: 'geometric', label: 'Geometric avatar (preview)' },
+  { id: 'guide', label: 'Guide examiner' },
+  { id: 'geometric', label: 'Geometric examiner' },
 ] as const
 
 export const BACKGROUNDS = [
-  { id: 'neutral', label: 'Neutral background (preview)' },
-  { id: 'library', label: 'Library background (preview)' },
+  { id: 'neutral', label: 'Neutral background' },
+  { id: 'library', label: 'Library background' },
 ] as const
 
 export const VOICES = [
-  { id: 'calm', label: 'Calm voice (preview)' },
-  { id: 'clear', label: 'Clear voice (preview)' },
+  { id: 'calm', label: 'Calm English voice' },
+  { id: 'clear', label: 'Clear English voice' },
 ] as const
 
 export const MAX_PREVIEW_IMAGE_BYTES = 1_048_576
@@ -77,7 +77,7 @@ const ACTIONS: Action[] = ['repeat', 'clarification', 'hint', 'explanation', 'co
 export function defaultSettings(): Settings {
   return {
     presentation: {
-      avatar: 'guide', background: 'neutral', voice: 'calm', speed: 1,
+      avatar: 'guide', background: 'neutral', voice: 'clear', speed: 1,
       customAvatar: null, customBackground: null,
       animation: true, reducedMotion: false, stateLabels: true,
     },

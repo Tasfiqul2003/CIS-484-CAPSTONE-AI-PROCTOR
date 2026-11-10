@@ -11,6 +11,9 @@ credentials*.json
 secrets.*
 config/secrets.yml
 hosts.yml
+.developer-settings.json
+.developer-settings-*.tmp
+.developer-session.lock
 
 # Local environments and caches
 .venv/

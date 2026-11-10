@@ -5691,9 +5691,9 @@ button.dashboard-logout:focus-visible {
 }
 
 .professor-exams-content .exam-card-actions .publication-button.is-draft {
-  color: #fff;
-  background: #26354b;
-  border-color: #26354b;
+  color: #273247;
+  background: #f8f9fb;
+  border-color: #dfe4ea;
 }
 
 .professor-exams-content .exam-card-actions .publication-button.is-published {
@@ -7686,6 +7686,14 @@ code {
   letter-spacing: -0.035em;
 }
 
+.professor-dashboard-page .dashboard-section-description {
+  margin: 6px 0 0;
+  color: var(--oe-text-muted);
+  font-size: 13px;
+  line-height: 1.5;
+  max-width: 620px;
+}
+
 .professor-dashboard-page .dashboard-section-heading > span {
   display: inline-flex;
   align-items: center;
@@ -8576,6 +8584,17 @@ code {
   height: 34px;
   flex: 0 0 34px;
 }
+.exam-countdown {
+  margin-top: 6px;
+  padding: 6px 10px;
+  border: 1px solid #ddd6fe;
+  border-radius: 8px;
+  background: #f5f3ff;
+  color: #4c1d95;
+  font-size: 0.875rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
 
 /* OralExam AI: professor exam progress */
 .progress-back-link {
@@ -9155,4 +9174,31 @@ code {
 .professor-exams-content .professor-exam-card:hover {
   transform: none;
   box-shadow: none;
+}
+
+
+/* Create exam: distinguish course context from exam-specific details. */
+.create-exam-page .create-context-group + .create-context-group {
+  margin-top: 26px;
+  padding-top: 24px;
+  border-top: 1px solid #edf0f3;
+}
+
+.create-exam-page .create-context-heading {
+  margin-bottom: 16px;
+}
+
+.create-exam-page .create-context-heading h3 {
+  margin: 0;
+  color: #273247;
+  font-size: 15px;
+  font-weight: 650;
+  line-height: 1.4;
+}
+
+.create-exam-page .create-context-heading p {
+  margin: 4px 0 0;
+  color: #687386;
+  font-size: 13px;
+  line-height: 1.5;
 }

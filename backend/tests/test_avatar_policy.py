@@ -17,6 +17,7 @@ from fastapi.testclient import TestClient
 from pydantic import ValidationError
 from sqlalchemy import create_engine, event, text
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 
 from backend.app.auth import get_current_account
 from backend.app.avatar_policy import AvatarSettings, default_settings, router
@@ -31,8 +32,8 @@ ACCOUNT = {"id": "synthetic-account", "role": "professor", "professor_id": PROFE
 
 
 @pytest.fixture
-def api(tmp_path):
-    engine = create_engine(f"sqlite:///{tmp_path / 'synthetic-policies.sqlite'}", connect_args={"check_same_thread": False})
+def api():
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
 
     @event.listens_for(engine, "connect")
     def foreign_keys(connection, _):
@@ -43,7 +44,8 @@ def api(tmp_path):
         db.execute(text("""
             CREATE TABLE exam_avatar_policies (
                 exam_template_id TEXT PRIMARY KEY REFERENCES exam_templates(id) ON DELETE CASCADE,
-                settings TEXT NOT NULL, revision INTEGER NOT NULL CHECK (revision >= 1), updated_at TEXT NOT NULL
+                settings TEXT NOT NULL, revision INTEGER NOT NULL CHECK (revision >= 1), updated_at TEXT NOT NULL,
+                exam_mode TEXT NOT NULL DEFAULT 'assessed' CHECK (exam_mode IN ('practice', 'assessed'))
             )
         """))
         db.execute(text("INSERT INTO exam_templates (id, professor_id) VALUES (:id, :professor_id)"), [
@@ -77,11 +79,36 @@ def test_default_policy_does_not_write_and_is_independent(api):
     assert data == {
         "exam_id": EXAM, "revision": 0, "settings": default_settings().model_dump(),
         "effective_for": "new_attempts", "assistance_scope": "per_question", "updated_at": None,
+        "exam_mode": "assessed",
     }
     data["settings"]["presentation"]["avatar"] = "geometric"
     assert client.get(URL).json()["settings"]["presentation"]["avatar"] == "guide"
     with engine.connect() as db:
         assert db.execute(text("SELECT COUNT(*) FROM exam_avatar_policies")).scalar_one() == 0
+
+
+def test_authoritative_mode_is_saved_with_policy_revision_and_legacy_updates_preserve_it(api):
+    client, _, _ = api
+    saved = client.put(URL, json={**payload(), "exam_mode": "practice"})
+    assert saved.status_code == 200
+    assert saved.json()["exam_mode"] == "practice"
+    assert client.get(URL).json()["exam_mode"] == "practice"
+    legacy = client.put(URL, json=payload(1))
+    assert legacy.status_code == 200
+    assert legacy.json()["exam_mode"] == "practice"
+    changed = client.put(URL, json={**payload(2), "exam_mode": "assessed"})
+    assert changed.status_code == 200
+    assert changed.json()["exam_mode"] == "assessed"
+    assert client.put(URL, json={**payload(2), "exam_mode": "practice"}).status_code == 409
+    assert client.get(URL).json()["exam_mode"] == "assessed"
+
+
+@pytest.mark.parametrize("mode", [None, True, 1, "both", "student-choice"])
+def test_invalid_mode_cannot_create_or_change_policy(api, mode):
+    client, _, engine = api
+    assert client.put(URL, json={**payload(), "exam_mode": mode}).status_code == 422
+    with engine.connect() as db:
+        assert db.execute(text("SELECT count(*) FROM exam_avatar_policies")).scalar_one() == 0
 
 
 def test_save_reload_update_and_per_exam_persistence(api):

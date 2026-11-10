@@ -353,6 +353,10 @@ export default function ProfessorDashboard() {
           <div>
             <p className="eyebrow">EXAM MANAGEMENT</p>
             <h2>Your examinations</h2>
+            <p className="dashboard-section-description">
+              Select an exam to manage its questions, review submissions,
+              or update its publication status.
+            </p>
           </div>
           <span>
             {exams.length} exam{exams.length === 1 ? "" : "s"}
@@ -435,7 +439,7 @@ export default function ProfessorDashboard() {
                   </div>
 
                   <div className="exam-card-actions">
-                    <a href={`/professor/exams/${exam.id}`}>
+                    <a href={`/professor/exams/${exam.id}`} className="primary">
                       Manage Exam
                     </a>
 
@@ -463,7 +467,7 @@ export default function ProfessorDashboard() {
 
                     <button
                       type="button"
-                      className="delete-exam-button"
+                      className="delete-exam-button danger"
                       disabled={saving}
                       onClick={() => deleteExam(exam)}
                     >

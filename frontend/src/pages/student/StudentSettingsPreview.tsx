@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import StudentSettingsPanel from "../../components/student-settings/StudentSettingsPanel";
+import AIAvatar from "../../components/AIAvatar";
+import type { AIAvatarState } from "../../components/AIAvatar";
 import {
   createPreferenceStore,
   defaultPreferences,
@@ -215,9 +217,9 @@ function StudentPreview({ policy, preferenceExamId, onRestart, policyNotice, con
         <section className="student-demo-question" aria-labelledby="student-sample-question">
           <div className="student-preview-card-heading"><span>{policy.mode === "practice" ? "Practice" : "Assessed"} sample · Question 1</span><span className="student-preview-state" role="status">{attempt.state} · simulated</span></div>
           <div className={`student-demo-stage student-demo-background-${preferences.background}${policy.defaults.animation && !reducedMotion && preferences.avatar !== "custom" && attempt.state === "Speaking" ? " student-demo-animated" : ""}`} data-avatar={preferences.avatar} data-background={preferences.background} style={preferences.background === "custom" && policy.defaults.customBackground ? { backgroundImage: `url("${policy.defaults.customBackground}")`, backgroundSize: "cover", backgroundPosition: "center" } : undefined}>
-            <div className={`student-demo-avatar student-demo-avatar-${preferences.avatar}`} aria-hidden="true">
-              {preferences.avatar === "custom" && policy.defaults.customAvatar ? <img src={policy.defaults.customAvatar} alt="" /> : preferences.avatar === "guide" ? <svg viewBox="0 0 100 100" focusable="false"><circle cx="50" cy="33" r="17" /><path d="M19 88v-9c0-17 14-28 31-28s31 11 31 28v9" /></svg> : <span />}
-            </div>
+            <AIAvatar compact avatar={preferences.avatar} background={preferences.background}
+              customAvatar={policy.defaults.customAvatar} customBackground={policy.defaults.customBackground}
+              animation={policy.defaults.animation} reducedMotion={reducedMotion} state={attempt.state as AIAvatarState} />
             <div>{policy.allowAvatar && <strong>{policy.avatarChoices.find(choice => choice.id === preferences.avatar)?.label}</strong>}{policy.allowBackground && <p>{policy.backgroundChoices.find(choice => choice.id === preferences.background)?.label}</p>}{policy.allowSpeed && <p><output className="student-demo-speed">{preferences.speed.toFixed(2)}× speaking speed</output></p>}<p><output className="student-demo-volume">Volume: {preferences.volume}%</output> · {reducedMotion ? "Reduced motion on" : "Standard motion"}</p></div>
           </div>
           <h2 id="student-sample-question">{QUESTION}</h2>

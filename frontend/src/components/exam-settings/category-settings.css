@@ -1,0 +1,85 @@
+/* Form details shared only by the category editor and its ODS counterpart. */
+.category-settings {
+  --settings-text: var(--exam-ui-text, var(--oe-text, #172033));
+  --settings-muted: var(--exam-ui-muted, var(--oe-text-muted, #53627a));
+  --settings-border: var(--exam-ui-border, var(--oe-border, #d8dee8));
+  --settings-surface: var(--exam-ui-surface, var(--oe-surface, #ffffff));
+  --settings-accent: var(--exam-ui-accent, var(--oe-accent, #6d28d9));
+  --settings-padding: var(--exam-ui-panel-padding, clamp(16px, 2.2vw, 28px));
+  --settings-small: var(--exam-ui-font-size-small, .875rem);
+  --settings-target: var(--exam-ui-target-size, 44px);
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
+  color: var(--settings-text);
+}
+
+.category-settings,
+.category-settings *,
+.category-settings *::before,
+.category-settings *::after { box-sizing: border-box; }
+
+.category-settings.exam-settings-container .exam-settings-header {
+  flex-wrap: wrap;
+  gap: 16px;
+  padding: var(--settings-padding);
+}
+.category-settings .exam-settings-header > div { flex: 1 1 17rem; min-width: 0; }
+.category-settings .exam-settings-header > button { flex: 0 1 auto; }
+.category-settings :is(p, small, span, strong, label, h2, h3) { overflow-wrap: anywhere; }
+.category-settings.exam-settings-container :is(p, small) { color: var(--settings-muted); line-height: 1.6; }
+.category-settings.exam-settings-container .settings-section { min-width: 0; padding: var(--settings-padding); }
+.category-settings .settings-section-heading > div:last-child { min-width: 0; }
+.category-settings .settings-section-heading p,
+.category-settings .settings-field > small,
+.category-settings .settings-toggle small,
+.category-settings.exam-settings-container .settings-notice,
+.category-settings .settings-notice :is(span, strong) { font-size: var(--settings-small); color: var(--settings-muted); }
+.category-settings .settings-notice { min-width: 0; max-width: 100%; }
+.category-settings .settings-notice strong { color: var(--settings-text); }
+.category-settings .settings-grid { min-width: 0; width: 100%; gap: 20px; }
+.category-settings .settings-grid > *,
+.category-settings .settings-field { min-width: 0; max-width: 100%; }
+.category-settings .settings-field > span { font-size: var(--settings-small); color: var(--settings-text); }
+.category-settings .settings-field :is(input, select) {
+  min-width: 0;
+  max-width: 100%;
+  width: 100%;
+  height: auto;
+  min-height: var(--settings-target);
+  padding: 10px 12px;
+  color: var(--settings-text);
+  background: var(--settings-surface);
+  border-color: var(--settings-border);
+  font-family: inherit;
+  font-size: 1rem;
+}
+.category-settings .settings-input-with-unit { min-width: 0; flex-wrap: wrap; gap: 8px; }
+.category-settings .settings-input-with-unit input { flex: 0 1 8rem; }
+.category-settings .settings-input-with-unit small { font-size: var(--settings-small); color: var(--settings-muted); }
+.category-settings .settings-toggle-list { min-width: 0; max-width: 100%; overflow: visible; }
+.category-settings .settings-toggle { min-width: 0; gap: 12px; }
+.category-settings .settings-toggle > div { min-width: 0; flex: 1; }
+.category-settings .settings-toggle strong { font-size: 1rem; color: var(--settings-text); }
+.category-settings .settings-toggle input { background: var(--settings-muted); }
+.category-settings .settings-toggle input:checked { background: var(--settings-accent); }
+.category-settings .category-question-limit .nested-setting { margin-left: 0; border: 1px solid var(--settings-border); border-radius: 8px; }
+.category-settings :is(button, a, input, select):focus-visible { outline: 3px solid var(--exam-ui-focus, var(--settings-accent)); outline-offset: 3px; }
+.category-settings button { min-height: var(--settings-target); min-width: 0; max-width: 100%; white-space: normal; overflow-wrap: anywhere; line-height: 1.4; }
+.category-settings .settings-save-button { font-size: 1rem; }
+.category-settings button:disabled { opacity: 1; cursor: default; }
+.category-settings .settings-save-button:disabled { color: var(--settings-muted); background: #eeeaf3; }
+.category-settings.exam-settings-container > [role="alert"] { color: #9b2f32; font-size: 1rem; line-height: 1.6; }
+
+@media (max-width: 700px) {
+  .category-settings .settings-grid { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 480px) {
+  .category-settings .exam-settings-header > button { width: 100%; }
+  .category-settings .settings-toggle { padding: 12px; }
+  .category-settings .nested-setting { margin-left: 0; padding: 12px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .category-settings :is(button, input) { transition: none; }
+  .category-settings .settings-save-button:hover { transform: none; }
+}

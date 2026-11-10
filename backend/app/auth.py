@@ -1,6 +1,9 @@
 import hmac
 import os
 import re
+import threading
+import time
+from collections import defaultdict, deque
 from datetime import datetime, timedelta, timezone
 
 import jwt
@@ -46,14 +49,55 @@ def normalize_username(username: str) -> str:
     return username
 
 
+INSECURE_AUTH_SECRET_VALUES = {
+    "secret",
+    "changeme",
+    "change-me",
+    "change_me",
+    "your-secret-key",
+    "your_secret_key",
+    "replace-me",
+    "replace_me",
+    "development-secret",
+    "dev-secret",
+    "password",
+    "password123",
+}
+
+
+def validate_auth_secret(secret: str | None) -> str:
+    """Validate the JWT signing secret without exposing its value."""
+    if secret is None or not secret.strip():
+        raise ValueError("AUTH_SECRET_KEY must be configured.")
+
+    if secret != secret.strip():
+        raise ValueError("AUTH_SECRET_KEY must not have leading or trailing whitespace.")
+
+    if len(secret) < 32:
+        raise ValueError("AUTH_SECRET_KEY must be at least 32 characters long.")
+
+    normalized = secret.lower()
+    if (
+        normalized in INSECURE_AUTH_SECRET_VALUES
+        or "replace-with" in normalized
+        or "replace_with" in normalized
+        or "your-secret" in normalized
+        or "your_secret" in normalized
+        or "changeme" in normalized
+    ):
+        raise ValueError("AUTH_SECRET_KEY must not use a placeholder or default value.")
+
+    return secret
+
+
 def get_secret() -> str:
-    secret = os.getenv("AUTH_SECRET_KEY")
-    if not secret:
+    try:
+        return validate_auth_secret(os.getenv("AUTH_SECRET_KEY"))
+    except ValueError:
         raise HTTPException(
             status_code=500,
-            detail="Authentication is not configured.",
+            detail="Authentication is not configured securely.",
         )
-    return secret
 
 
 def set_session_cookie(response: Response, account: dict) -> None:
@@ -191,12 +235,56 @@ def bootstrap_admin(
     }
 
 
+# Per-process login throttling. Multi-worker deployments need shared storage
+# or rate limiting at a trusted reverse proxy.
+LOGIN_RATE_LIMIT = 5
+LOGIN_RATE_WINDOW_SECONDS = 60
+_login_failures = defaultdict(deque)
+_login_failures_lock = threading.Lock()
+
+
+def _prune_login_failures(client_ip: str, now: float) -> deque:
+    attempts = _login_failures[client_ip]
+    while attempts and now - attempts[0] >= LOGIN_RATE_WINDOW_SECONDS:
+        attempts.popleft()
+    return attempts
+
+
+def _check_login_rate_limit(client_ip: str) -> None:
+    now = time.monotonic()
+    with _login_failures_lock:
+        attempts = _prune_login_failures(client_ip, now)
+        if len(attempts) >= LOGIN_RATE_LIMIT:
+            retry_after = max(
+                1, int(LOGIN_RATE_WINDOW_SECONDS - (now - attempts[0]))
+            )
+            raise HTTPException(
+                status_code=429,
+                detail="Too many failed login attempts. Try again shortly.",
+                headers={"Retry-After": str(retry_after)},
+            )
+
+
+def _record_failed_login(client_ip: str) -> None:
+    now = time.monotonic()
+    with _login_failures_lock:
+        _prune_login_failures(client_ip, now).append(now)
+
+
+def _clear_login_failures(client_ip: str) -> None:
+    with _login_failures_lock:
+        _login_failures.pop(client_ip, None)
+
+
 @router.post("/login")
 def login(
     body: LoginRequest,
+    request: Request,
     response: Response,
     db: Session = Depends(get_db),
 ):
+    client_ip = request.client.host if request.client else "unknown"
+    _check_login_rate_limit(client_ip)
     username = body.username.strip().lower()
 
     account = db.execute(
@@ -214,8 +302,10 @@ def login(
         or not account["is_active"]
         or not password_hash.verify(body.password, account["password_hash"])
     ):
+        _record_failed_login(client_ip)
         raise HTTPException(status_code=401, detail="Invalid username or password.")
 
+    _clear_login_failures(client_ip)
     set_session_cookie(response, dict(account))
 
     return {

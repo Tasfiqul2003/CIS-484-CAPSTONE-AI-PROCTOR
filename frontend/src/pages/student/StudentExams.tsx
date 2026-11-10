@@ -101,6 +101,8 @@ export default function StudentExams() {
         throw new Error("The student identity did not match. Please start verification again.");
       }
 
+      if (!data.student_token) throw new Error("The server did not return exam authorization.");
+      sessionStorage.setItem(`oralexam_exam_token:${exam.id}:${studentId}`, data.student_token);
       const query = new URLSearchParams({ templateId: exam.id, studentId });
       window.location.href = `/student/exam?${query.toString()}`;
     } catch (err) {
@@ -116,10 +118,9 @@ export default function StudentExams() {
       "oralexam_student_name",
       "oralexam_face_check_passed",
       "oralexam_exam_session_id",
-    ]) {
-      sessionStorage.removeItem(key);
-    }
-
+      "oralexam_exam_session_token",
+      "oralexam_developer_demo",
+    ]) sessionStorage.removeItem(key);
     window.location.href = "/student/verification";
   }
 
@@ -138,6 +139,8 @@ export default function StudentExams() {
         "oralexam_student_name",
         "oralexam_face_check_passed",
         "oralexam_exam_session_id",
+        "oralexam_exam_session_token",
+        "oralexam_developer_demo",
       ]) {
         sessionStorage.removeItem(key);
       }
@@ -168,20 +171,20 @@ export default function StudentExams() {
           </section>
         ) : (
           <>
-
-        {student && (
-          <section className="exam-card identity-confirmation-card">
-            <h2>Welcome, {student.name}</h2>
-            <p>JMU EID: {student.eid}</p>
-            <button
-              type="button"
-              className="student-logout-button"
-              onClick={handleLogout}
-            >
-              End Session
-            </button>
-          </section>
-        )}
+            {student && (
+              <section className="exam-card identity-confirmation-card">
+                <p className="eyebrow">IDENTITY CONFIRMED</p>
+                <h2>Welcome, {student.name}</h2>
+                <p>JMU EID: {student.eid}</p>
+                <button
+                  type="button"
+                  className="student-logout-button"
+                  onClick={handleLogout}
+                >
+                  End Session
+                </button>
+              </section>
+            )}
 
             {error && <p className="exam-error" role="alert">{error}</p>}
 
@@ -205,10 +208,9 @@ export default function StudentExams() {
                     </div>
                   </div>
                   <div className="exam-details">
-                    {exam.course && <span className="exam-course">{exam.course}</span>}
-                    {exam.time_limit_minutes != null && (
-                      <span className="exam-duration">{exam.time_limit_minutes} minutes</span>
-                    )}
+                    {exam.course && <span>{exam.course}</span>}
+                    {exam.course && exam.time_limit_minutes != null && <span>•</span>}
+                    {exam.time_limit_minutes != null && <span>{exam.time_limit_minutes} minutes</span>}
                   </div>
                   {exam.description && <p>{exam.description}</p>}
                   <button

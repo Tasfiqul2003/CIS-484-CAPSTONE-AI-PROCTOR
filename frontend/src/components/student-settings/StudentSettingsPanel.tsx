@@ -4,7 +4,7 @@ import "./student-settings-panel.css";
 
 type StudentSettingsPanelProps = {
   open: boolean;
-  policy: StudentPolicy;
+  policy: Omit<StudentPolicy, "mode" | "assistance">;
   preferences: StudentPreferences;
   onChange: (preferences: StudentPreferences) => void;
   onClose: () => void;
@@ -14,11 +14,13 @@ type StudentSettingsPanelProps = {
   status: string;
   error: string;
   browserReducedMotion: boolean;
+  persistence?: "browser" | "session";
+  saving?: boolean;
 };
 
 export default function StudentSettingsPanel({
   open, policy, preferences, onChange, onClose, onSave, onReset,
-  dirty, status, error, browserReducedMotion,
+  dirty, status, error, browserReducedMotion, persistence = "browser", saving = false,
 }: StudentSettingsPanelProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
@@ -82,7 +84,7 @@ export default function StudentSettingsPanel({
       </header>
       <form onSubmit={(event) => { event.preventDefault(); onSave(); }}>
         <div className="student-settings-panel-content">
-          <p id={`${id}-description`} className="student-settings-description">Presentation preferences take effect immediately. Save keeps your preferences in this browser.</p>
+          <p id={`${id}-description`} className="student-settings-description">Presentation preferences take effect immediately. {persistence === "session" ? "Save keeps your preferences for this exam attempt across reloads." : "Save keeps your preferences in this browser."}</p>
           <section className="student-settings-group" aria-labelledby={`${id}-accessibility-heading`}>
             <h3 id={`${id}-accessibility-heading`}>Comfort and accessibility</h3>
             <div className="student-settings-field">
@@ -91,7 +93,7 @@ export default function StudentSettingsPanel({
                 <input id={`${id}-volume`} type="range" min="0" max="100" step="1" value={preferences.volume} aria-valuetext={`${preferences.volume}%`} aria-describedby={`${id}-volume-help`} onChange={(event) => change("volume", Number(event.currentTarget.value))} />
                 <output htmlFor={`${id}-volume`}>{preferences.volume}%</output>
               </div>
-              <p id={`${id}-volume-help`} className="student-settings-help">0% represents mute. Audio is simulated in this preview.</p>
+              <p id={`${id}-volume-help`} className="student-settings-help">0% represents mute. {persistence === "browser" && "Audio is simulated in this preview."}</p>
             </div>
             <div className="student-settings-field">
               <label htmlFor={`${id}-text-size`}>Text size</label>
@@ -132,8 +134,8 @@ export default function StudentSettingsPanel({
           {error && <p className="student-settings-error" role="alert">{error}</p>}
         </div>
         <footer className="student-settings-panel-footer">
-          <button type="submit" className="student-settings-save">Save Preferences</button>
-          <button type="button" className="student-settings-reset" onClick={onReset}>Reset Preferences</button>
+          <button type="submit" className="student-settings-save" disabled={saving}>{saving ? "Saving..." : "Save Preferences"}</button>
+          <button type="button" className="student-settings-reset" disabled={saving} onClick={onReset}>Reset Preferences</button>
           <p className="student-settings-help">Reset restores personal preferences. Question assistance usage is unchanged.</p>
         </footer>
       </form>

@@ -255,7 +255,7 @@ export default function ProfessorExams() {
           <div>
             <p className="eyebrow">PROFESSOR PORTAL</p>
             <h1>My Exams</h1>
-            <p>Create and manage your oral examinations.</p>
+            <p>Create, organize, and manage your oral examinations.</p>
           </div>
 
           <button

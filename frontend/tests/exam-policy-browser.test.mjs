@@ -122,6 +122,7 @@ await context.route('**/*', async (route) => {
     return respond([{ id: 'synthetic-policy-question', question_text: 'Synthetic topic?', topic: 'Synthetic', difficulty: 2, created_at: '2026-10-15T12:00:00Z' }]);
   }
   if (request.method() === 'GET' && /^\/api\/exam\/templates\/[^/]+\/materials$/.test(url.pathname)) return respond([]);
+  if (request.method() === 'GET' && /^\/api\/exam\/templates\/[^/]+\/roster$/.test(url.pathname)) return respond([]);
   unexpectedApi.push(details);
   return respond({ detail: 'The synthetic policy integration test blocks this endpoint.' }, 403);
 });
@@ -407,7 +408,7 @@ await check('Essential accessibility controls remain available under restricted 
   await modal().waitFor({ state: 'hidden' });
   await student.waitForFunction(() => document.activeElement?.textContent?.trim() === 'Student settings');
   await button('Repeat exact question', student).click();
-  assert.equal(await student.locator('.student-demo-avatar').evaluate((element) => getComputedStyle(element).animationName), 'none');
+  assert.equal(await student.locator('.exam-avatar-mouth').evaluate((element) => getComputedStyle(element).animationName), 'none');
   return { textSizePx: 24, viewportWidth: 360, screenshot: await screenshot('shared-policy-student-mobile.png') };
 });
 

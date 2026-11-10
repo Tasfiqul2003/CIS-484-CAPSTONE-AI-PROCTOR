@@ -9,16 +9,32 @@ from .exam import router as exam_router
 from .grading import router as grading_router
 from .review import router as review_router
 from .stream import router as stream_router
-from .auth import router as auth_router
+from .auth import router as auth_router, validate_auth_secret
 from .avatar_policy import router as avatar_policy_router
+from .avatar_session import router as avatar_session_router
+from .avatar_assistance import router as avatar_assistance_router
+from .time_settings import router as time_settings_router
+from .ods_accommodations import router as ods_accommodations_router
+from .developer_demo import router as developer_demo_router
 
 app = FastAPI(title="AI Oral Exam Proctor")
+
+
+@app.on_event("startup")
+def validate_auth_configuration() -> None:
+    """Fail startup if the JWT signing secret is missing or unsafe."""
+    validate_auth_secret(os.getenv("AUTH_SECRET_KEY"))
 app.include_router(exam_router)
 app.include_router(grading_router)
 app.include_router(review_router)
 app.include_router(stream_router)
 app.include_router(auth_router)
 app.include_router(avatar_policy_router)
+app.include_router(avatar_session_router)
+app.include_router(avatar_assistance_router)
+app.include_router(time_settings_router)
+app.include_router(ods_accommodations_router)
+app.include_router(developer_demo_router)
 
 
 @app.get("/")

@@ -301,7 +301,7 @@ class DeveloperDockerPreflightTests(unittest.TestCase):
                 patch.object(launcher.Path, "is_file", return_value=True), \
                 patch.object(launcher, "command_output", return_value="synthetic-compose-version"), \
                 patch.object(launcher, "check_docker_engine") as engine, \
-                patch.object(launcher, "check_free_ports", side_effect=launcher.StartupError("Port 5173 is already in use. Existing services were left running.")) as ports, \
+                patch.object(launcher, "check_free_ports", side_effect=launcher.StartupError("Port 8100 is already in use. Existing services were left running.")) as ports, \
                 patch.object(launcher, "service_environment") as credentials, \
                 patch.object(launcher, "save_choices") as save, \
                 patch.object(launcher, "launch") as launch, \
@@ -313,7 +313,7 @@ class DeveloperDockerPreflightTests(unittest.TestCase):
         credentials.assert_not_called()
         save.assert_not_called()
         launch.assert_not_called()
-        self.assertIn("Port 5173 is already in use", output.getvalue())
+        self.assertIn("Port 8100 is already in use", output.getvalue())
         self.assertIn("Existing services were left running", output.getvalue())
 
 
@@ -519,7 +519,7 @@ class DeveloperProcessTests(unittest.TestCase):
         popen.assert_called_once()
         self.assertEqual(popen.call_args.args[0], plan["frontend"])
         self.assertEqual([call.args[0] for call in ready.call_args_list],
-                         ["http://127.0.0.1:8000/health", "http://127.0.0.1:5173"])
+                         ["http://127.0.0.1:8000/health", "http://127.0.0.1:8100"])
         self.assertEqual([call.args[0] for call in run.call_args_list], [
             plan["compose"] + ["ps", "--status", "running", "-q"], plan["core"],
             plan["compose"] + ["stop"]])
@@ -580,7 +580,7 @@ class DeveloperProcessTests(unittest.TestCase):
             return {"version": "synthetic-1"} if path == "/api/version" else {"models": [{"name": "synthetic-model:latest"}]}
 
         def ready(url, _process):
-            if url.endswith(":5173"):
+            if url.endswith(":8100"):
                 raise launcher.StartupError("Synthetic frontend unavailable")
 
         with patch.object(launcher, "run_command", return_value="") as run, \
@@ -636,7 +636,7 @@ class DeveloperProcessTests(unittest.TestCase):
             return None if path == "/api/version" else {"models": [{"name": "synthetic-model:latest"}]}
 
         def ready(url, _process):
-            if url.endswith(":5173"):
+            if url.endswith(":8100"):
                 raise launcher.StartupError("Synthetic frontend unavailable")
 
         with patch.object(launcher, "run_command", side_effect=command) as run, \

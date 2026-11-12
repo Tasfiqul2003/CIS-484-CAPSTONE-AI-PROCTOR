@@ -1690,7 +1690,7 @@ def get_exam_progress(
         )
 
     rows = db.execute(
-        text("""
+        text(f"""
             SELECT
                 s.id AS student_id,
                 s.name AS student_name,
@@ -1700,7 +1700,40 @@ def get_exam_progress(
                 latest.status,
                 latest.developer_demo,
                 latest.started_at,
-                latest.ended_at
+                latest.ended_at,
+                progress_clock.server_now AS server_now,
+                CASE
+                    WHEN latest.time_limit_minutes IS NOT NULL
+                    THEN latest.time_limit_minutes
+                         * COALESCE(latest.extended_time_multiplier, 1) * 60
+                    ELSE NULL
+                END AS allowed_seconds,
+                CASE
+                    WHEN latest.started_at IS NOT NULL
+                    THEN GREATEST(
+                        0,
+                        EXTRACT(EPOCH FROM (
+                            COALESCE(latest.ended_at, progress_clock.server_now) - latest.started_at
+                        )) - {pause_sum_sql('latest.id')}
+                    )
+                    ELSE NULL
+                END AS elapsed_seconds,
+                CASE
+                    WHEN latest.status = 'in_progress'
+                     AND latest.started_at IS NOT NULL
+                     AND latest.time_limit_minutes IS NOT NULL
+                    THEN GREATEST(
+                        0,
+                        latest.time_limit_minutes
+                            * COALESCE(latest.extended_time_multiplier, 1) * 60
+                        - (
+                            EXTRACT(EPOCH FROM (
+                                progress_clock.server_now - latest.started_at
+                            )) - {pause_sum_sql('latest.id')}
+                        )
+                    )
+                    ELSE NULL
+                END AS remaining_seconds
             FROM exam_roster AS r
             JOIN students AS s
               ON s.id = r.student_id
@@ -1710,13 +1743,18 @@ def get_exam_progress(
                     es.status,
                     es.developer_demo,
                     es.started_at,
-                    es.ended_at
+                    es.ended_at,
+                    es.time_limit_minutes,
+                    es.extended_time_multiplier
                 FROM exam_sessions AS es
                 WHERE es.student_id = s.id
                   AND es.exam_template_id = r.exam_template_id
                 ORDER BY es.started_at DESC, es.id DESC
                 LIMIT 1
             ) AS latest ON TRUE
+            CROSS JOIN (
+                SELECT clock_timestamp() AS server_now
+            ) AS progress_clock
             WHERE r.exam_template_id = CAST(:exam_id AS uuid)
             ORDER BY lower(s.name), lower(s.email)
         """),

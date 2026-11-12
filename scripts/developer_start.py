@@ -373,7 +373,7 @@ def build_plan(root: Path, choices: dict, model: str, endpoint: str, docker="doc
         "compose": compose,
         "core": compose + ["up", "--build", "-d", "--wait", "backend"],
         "frontend": [node, str(root / "frontend" / "node_modules" / "vite" / "bin" / "vite.js"),
-                     "--host", "127.0.0.1", "--port", "5173", "--strictPort"],
+                     "--host", "127.0.0.1", "--port", "8100", "--strictPort"],
         "model": model, "endpoint": endpoint, "local_ai": choices["local_ai"] and not minimal,
         "minimal": minimal,
     }
@@ -439,7 +439,7 @@ def wait_for_http(url: str, process, timeout=45) -> None:
 
 
 def check_free_ports() -> None:
-    for port in (8000, 5173, 55432):
+    for port in (8000, 8100, 55432):
         with socket.socket() as probe:
             probe.settimeout(0.2)
             if probe.connect_ex(("127.0.0.1", port)) == 0:
@@ -528,12 +528,12 @@ def launch_services(root: Path, inventory: dict, plan: dict, env: dict) -> None:
                 print("Warning: the Docker backend cannot reach local Ollama. Continuing with labeled developer demo fallback available; see docs/developer-startup.md.")
         owned_frontend = subprocess.Popen(plan["frontend"], cwd=root / "frontend", env=env,
                                           shell=False, creationflags=hidden_flags())
-        wait_for_http("http://127.0.0.1:5173", owned_frontend)
-        print("\nDeveloper app: http://127.0.0.1:5173")
+        wait_for_http("http://127.0.0.1:8100", owned_frontend)
+        print("\nDeveloper app: http://127.0.0.1:8100")
         print(MINIMAL_NOTICE if plan.get("minimal") else
               "Optional Faster-Whisper, Piper, FlashHead, and recording providers remain off. Built-in web presentation and labeled demo substitutes are separate.")
         print("Keep this window open. Press Ctrl+C to stop services started by this launcher.")
-        webbrowser.open("http://127.0.0.1:5173")
+        webbrowser.open("http://127.0.0.1:8100")
         while True:
             if owned_frontend.poll() is not None:
                 raise StartupError("The frontend exited. Stopping the developer session.")

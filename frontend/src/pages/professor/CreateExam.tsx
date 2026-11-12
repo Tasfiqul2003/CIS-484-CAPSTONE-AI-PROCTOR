@@ -173,6 +173,13 @@ export default function CreateExam() {
           </p>
         </div>
 
+        <ol className="create-workflow-guide" aria-label="Exam creation workflow">
+          <li><span>1</span><div><strong>Exam information</strong><small>Identify your course and exam</small></div></li>
+          <li><span>2</span><div><strong>Add content</strong><small>Select questions and materials</small></div></li>
+          <li><span>3</span><div><strong>Review and create</strong><small>Check your selections</small></div></li>
+          <li><span>4</span><div><strong>Configure and publish</strong><small>Complete setup afterward</small></div></li>
+        </ol>
+
         <section className="create-section">
           <div className="create-section-heading">
             <div>
@@ -346,6 +353,39 @@ export default function CreateExam() {
               These files are selected locally and are not uploaded yet.
             </p>
           )}
+        </section>
+
+        <section className="create-review-section" aria-labelledby="create-review-heading">
+          <div className="create-review-heading">
+            <p className="eyebrow">FINAL CHECK</p>
+            <h2 id="create-review-heading">Review Your Examination</h2>
+            <p>Check the information and files selected before creating this exam.</p>
+          </div>
+
+          <dl className="create-review-grid">
+            <div>
+              <dt>Course</dt>
+              <dd>{course.trim() || "Not entered"}</dd>
+            </div>
+            <div>
+              <dt>Exam name</dt>
+              <dd>{examName.trim() || "Not entered"}</dd>
+            </div>
+            <div>
+              <dt>Question bank</dt>
+              <dd>{questionFile ? questionFile.name : "None selected"}</dd>
+            </div>
+            <div>
+              <dt>Course materials</dt>
+              <dd>{materials.length} {materials.length === 1 ? "file" : "files"} selected</dd>
+            </div>
+          </dl>
+
+          <p className="create-review-note">
+            Creating the exam uploads your selected files. After creation, open
+            Manage Exam to review settings, configure the examination, and
+            publish it when it is ready.
+          </p>
         </section>
 
         {error && (

@@ -8655,7 +8655,7 @@ code {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 16px;
-  margin: 28px 0 36px;
+  margin: 24px 0 24px;
 }
 
 .progress-summary-card {
@@ -8689,7 +8689,7 @@ code {
 
 .progress-table-section {
   min-width: 0;
-  margin-bottom: 36px;
+  margin-bottom: 28px;
 }
 
 .progress-count {
@@ -8697,9 +8697,40 @@ code {
   font-size: 13px;
 }
 
+.progress-filter {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 0;
+  margin-bottom: 10px;
+}
+
+.progress-filter label {
+  color: var(--oe-muted, #716b80);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.progress-filter select {
+  min-width: 190px;
+  padding: 10px 36px 10px 12px;
+  border: 1px solid var(--oe-border, #e5dff0);
+  border-radius: 9px;
+  background: var(--oe-card, #fff);
+  color: var(--oe-text, #40365f);
+  font: inherit;
+}
+
+.progress-filter select:focus-visible {
+  outline: 2px solid var(--oe-primary, #7655c5);
+  outline-offset: 2px;
+}
+
 .progress-table-wrap {
   overflow-x: auto;
-  margin-top: 18px;
+  margin-top: 0;
   border: 1px solid var(--oe-border, #e5dff0);
   border-radius: 14px;
   background: var(--oe-card, #fff);
@@ -9201,4 +9232,347 @@ code {
   color: #687386;
   font-size: 13px;
   line-height: 1.5;
+}
+
+
+/* Guided professor exam creation workflow. */
+.create-exam-page .create-workflow-guide {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  margin: 0 0 28px;
+  padding: 20px;
+  list-style: none;
+  background: #ffffff;
+  border: 1px solid #e1e5eb;
+  border-radius: 14px;
+}
+
+.create-exam-page .create-workflow-guide li {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+}
+
+.create-exam-page .create-workflow-guide li > span {
+  display: grid;
+  place-items: center;
+  flex: 0 0 28px;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #eef1f5;
+  color: #273247;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.create-exam-page .create-workflow-guide li div {
+  min-width: 0;
+}
+
+.create-exam-page .create-workflow-guide strong,
+.create-exam-page .create-workflow-guide small {
+  display: block;
+}
+
+.create-exam-page .create-workflow-guide strong {
+  color: #273247;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.create-exam-page .create-workflow-guide small {
+  margin-top: 4px;
+  color: #687386;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.create-exam-page .create-review-section {
+  margin-top: 28px;
+  padding: 26px 30px;
+  background: #ffffff;
+  border: 1px solid #e1e5eb;
+  border-radius: 14px;
+}
+
+.create-exam-page .create-review-heading h2 {
+  margin: 5px 0 8px;
+  color: #172033;
+  font-size: 21px;
+}
+
+.create-exam-page .create-review-heading > p:last-child {
+  margin: 0;
+  color: #687386;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.create-exam-page .create-review-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin: 22px 0;
+}
+
+.create-exam-page .create-review-grid > div {
+  min-width: 0;
+  padding: 14px;
+  background: #fafbfc;
+  border: 1px solid #e8ebf0;
+  border-radius: 9px;
+}
+
+.create-exam-page .create-review-grid dt {
+  margin-bottom: 6px;
+  color: #687386;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.create-exam-page .create-review-grid dd {
+  margin: 0;
+  color: #172033;
+  font-size: 14px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.create-exam-page .create-review-note {
+  margin: 0;
+  padding-top: 16px;
+  border-top: 1px solid #edf0f3;
+  color: #687386;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+@media (max-width: 700px) {
+  .create-exam-page .create-workflow-guide {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    padding: 16px;
+  }
+
+  .create-exam-page .create-review-section {
+    padding: 22px;
+  }
+}
+
+@media (max-width: 420px) {
+  .create-exam-page .create-workflow-guide,
+  .create-exam-page .create-review-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+
+
+/* Student review downloads and grading actions */
+.student-review-downloads {
+  margin-top: 24px;
+}
+
+.student-review-download-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.student-review-download-actions button,
+.student-review-download-actions a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 42px;
+  padding: 10px 16px;
+  border: 1px solid var(--primary-color, #3157a4);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--primary-color, #3157a4);
+  font-size: 0.9rem;
+  font-weight: 600;
+  line-height: 1.3;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.student-review-download-actions button:hover:not(:disabled),
+.student-review-download-actions a:hover {
+  background: var(--primary-color, #3157a4);
+  color: #fff;
+}
+
+.student-review-download-actions button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.student-review-download-actions button:focus-visible,
+.student-review-download-actions a:focus-visible {
+  outline: 2px solid var(--primary-color, #3157a4);
+  outline-offset: 3px;
+}
+
+@media (max-width: 600px) {
+  .student-review-download-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .student-review-download-actions button,
+  .student-review-download-actions a {
+    width: 100%;
+  }
+}
+
+
+/* Per-student actions in the exam submissions roster */
+.student-review-roster-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 250px;
+}
+
+.student-review-roster-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 32px;
+  padding: 6px 10px;
+  border: 1px solid var(--primary-color, #3157a4);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--primary-color, #3157a4);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.student-review-roster-action:hover {
+  background: var(--primary-color, #3157a4);
+  color: #fff;
+}
+
+.student-review-roster-action:focus-visible,
+.student-review-roster-link:focus-visible {
+  outline: 2px solid var(--primary-color, #3157a4);
+  outline-offset: 3px;
+}
+
+/* Student-specific review links in the exam roster */
+.student-review-roster-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 32px;
+  padding: 6px 12px;
+  border: 1px solid var(--primary-color, #3157a4);
+  border-radius: 6px;
+  color: var(--primary-color, #3157a4);
+  font-size: 0.875rem;
+  font-weight: 600;
+  text-decoration: none;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.student-review-roster-link:hover,
+.student-review-roster-link:focus-visible {
+  background: var(--primary-color, #3157a4);
+  color: #fff;
+  outline-offset: 2px;
+}
+
+
+/* STUDENT REVIEW ROSTER LAYOUT V2 */
+.progress-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+
+.progress-table {
+  width: 100%;
+  min-width: 1120px;
+}
+
+.progress-table th,
+.progress-table td {
+  padding: 13px 14px;
+  vertical-align: middle;
+  line-height: 1.45;
+}
+
+.progress-table th:last-child,
+.progress-table td:last-child {
+  width: 290px;
+  min-width: 290px;
+}
+
+.progress-table td:nth-child(1) { min-width: 220px; }
+.progress-table td:nth-child(2) { min-width: 90px; }
+.progress-table td:nth-child(3) { min-width: 130px; }
+.progress-table td:nth-child(4),
+.progress-table td:nth-child(6) { min-width: 145px; }
+.progress-table td:nth-child(5),
+.progress-table td:nth-child(7) {
+  min-width: 95px;
+  white-space: nowrap;
+}
+
+.student-review-roster-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: stretch;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+}
+
+.student-review-roster-action,
+.student-review-roster-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  min-height: 36px;
+  padding: 7px 9px;
+  border-radius: 7px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.3;
+  text-align: center;
+  white-space: normal;
+}
+
+.student-review-roster-action:disabled {
+  border-color: #d7d5dc;
+  background: #f1f0f3;
+  color: #77727e;
+  cursor: not-allowed;
+  opacity: 1;
+}
+
+.student-review-roster-action:disabled:hover {
+  border-color: #d7d5dc;
+  background: #f1f0f3;
+  color: #77727e;
+}
+
+@media (max-width: 850px) {
+  .progress-table { min-width: 1120px; }
+}
+
+@media (max-width: 480px) {
+  .progress-table-wrap { border-radius: 10px; }
+  .progress-table th,
+  .progress-table td { padding: 11px 12px; }
 }

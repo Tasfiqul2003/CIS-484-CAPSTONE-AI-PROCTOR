@@ -114,6 +114,26 @@ def test_progress_returns_roster_students_and_latest_session_status():
         assert "ORDER BY es.started_at DESC, es.id DESC" in progress_sql
         assert "LIMIT 1" in progress_sql
         assert "professor_id" in db.calls[0][0]
+
+        # Timing uses the saved attempt settings and the database clock.
+        assert "latest.time_limit_minutes" in progress_sql
+        assert "latest.extended_time_multiplier" in progress_sql
+        assert "AS allowed_seconds" in progress_sql
+        assert "AS elapsed_seconds" in progress_sql
+        assert "COALESCE(latest.ended_at, progress_clock.server_now) - latest.started_at" in progress_sql
+        assert "AS remaining_seconds" in progress_sql
+        assert "progress_clock.server_now AS server_now" in progress_sql
+
+        # Elapsed and remaining time use the same persisted pause calculation
+        # as the exam timer.
+        assert "avatar_assistance_requests ap" in progress_sql
+        assert "LEAST(COALESCE(ap.pause_ended_at, clock_timestamp()), ap.pause_until)" in progress_sql
+
+        # Students without a session remain present in the roster.
+        assert body[0]["student_id"] == STUDENT_ID
+        assert body[0]["session_id"] is None
+        assert body[0]["started_at"] is None
+        assert body[0]["ended_at"] is None
     finally:
         app.dependency_overrides.clear()
         client.close()

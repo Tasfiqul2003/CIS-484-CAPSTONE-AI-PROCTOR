@@ -54,7 +54,14 @@
 .manage-exam-page .manage-exam-settings-card h3 { margin: 2px 0 7px; color: #312e81; font-size: 15px; line-height: 1.4; }
 .manage-exam-page .manage-exam-settings-card p { font-size: var(--exam-ui-font-size-small); margin-bottom: 10px; }
 .manage-exam-page .manage-exam-card-link { color: #6d28d9; }
-.manage-exam-page .manage-exam-card:hover { border-color: #c4b5fd; box-shadow: 0 8px 18px rgba(109, 40, 217, 0.08); }
+.manage-exam-page .manage-exam-card {
+  transition: border-color 0.18s ease;
+}
+.manage-exam-page .manage-exam-card:hover {
+  transform: none;
+  border-color: #c4b5fd;
+  box-shadow: var(--exam-ui-shadow);
+}
 .manage-exam-page :is(a, button, input, select, textarea, [tabindex]):focus-visible { outline: 3px solid var(--exam-ui-focus); outline-offset: 3px; }
 .manage-exam-page .settings-save-button { background: #6d28d9; font-family: inherit; font-size: 13px; }
 .manage-exam-page .settings-save-button:hover { background: #5b21b6; }

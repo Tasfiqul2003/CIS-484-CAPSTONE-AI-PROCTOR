@@ -18,6 +18,7 @@ import ManageExam from "./pages/professor/ManageExam";
 import ExamSettingsPage, { LegacyAvatarSettingsRedirect } from "./pages/professor/ExamSettingsPage";
 import { examSettingsCategories } from "./pages/professor/examSettingsNavigation";
 import ExamSubmissions from "./pages/professor/ExamSubmissions";
+import StudentReview from "./pages/professor/StudentReview";
 import ExamSubmitted from "./pages/student/ExamSubmitted";
 
 function AppRoutes() {
@@ -112,9 +113,22 @@ if (
     return <MaterialUpload />;
   }
 
+  const studentReviewRoute = path.match(
+    /^\/professor\/exams\/([^/]+)\/submissions\/([^/]+)\/?$/
+  );
+
+  if (studentReviewRoute) {
+    return (
+      <StudentReview
+        examId={studentReviewRoute[1]}
+        sessionId={studentReviewRoute[2]}
+      />
+    );
+  }
+
   if (
-  path.startsWith("/professor/exams/") &&
-  path.endsWith("/submissions")
+    path.startsWith("/professor/exams/") &&
+    path.endsWith("/submissions")
   ) {
     return <ExamSubmissions />;
   }

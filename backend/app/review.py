@@ -18,7 +18,6 @@ class GradeUpdate(BaseModel):
 
 
 class ReviewRequest(BaseModel):
-    professor_id: UUID
     grades: list[GradeUpdate]
 
 

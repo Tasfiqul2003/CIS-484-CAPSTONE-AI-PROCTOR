@@ -19,7 +19,7 @@ UNAVAILABLE = (
     ("Speech recognition", startup.UNAVAILABLE["transcription"]),
     ("Voice playback", startup.UNAVAILABLE["voice"]),
     ("Animated avatar", startup.UNAVAILABLE["avatar"]),
-    ("Camera recording", startup.UNAVAILABLE["camera_recording"]),
+    ("Camera recording", "Exam recording is managed by the web exam, not this tool menu."),
 )
 
 

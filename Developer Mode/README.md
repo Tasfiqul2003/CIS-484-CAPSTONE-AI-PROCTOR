@@ -6,7 +6,7 @@ Double-click **Start_Developer.bat** here or in the repository root. It opens a 
 |---|---|
 | Local Ollama | Starts a local `ollama serve` process on `127.0.0.1:11434`; select again to stop that process. No model download, loading or inference is requested. |
 | Performance tracking | Starts the live monitor; select again to stop collection and display a report. Measures host/GPU and menu-owned Ollama where supported. No Docker calls or website-process attribution. Defaults to off each session. |
-| Speech recognition, voice playback, animated avatar, camera recording | Marked unavailable with the missing integration explained. Selecting these entries does not enable a substitute or media capture. |
+| Speech recognition, voice playback, animated avatar, camera recording | Unavailable as menu controls. Speech/avatar integrations are missing; exam recording is managed by the web exam with its own storage configuration. Selecting these entries does not enable media capture. |
 
 Keep the menu open while using its tools. Select **0**, press **Ctrl+C**, or close input normally to stop tools owned by this session. An independently running Ollama service is shown as external and left under its original controls. A forced window close or power loss cannot guarantee cleanup or a final report. The menu does not save tool defaults or credentials; older ignored settings files are left unchanged.
 

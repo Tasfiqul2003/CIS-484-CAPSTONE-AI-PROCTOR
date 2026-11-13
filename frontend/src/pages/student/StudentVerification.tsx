@@ -88,7 +88,7 @@ export default function StudentVerification() {
           ) : (
             <>
               <p className="verification-description">
-                We found the following student record. Confirm that this information is yours.
+                We found a student record for this JACard. Confirm the name is yours before continuing.
               </p>
               <div className="student-identity">
                 <div className="student-avatar">👤</div>
@@ -97,19 +97,19 @@ export default function StudentVerification() {
                   <h2>{student.name}</h2>
                   <p>JMU EID: {student.eid}</p>
                 </div>
-                <div className="verified-badge">✓ EID Matched</div>
+                <div className="verified-badge">✓ Student record matched</div>
               </div>
 
               <div className="verification-warning">
-                <strong>Next: video check</strong>
+                <strong>Next: five-second camera preview</strong>
                 <p>
-                  The next screen is a prototype placeholder. It does not
-                  perform actual facial recognition yet.
+                  This preview does not perform facial recognition. Video is not
+                  recorded or saved, and you do not need to hold your JACard.
                 </p>
               </div>
 
               <button type="button" className="continue-button" onClick={continueToFaceCheck}>
-                Confirm Identity & Continue →
+                Confirm Student Record & Continue →
               </button>
               <button type="button" className="back-button" onClick={restart}>
                 This isn't me / Scan another card

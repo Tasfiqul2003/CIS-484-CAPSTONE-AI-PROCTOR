@@ -148,7 +148,7 @@ export default function StudentExams() {
           <>
             {student && (
               <section className="exam-card">
-                <p className="eyebrow">IDENTITY CONFIRMED</p>
+                <p className="eyebrow">STUDENT RECORD MATCHED</p>
                 <h2>Welcome, {student.name}</h2>
                 <p>JMU EID: {student.eid}</p>
                 <button type="button" className="back-button" onClick={changeStudent}>

@@ -19,7 +19,9 @@ type ReviewData = {
 };
 
 export default function ExamSessionReview() {
-  const sessionId = window.location.pathname.split("/").filter(Boolean).at(-1);
+  // The page lives at /professor/exam-sessions/<session id>/review, so the ID is the segment before "review".
+  const match = window.location.pathname.match(/^\/professor\/exam-sessions\/([^/]+)\/review\/?$/);
+  const sessionId = match ? decodeURIComponent(match[1]) : "";
   const [review, setReview] = useState<ReviewData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");

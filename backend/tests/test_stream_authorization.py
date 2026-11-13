@@ -39,7 +39,11 @@ class FakeDB:
                 "student_id": STUDENT_ID,
                 "exam_template_id": EXAM_ID,
                 "elapsed_min": 1,
+                "developer_demo": False,
             })
+
+        if "FROM exam_session_videos" in sql:
+            return FakeResult({"status": "recording", "next_chunk_index": 1})
 
         if "FROM interactions" in sql:
             return FakeResult(None)

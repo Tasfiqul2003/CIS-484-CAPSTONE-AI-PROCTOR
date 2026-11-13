@@ -62,14 +62,16 @@ export default function ExamSubmitted() {
         <h1>Your exam has been submitted</h1>
         {demoAttempt && <DemoAttemptNotice />}
         <p className="submission-message">
-          {demoAttempt ? "Your developer demo responses have been saved without grades." : "Your responses have been recorded for professor review."} Before returning
+          {demoAttempt
+            ? "Your developer demo responses have been saved without grades."
+            : "Your video, audio, and submitted answer transcript have been recorded for professor review."} Before returning
           to the main screen, you can share feedback about your experience.
         </p>
 
         <div className="submission-divider" />
         <div className="submission-status">
           <div className="submission-status-row"><span>Exam status</span><strong>Submitted ✓</strong></div>
-          <div className="submission-status-row"><span>Responses</span><strong>Recorded ✓</strong></div>
+          <div className="submission-status-row"><span>Responses and media</span><strong>Recorded ✓</strong></div>
           <div className="submission-status-row"><span>Grading</span><strong>{demoAttempt ? "Demo · grading disabled" : "Pending professor review"}</strong></div>
         </div>
 

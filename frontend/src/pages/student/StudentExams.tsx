@@ -126,19 +126,24 @@ export default function StudentExams() {
 
   return (
     <div className="student-exams-page">
+      <a className="student-skip-link" href="#main-content">Skip to content</a>
       <header className="simple-header">
-        <div className="logo"><span className="logo-icon" aria-hidden="true"><OralExamMark size={34} /></span><span>OralExam AI</span></div>
+        <a className="logo" href="/" aria-label="OralExam AI home">
+          <span className="logo-icon" aria-hidden="true"><OralExamMark size={34} /></span>
+          <span>OralExam AI</span>
+        </a>
       </header>
 
-      <main className="student-exams-content">
+      <main id="main-content" className="student-exams-content" aria-labelledby="student-exams-heading">
         <div className="student-exams-heading">
           <p className="eyebrow">STUDENT PORTAL</p>
-          <h1>Your Assigned Exams</h1>
-          <p>Select a published oral examination assigned to you by your instructor.</p>
+          <h1 id="student-exams-heading">Your exams</h1>
         </div>
 
         {loading ? (
-          <section className="exam-card"><h2>Loading your exams...</h2></section>
+          <section className="exam-card" role="status" aria-live="polite">
+            <h2>Loading exams…</h2>
+          </section>
         ) : error && !student ? (
           <section className="exam-card">
             <p className="exam-error" role="alert">{error}</p>
@@ -150,37 +155,42 @@ export default function StudentExams() {
               <section className="exam-card">
                 <p className="eyebrow">STUDENT RECORD MATCHED</p>
                 <h2>Welcome, {student.name}</h2>
-                <p>JMU EID: {student.eid}</p>
+                <p>EID · {student.eid}</p>
                 <button type="button" className="back-button" onClick={changeStudent}>
-                  End Session
+                  Switch student
                 </button>
               </section>
             )}
 
             {error && <p className="exam-error" role="alert">{error}</p>}
+            {error === "Complete the student photo check before starting this exam." && (
+              <button
+                type="button"
+                className="continue-button"
+                onClick={() => { window.location.href = "/student/face-verification"; }}
+              >
+                Repeat Photo Check
+              </button>
+            )}
 
-            <div className="exam-list">
+            <div className="exam-list" aria-label="Available exams">
               {exams.length === 0 ? (
                 <section className="exam-card">
-                  <div className="exam-icon">📚</div>
-                  <h2>No exams currently available</h2>
-                  <p>
-                    There are no published exams assigned to your student record.
-                    Contact your instructor if you expected an exam here.
-                  </p>
+                  <h2>No exams yet</h2>
+                  <p>Ask your instructor if you expected one.</p>
                 </section>
               ) : exams.map((exam) => (
                 <article className="exam-card" key={exam.id}>
                   <div className="exam-card-top">
                     <div className="exam-icon">{exam.icon || "🎓"}</div>
                     <div>
-                      <span className="exam-status">AVAILABLE</span>
+                      <span className="exam-status">Available</span>
                       <h2>{exam.title}</h2>
                     </div>
                   </div>
                   <div className="exam-details">
                     {exam.course && <span>{exam.course}</span>}
-                    {exam.course && exam.time_limit_minutes != null && <span>•</span>}
+                    {exam.course && exam.time_limit_minutes != null && <span aria-hidden="true">·</span>}
                     {exam.time_limit_minutes != null && <span>{exam.time_limit_minutes} minutes</span>}
                   </div>
                   {exam.description && <p>{exam.description}</p>}

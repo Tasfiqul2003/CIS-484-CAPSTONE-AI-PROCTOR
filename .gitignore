@@ -63,6 +63,7 @@ media/
 *.webm
 *.sqlite*
 *.db
+oralexam-airgap-images.tar
 
 # New raw results are local until reviewed as synthetic; preserve known evidence
 /tests/results/*

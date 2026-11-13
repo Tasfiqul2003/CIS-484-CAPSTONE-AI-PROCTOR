@@ -15,6 +15,7 @@ type UploadResult = {
   rows_processed: number;
   students_added: number;
   students_updated: number;
+  photos_imported?: number;
 };
 
 function parseCSV(text: string): string[][] {
@@ -111,6 +112,7 @@ function readRoster(text: string): RosterRow[] {
 
 export default function RosterUpload({ examId }: Props) {
   const [file, setFile] = useState<File | null>(null);
+  const isPhotoArchive = file?.name.toLowerCase().endsWith(".zip") ?? false;
   const [roster, setRoster] = useState<RosterRow[]>([]);
   const [busy, setBusy] = useState(false);
   const [reading, setReading] = useState(false);
@@ -138,8 +140,12 @@ export default function RosterUpload({ examId }: Props) {
 
     if (!selected) return;
 
+    if (selected.name.toLowerCase().endsWith(".zip")) {
+      return;
+    }
+
     if (!selected.name.toLowerCase().endsWith(".csv")) {
-      setError("Please select a .csv file.");
+      setError("Please select a .csv or official-photo .zip file.");
       return;
     }
 
@@ -241,7 +247,13 @@ export default function RosterUpload({ examId }: Props) {
   }
 
   async function uploadRoster() {
-    if (!file || roster.length === 0 || busy || reading || error) return;
+    if (
+      !file ||
+      (!isPhotoArchive && roster.length === 0) ||
+      busy ||
+      reading ||
+      error
+    ) return;
 
     setBusy(true);
     setError("");
@@ -290,20 +302,22 @@ export default function RosterUpload({ examId }: Props) {
         <div>
           <h3>Student Exam Roster</h3>
           <p>
-            Manage which students are authorized to take this exam.
-            Import their names, email addresses, and JMU EIDs.
+            Manage which students are authorized to take this exam. Import
+            names, email addresses, and JMU EIDs; an official-photo ZIP can
+            also provide the reference photos used for the camera check.
           </p>
         </div>
       </div>
 
       <div className="roster-format-card">
-        <div className="roster-format-icon">CSV</div>
+        <div className="roster-format-icon">CSV / ZIP</div>
         <div>
-          <strong>Required file format</strong>
+          <strong>Supported roster formats</strong>
           <p>
-            Your first row must contain{" "}
-            <code>name,email,eid</code>. Each following row represents
-            one student.
+            A CSV starts with <code>name,email,eid</code>. For official photos,
+            upload a ZIP containing <code>roster.csv</code> and{" "}
+            <code>photos/&lt;EID&gt;.jpg</code> (JPEG or PNG also accepted).
+            Photos stay on the server and are not included in the container image.
           </p>
         </div>
       </div>
@@ -312,7 +326,7 @@ export default function RosterUpload({ examId }: Props) {
         <span>Choose a roster file</span>
         <input
           type="file"
-          accept=".csv,text/csv"
+          accept=".csv,.zip,text/csv,application/zip"
           disabled={busy || reading}
           onChange={handleFileChange}
         />
@@ -328,6 +342,8 @@ export default function RosterUpload({ examId }: Props) {
                 ? "Reading file..."
                 : error
                   ? "Needs attention"
+                  : isPhotoArchive
+                    ? "Official-photo archive; server will validate the roster and images"
                   : `${roster.length} student${roster.length === 1 ? "" : "s"} found`}
             </span>
           </div>
@@ -417,10 +433,20 @@ export default function RosterUpload({ examId }: Props) {
         <button
           type="button"
           className="settings-save-button"
-          disabled={!file || roster.length === 0 || busy || reading || !!error}
+          disabled={
+            !file ||
+            (!isPhotoArchive && roster.length === 0) ||
+            busy ||
+            reading ||
+            !!error
+          }
           onClick={uploadRoster}
         >
-          {busy ? "Uploading roster..." : "Upload Student Roster"}
+          {busy
+            ? "Uploading roster..."
+            : isPhotoArchive
+              ? "Upload Roster & Official Photos"
+              : "Upload Student Roster"}
         </button>
       </div>
 
@@ -437,6 +463,9 @@ export default function RosterUpload({ examId }: Props) {
           <span>
             {result.rows_processed} rows processed · {result.students_added}{" "}
             new students · {result.students_updated} existing students updated
+            {result.photos_imported
+              ? ` · ${result.photos_imported} official photos imported`
+              : ""}
           </span>
           <button
             type="button"

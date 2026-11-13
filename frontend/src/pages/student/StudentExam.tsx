@@ -18,6 +18,8 @@ type StartResponse = ExamTiming & {
 type AnswerResponse = { done: true; reason?: string }
   | (ExamTiming & { done: false; sequence_num: number; question: string });
 
+type RecordingChunk = { index: number; blob: Blob };
+
 async function apiRequest<T>(
   endpoint: string,
   body: Record<string, unknown>,
@@ -51,8 +53,12 @@ export default function StudentExam() {
   const [answer, setAnswer] = useState("");
   const [showConfirmation, setShowConfirmation] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [consentAccepted, setConsentAccepted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [assisting, setAssisting] = useState(false);
+  const [recordingActive, setRecordingActive] = useState(false);
+  const [recordingError, setRecordingError] = useState("");
+  const [finalizationPending, setFinalizationPending] = useState(false);
   const [textSize, setTextSize] = useState(16);
   const [error, setError] = useState("");
   const started = useRef(false);
@@ -61,6 +67,11 @@ export default function StudentExam() {
   const clock = useRef<ExamClock | null>(null);
   const submittingRequest = useRef(false);
   const automaticSubmission = useRef<number | null>(null);
+  const mediaStream = useRef<MediaStream | null>(null);
+  const mediaRecorder = useRef<MediaRecorder | null>(null);
+  const recordingChunks = useRef<RecordingChunk[]>([]);
+  const nextChunkIndex = useRef(0);
+  const uploadPromise = useRef<Promise<void> | null>(null);
   const expired = remaining.exam === 0 || remaining.question === 0;
 
   const updateClock = useCallback((timing: ExamTiming) => {
@@ -82,15 +93,143 @@ export default function StudentExam() {
     return () => window.clearInterval(timer);
   }, []);
 
-  useEffect(() => {
-    // Avoid starting two sessions during React's development checks.
+  async function flushRecordingChunks(id: string, token: string) {
+    if (uploadPromise.current) {
+      await uploadPromise.current;
+    } else {
+      const operation = (async () => {
+        while (recordingChunks.current.length > 0) {
+          const next = recordingChunks.current[0];
+          const formData = new FormData();
+          formData.append("index", String(next.index));
+          formData.append("chunk", next.blob, `chunk-${next.index}.webm`);
+          const response = await fetch(
+            `/api/exam/sessions/${encodeURIComponent(id)}/video-recording/chunks`,
+            {
+              method: "POST",
+              headers: { Authorization: `Bearer ${token}` },
+              body: formData,
+            },
+          );
+          if (!response.ok) {
+            const body = await response.json().catch(() => ({}));
+            throw new Error(
+              typeof body.detail === "string"
+                ? body.detail
+                : `Unable to save the exam recording (${response.status}).`,
+            );
+          }
+          recordingChunks.current.shift();
+        }
+        setRecordingError("");
+      })();
+      uploadPromise.current = operation;
+      try {
+        await operation;
+      } finally {
+        if (uploadPromise.current === operation) uploadPromise.current = null;
+      }
+    }
+
+    if (recordingChunks.current.length > 0) {
+      await flushRecordingChunks(id, token);
+    }
+  }
+
+  function getRecordingMimeType() {
+    const mimeType = [
+      "video/webm;codecs=vp8,opus",
+      "video/webm",
+    ].find(type => MediaRecorder.isTypeSupported(type));
+    if (!mimeType) {
+      throw new Error("This browser cannot record the required WebM exam video.");
+    }
+    return mimeType;
+  }
+
+  function startMediaRecording(
+    id: string,
+    token: string,
+    stream: MediaStream,
+    mimeType: string,
+  ) {
+    const recorder = new MediaRecorder(stream, {
+      mimeType,
+      videoBitsPerSecond: 500_000,
+      audioBitsPerSecond: 64_000,
+    });
+    recordingChunks.current = [];
+    nextChunkIndex.current = 0;
+    recorder.addEventListener("dataavailable", event => {
+      if (event.data.size === 0) return;
+      recordingChunks.current.push({
+        index: nextChunkIndex.current++,
+        blob: event.data,
+      });
+      void flushRecordingChunks(id, token).catch(error => {
+        setRecordingError(
+          error instanceof Error
+            ? error.message
+            : "The exam recording could not be saved.",
+        );
+        if (recorder.state === "recording") recorder.stop();
+      });
+    });
+    recorder.addEventListener("error", () => {
+      setRecordingError("The camera or microphone recording stopped unexpectedly.");
+      setRecordingActive(false);
+    });
+    recorder.start(2000);
+    mediaRecorder.current = recorder;
+    mediaStream.current = stream;
+    setRecordingActive(true);
+  }
+
+  async function finishRecording(id: string, token: string) {
+    const recorder = mediaRecorder.current;
+    if (recorder?.state === "recording") {
+      await new Promise<void>(resolve => {
+        recorder.addEventListener("stop", () => resolve(), { once: true });
+        recorder.stop();
+      });
+    }
+    await flushRecordingChunks(id, token);
+    const response = await fetch(
+      `/api/exam/sessions/${encodeURIComponent(id)}/video-recording/complete`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ expected_chunk_count: nextChunkIndex.current }),
+      },
+    );
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}));
+      throw new Error(
+        typeof body.detail === "string"
+          ? body.detail
+          : `Unable to finalize the exam recording (${response.status}).`,
+      );
+    }
+    mediaStream.current?.getTracks().forEach(track => track.stop());
+    mediaStream.current = null;
+    mediaRecorder.current = null;
+    setRecordingActive(false);
+    setRecordingError("");
+    setFinalizationPending(false);
+  }
+
+  async function beginExam() {
     if (started.current) return;
     started.current = true;
+    setLoading(true);
+    setError("");
 
     const params = new URLSearchParams(window.location.search);
     const examTemplateId = params.get("templateId");
     const studentId = params.get("studentId");
-
     if (
       !examTemplateId ||
       !studentId ||
@@ -102,27 +241,99 @@ export default function StudentExam() {
     }
 
     const storageKey = `oralexam_attempt:${examTemplateId}:${studentId}`;
-    async function loadAttempt() {
-      let result: StartResponse;
+    let stream: MediaStream | null = null;
+    try {
+      const studentToken = sessionStorage.getItem(
+        `oralexam_exam_token:${examTemplateId}:${studentId}`,
+      );
+      if (!studentToken) {
+        throw new Error("Exam authorization is missing. Return to your exam list to start.");
+      }
+      const preflight = await apiRequest<{
+        ready: boolean;
+        recording_required: boolean;
+      }>("/exam/video-recording/preflight", {
+        student_id: studentId,
+        exam_template_id: examTemplateId,
+        student_token: studentToken,
+      });
+      if (!preflight.ready || typeof preflight.recording_required !== "boolean") {
+        throw new Error("The server did not confirm exam recording readiness.");
+      }
+      let mimeType = "";
+      if (preflight.recording_required) {
+        if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
+          throw new Error("Camera and microphone access requires a trusted HTTPS connection.");
+        }
+        if (typeof MediaRecorder === "undefined") {
+          throw new Error("This browser does not support exam video recording.");
+        }
+        mimeType = getRecordingMimeType();
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { width: { ideal: 640 }, height: { ideal: 480 } },
+          audio: true,
+        });
+      }
+
       const saved = sessionStorage.getItem(storageKey);
+      if (saved && preflight.recording_required) {
+        throw new Error(
+          "This attempt may have an interrupted recording and cannot be safely resumed. Contact your professor.",
+        );
+      }
+
+      let result: StartResponse;
       if (saved) {
         const attempt = JSON.parse(saved) as { id: string; token: string };
-        const response = await fetch(`/api/exam/sessions/${encodeURIComponent(attempt.id)}`, {
-          headers: { Authorization: `Bearer ${attempt.token}` },
-        });
-        if (!response.ok) throw new Error("Unable to resume this attempt. Please contact your professor.");
+        const response = await fetch(
+          `/api/exam/sessions/${encodeURIComponent(attempt.id)}`,
+          { headers: { Authorization: `Bearer ${attempt.token}` } },
+        );
+        if (!response.ok) {
+          throw new Error("Unable to resume this attempt. Please contact your professor.");
+        }
         result = await response.json();
         sessionToken.current = attempt.token;
       } else {
-        const token = sessionStorage.getItem(`oralexam_exam_token:${examTemplateId}:${studentId}`);
-        if (!token) throw new Error("Exam authorization is missing. Return to your exam list to start.");
-        result = await apiRequest<StartResponse>("/exam/start", {
-          student_id: studentId, exam_template_id: examTemplateId, student_token: token,
+        const newAttempt = await apiRequest<StartResponse>("/exam/start", {
+          student_id: studentId,
+          exam_template_id: examTemplateId,
+          student_token: studentToken,
         });
+        result = newAttempt;
         if (!result.session_token) throw new Error("Session authorization is missing.");
         sessionToken.current = result.session_token;
-        sessionStorage.setItem(storageKey, JSON.stringify({ id: result.session_id, token: result.session_token }));
+        sessionStorage.setItem(
+          storageKey,
+          JSON.stringify({ id: result.session_id, token: result.session_token }),
+        );
       }
+
+      if (preflight.recording_required && result.developer_demo !== true) {
+        if (!stream) throw new Error("Camera and microphone access is required.");
+        const startResponse = await fetch(
+          `/api/exam/sessions/${encodeURIComponent(result.session_id)}/video-recording/start`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${sessionToken.current}`,
+            },
+            body: JSON.stringify({ content_type: mimeType }),
+          },
+        );
+        if (!startResponse.ok) {
+          const body = await startResponse.json().catch(() => ({}));
+          throw new Error(
+            typeof body.detail === "string"
+              ? body.detail
+              : `Unable to start secure video recording (${startResponse.status}).`,
+          );
+        }
+        startMediaRecording(result.session_id, sessionToken.current, stream, mimeType);
+        stream = null;
+      }
+
       if (result.status === "in_progress") updateClock(result);
       setSessionId(result.session_id);
       setDemoAttempt(result.developer_demo === true);
@@ -135,18 +346,55 @@ export default function StudentExam() {
       if (result.status !== "in_progress") {
         setCompletedQuestions(result.sequence_num);
         setShowConfirmation(true);
-        return;
       }
-    }
-    void loadAttempt().catch((err: unknown) => {
+    } catch (err) {
+      stream?.getTracks().forEach(track => track.stop());
       setError(err instanceof Error ? err.message : "Unable to start the exam.");
-    }).finally(() => setLoading(false));
-  }, [updateClock]);
+      started.current = false;
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    return () => {
+      if (mediaRecorder.current?.state === "recording") mediaRecorder.current.stop();
+      mediaStream.current?.getTracks().forEach(track => track.stop());
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!recordingActive || !sessionId) return;
+    const warnBeforeLeaving = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warnBeforeLeaving);
+    return () => window.removeEventListener("beforeunload", warnBeforeLeaving);
+  }, [recordingActive, sessionId]);
+
+  async function finalizeCompletedExam() {
+    if (!sessionId) return;
+    setFinalizationPending(true);
+    try {
+      if (!demoAttempt) await finishRecording(sessionId, sessionToken.current);
+      setShowConfirmation(true);
+      setRecordingError("");
+      setFinalizationPending(false);
+    } catch (err) {
+      setRecordingError(
+        err instanceof Error
+          ? err.message
+          : "The exam recording could not be finalized.",
+      );
+    }
+  }
 
   const handleNext = useCallback(async () => {
     const current = clock.current ? remainingTime(clock.current, performance.now()) : remaining;
     const timedOut = current.exam === 0 || current.question === 0;
-    if (!sessionId || (!answer.trim() && !timedOut) || submittingRequest.current || assisting) return;
+    if (!sessionId || (!answer.trim() && !timedOut) || submittingRequest.current
+        || assisting || (!demoAttempt && (!recordingActive || Boolean(recordingError)))) return;
 
     submittingRequest.current = true;
     setSubmitting(true);
@@ -162,7 +410,7 @@ export default function StudentExam() {
       if (result.done) {
         clock.current = null;
         setCompletedQuestions(questionNumber);
-        setShowConfirmation(true);
+        await finalizeCompletedExam();
         return;
       }
 
@@ -186,7 +434,7 @@ export default function StudentExam() {
         if (state.status !== "in_progress") {
           clock.current = null;
           setCompletedQuestions(state.sequence_num);
-          setShowConfirmation(true);
+          await finalizeCompletedExam();
           return;
         }
         updateClock(state);
@@ -208,7 +456,18 @@ export default function StudentExam() {
       submittingRequest.current = false;
       setSubmitting(false);
     }
-  }, [sessionId, answer, questionNumber, remaining, updateClock, assisting]);
+  }, [
+    sessionId,
+    answer,
+    questionNumber,
+    remaining,
+    updateClock,
+    assisting,
+    demoAttempt,
+    recordingActive,
+    recordingError,
+    finalizeCompletedExam,
+  ]);
 
   useEffect(() => {
     if (!expired || loading || showConfirmation || submitting || assisting || !sessionId
@@ -221,6 +480,56 @@ export default function StudentExam() {
     // The backend has already ended the session when it returns done: true.
     window.location.href = "/student/exam/submitted";
   };
+
+  if (!consentAccepted && !sessionId) {
+    return (
+    <div className="student-exam-page">
+      <header className="student-exam-header">
+        <div className="student-exam-logo">
+          <span aria-hidden="true"><OralExamMark size={34} /></span>
+          <strong>OralExam AI</strong>
+        </div>
+      </header>
+      <main className="student-exam-content">
+        <div className="exam-question-card">
+          <h1>Exam recording notice</h1>
+          <p>
+            Assessed exams record camera video and microphone audio while the
+            exam is in progress. The recording and your submitted answers are
+            stored on the exam server and made available to the professor who
+            owns this exam. The video is retained until the configured end of
+            the semester.
+          </p>
+          <p>
+            Camera, microphone, and server storage must remain available for
+            the full exam. If recording cannot be started or saved, the exam
+            cannot proceed or be submitted.
+          </p>
+          <p>Developer demo attempts are not recorded or graded.</p>
+          <div className="confirmation-actions">
+            <button
+              type="button"
+              className="confirmation-submit-button"
+              onClick={() => {
+                setConsentAccepted(true);
+                void beginExam();
+              }}
+            >
+              I understand — start recording and exam
+            </button>
+            <button
+              type="button"
+              className="back-button"
+              onClick={() => { window.location.href = "/student/exams"; }}
+            >
+              Cancel and return to exams
+            </button>
+          </div>
+        </div>
+      </main>
+    </div>
+    );
+  }
 
   if (loading) {
     return (
@@ -291,8 +600,8 @@ export default function StudentExam() {
             {demoAttempt && <DemoAttemptNotice />}
 
             <p className="confirmation-message">
-              You have reached the end of your oral examination. Your
-              responses have been sent to the exam server.
+              You have reached the end of your oral examination. Your answers
+              and the exam recording have been saved to the exam server.
             </p>
 
             <div className="confirmation-summary">
@@ -313,7 +622,9 @@ export default function StudentExam() {
             <div className="confirmation-warning">
               <strong>You cannot return to the completed exam.</strong>
               <span>
-                {demoAttempt ? "This developer demo is saved separately from assessed work and cannot receive grades." : "Your professor will review your recorded responses."}
+                {demoAttempt
+                  ? "This developer demo is saved separately from assessed work and cannot receive grades."
+                  : "Your professor can review the video, audio, and submitted answer transcript."}
               </span>
             </div>
 
@@ -346,9 +657,46 @@ export default function StudentExam() {
       : "Question time has expired. Continuing with this question marked unanswered."}
       {error && " Use Retry submission to continue."}</p>}
     {error && <p role="alert" className="exam-error">{error}</p>}
+    {recordingError && (
+      <div role="alert" className="exam-error">
+        <p>{recordingError}</p>
+        {finalizationPending ? (
+          <button type="button" onClick={() => void finalizeCompletedExam()}>
+            Retry saving the completed recording
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={() => {
+              if (!sessionId) return;
+              void flushRecordingChunks(sessionId, sessionToken.current)
+                .then(() => setRecordingError(""))
+                .catch(retryError => setRecordingError(
+                  retryError instanceof Error ? retryError.message : "The recording upload failed.",
+                ));
+            }}
+          >
+            Retry recording upload
+          </button>
+        )}
+        {!recordingActive && !finalizationPending && (
+          <p>Recording stopped. Do not continue; contact your professor for help.</p>
+        )}
+      </div>
+    )}
+    {!demoAttempt && !recordingActive && !showConfirmation && (
+      <p role="status">Exam interaction is paused until recording is active.</p>
+    )}
     <div className="exam-question-footer">
-      <span role="status">{submitting ? "Saving response…" : ""}</span>
-      <button type="submit" className="exam-next-button" disabled={(!answer.trim() && !expired) || submitting || assisting}>
+      <span role="status">
+        {submitting ? "Saving response…" : recordingActive ? "Recording video and audio…" : ""}
+      </span>
+      <button
+        type="submit"
+        className="exam-next-button"
+        disabled={(!answer.trim() && !expired) || submitting || assisting
+          || (!demoAttempt && (!recordingActive || Boolean(recordingError)))}
+      >
         {submitting ? "Saving…" : expired ? "Retry submission →" : demoAttempt ? "Submit test answer →" : "Submit answer →"}
       </button>
     </div>

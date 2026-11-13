@@ -43,6 +43,10 @@ services:
       OLLAMA_MODEL: llama3.1   # change to your model / Modelfile name
       AUTH_SECRET_KEY: ${AUTH_SECRET_KEY}
       ADMIN_BOOTSTRAP_TOKEN: ${ADMIN_BOOTSTRAP_TOKEN}
+      EXAM_VIDEO_DIR: /var/lib/oral-exam/recordings
+      EXAM_VIDEO_RETENTION_UNTIL: ${EXAM_VIDEO_RETENTION_UNTIL:-}
+      FACE_DETECTOR_MODEL_PATH: /models/face_detection_yunet_2023mar.onnx
+      FACE_RECOGNIZER_MODEL_PATH: /models/face_recognition_sface_2021dec.onnx
     depends_on:
       db:
         condition: service_healthy
@@ -52,8 +56,11 @@ services:
       - "8000:8000"
     volumes:
       - ./backend/app:/app/app
+      - exam_videos:/var/lib/oral-exam/recordings
+      - ${FACE_MODELS_DIR:-./models}:/models:ro
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
 volumes:
   pgdata:
   ollama_models:
+  exam_videos:

@@ -1,5 +1,6 @@
 import json
 import os
+from datetime import datetime, timezone
 from uuid import UUID
 
 import httpx
@@ -56,9 +57,11 @@ def grade_session(
 
     session = db.execute(
         text("""SELECT s.status, s.developer_demo, t.professor_id, t.rubric, t.title,
-                       t.topic_coverage_required
+                       t.topic_coverage_required,
+                       v.status AS video_status, v.expires_at AS video_expires_at
                 FROM exam_sessions s
                 JOIN exam_templates t ON t.id = s.exam_template_id
+                LEFT JOIN exam_session_videos v ON v.session_id = s.id
                 WHERE s.id = CAST(:sid AS uuid)"""),
         {"sid": sid},
     ).mappings().first()
@@ -76,6 +79,12 @@ def grade_session(
         raise HTTPException(409, "Developer demo attempts cannot receive assessment grades.")
     if session["status"] not in ("pending_grading", "flagged"):
         raise HTTPException(409, f"Session is {session['status']}, not ready for grading")
+    if (
+        session.get("video_status") != "completed"
+        or session.get("video_expires_at") is None
+        or session["video_expires_at"] <= datetime.now(timezone.utc)
+    ):
+        raise HTTPException(409, "A completed, retained exam video is required before grading.")
 
     already = db.execute(
         text("SELECT count(*) FROM grades WHERE session_id = CAST(:sid AS uuid)"),

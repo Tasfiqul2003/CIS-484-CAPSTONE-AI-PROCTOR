@@ -88,6 +88,8 @@ def test_start_uses_persisted_accommodation_for_token_lifetime(monkeypatch, base
     class DB:
         def execute(self, statement, params=None):
             sql = str(statement)
+            if "FROM student_face_verifications" in sql:
+                return Result({"status": "matched", "attempt_count": 1})
             if "SELECT * FROM exam_templates" in sql:
                 # Different from the insert snapshot; the token must use the saved attempt.
                 return Result({"status": "published", "time_limit_minutes": 10})
@@ -127,6 +129,8 @@ def test_start_refuses_if_roster_membership_disappears_before_snapshot(monkeypat
                 return Result()
             if "FROM students" in sql or "FROM exam_roster" in sql:
                 return Result({"id": STUDENT})
+            if "FROM student_face_verifications" in sql:
+                return Result({"attempt_count": 1, "status": "matched"})
             raise AssertionError("No question may be inserted without roster membership")
 
         def rollback(self):

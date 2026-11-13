@@ -78,6 +78,8 @@ def test_progress_returns_roster_students_and_latest_session_status():
             "eid": "alex123",
             "session_id": None,
             "status": None,
+            "face_check_attempt_count": 3,
+            "face_check_help_required": True,
             "started_at": None,
             "ended_at": None,
         },
@@ -88,6 +90,9 @@ def test_progress_returns_roster_students_and_latest_session_status():
             "eid": "sam123",
             "session_id": "50000000-0000-4000-8000-000000000001",
             "status": "in_progress",
+            "identity_check_completed": True,
+            "identity_review_required": True,
+            "identity_verification_attempts": 3,
             "started_at": "2026-10-28T12:00:00",
             "ended_at": None,
         },
@@ -104,13 +109,20 @@ def test_progress_returns_roster_students_and_latest_session_status():
         assert body[0]["student_name"] == "Alex Student"
         assert body[0]["session_id"] is None
         assert body[0]["status"] is None
+        assert body[0]["face_check_help_required"] is True
+        assert body[0]["face_check_attempt_count"] == 3
         assert body[1]["student_name"] == "Sam Student"
         assert body[1]["status"] == "in_progress"
+        assert body[1]["identity_review_required"] is True
+        assert body[1]["identity_check_completed"] is True
+        assert body[1]["identity_verification_attempts"] == 3
 
         progress_sql = next(
             sql for sql, _ in db.calls if "FROM exam_roster AS r" in sql
         )
         assert "LEFT JOIN LATERAL" in progress_sql
+        assert "student_face_verifications" in progress_sql
+        assert "exam_session_videos" in progress_sql
         assert "ORDER BY es.started_at DESC, es.id DESC" in progress_sql
         assert "LIMIT 1" in progress_sql
         assert "professor_id" in db.calls[0][0]

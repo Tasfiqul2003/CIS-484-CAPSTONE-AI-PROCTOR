@@ -9,3 +9,5 @@ python-multipart
 python-docx
 pypdf
 python-pptx
+Pillow>=10
+opencv-contrib-python-headless>=4.10,<5

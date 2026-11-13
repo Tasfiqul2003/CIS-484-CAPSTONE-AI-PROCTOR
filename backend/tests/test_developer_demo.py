@@ -236,6 +236,8 @@ class StartDB:
 
     def execute(self, statement, params=None):
         sql = str(statement)
+        if "FROM student_face_verifications" in sql:
+            return Result({"status": "matched", "attempt_count": 1})
         if "SELECT * FROM exam_templates" in sql:
             return Result({"status": "published", "time_limit_minutes": 30})
         if "FROM students" in sql:

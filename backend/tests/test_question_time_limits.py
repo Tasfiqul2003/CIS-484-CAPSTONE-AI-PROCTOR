@@ -134,7 +134,10 @@ class TurnDB:
             return Result({"status": "in_progress", "student_id": STUDENT,
                            "exam_template_id": EXAM, "time_limit_minutes": 30,
                            "question_time_limit_minutes": self.question_limit,
-                           "elapsed_min": self.exam_elapsed})
+                           "elapsed_min": self.exam_elapsed,
+                           "developer_demo": False})
+        if "FROM exam_session_videos" in sql:
+            return Result({"status": "recording", "next_chunk_index": 1})
         if "student_answer_transcript IS NULL" in sql and "SELECT id" in sql:
             return Result({"id": "synthetic-pending", "sequence_num": 1,
                            "created_at": NOW - timedelta(minutes=self.question_elapsed),
@@ -277,6 +280,8 @@ def test_start_copies_question_limit_with_total_limit_and_uses_wall_clock_for_qu
     class StartDB:
         def execute(self, statement, params=None):
             sql = str(statement)
+            if "FROM student_face_verifications" in sql:
+                return Result({"status": "matched", "attempt_count": 1})
             if "SELECT * FROM exam_templates" in sql:
                 return Result({"id": EXAM, "status": "published", "time_limit_minutes": 30,
                                "question_time_limit_minutes": 2})

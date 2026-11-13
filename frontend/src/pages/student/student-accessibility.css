@@ -1,0 +1,291 @@
+:where(.home-page, .verification-page, .face-page, .student-exams-page) {
+  --jmu-purple: #450084;
+  --jmu-gold: #cbb677;
+}
+
+html:not([data-theme="dark"]) :where(
+  .home-page,
+  .verification-page,
+  .face-page,
+  .student-exams-page
+) {
+  --oe-accent: var(--jmu-purple);
+  --oe-accent-hover: #350064;
+  --oe-accent-soft: #f2ecf7;
+  --oe-focus: 0 0 0 3px rgb(69 0 132 / 32%);
+}
+
+.home-page .home-header,
+.verification-page .simple-header,
+.face-page .simple-header,
+.student-exams-page .simple-header {
+  border-bottom: 3px solid var(--jmu-gold);
+}
+
+.home-page .logo-icon,
+.verification-page .logo-icon,
+.face-page .logo-icon,
+.student-exams-page .logo-icon {
+  background: var(--jmu-purple);
+  color: #fff;
+}
+
+.student-skip-link {
+  position: absolute;
+  z-index: 20;
+  top: -100px;
+  left: 16px;
+  padding: 10px 16px;
+  border: 2px solid var(--jmu-gold);
+  border-radius: 0 0 8px 8px;
+  background: var(--jmu-purple);
+  color: #fff;
+  font-weight: 700;
+}
+
+.student-skip-link:focus {
+  top: 0;
+  color: #fff;
+}
+
+:is(.home-page, .verification-page, .face-page, .student-exams-page)
+  :is(a, button, input, textarea, select, summary, [tabindex]):focus-visible {
+  outline: 3px solid var(--jmu-purple);
+  outline-offset: 3px;
+  box-shadow: 0 0 0 2px #fff;
+}
+
+.home-page .hero-text h1,
+.verification-page .verification-card h1,
+.face-page .verification-card h1,
+.student-exams-page .student-exams-heading h1 {
+  max-width: 20ch;
+  font-size: clamp(2rem, 5vw, 3.25rem);
+  line-height: 1.12;
+}
+
+.home-page .home-content {
+  padding-bottom: 48px;
+}
+
+.home-page .role-selection {
+  margin-top: clamp(24px, 5vw, 48px);
+}
+
+.home-page .role-selection h2 {
+  margin-bottom: 18px;
+}
+
+.home-page .role-card {
+  min-height: 128px;
+}
+
+.home-page .home-footer {
+  padding-block: 18px;
+}
+
+.home-page .home-footer p {
+  margin: 0;
+}
+
+.verification-page,
+.face-page {
+  min-height: 100vh;
+}
+
+.verification-content {
+  width: min(100% - 32px, 660px);
+  padding-block: clamp(24px, 5vh, 52px);
+}
+
+.verification-card {
+  padding: clamp(24px, 5vw, 40px);
+}
+
+.verification-card > p {
+  max-width: 58ch;
+}
+
+.verification-card .verification-description,
+.verification-card .photo-check-hint {
+  color: var(--oe-text-muted);
+}
+
+.verification-card :is(button, input) {
+  min-height: 48px;
+}
+
+.student-home-link {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  margin-top: 12px;
+  text-decoration: none;
+}
+
+.jacard-placeholder {
+  display: grid;
+  gap: 16px;
+  margin-block: 24px;
+  padding: clamp(18px, 4vw, 28px);
+  border: 1px solid var(--oe-border);
+  border-top: 4px solid var(--jmu-gold);
+  border-radius: var(--oe-radius-md);
+  background: var(--oe-surface-muted);
+  text-align: left;
+}
+
+.jacard-placeholder h2,
+.jacard-placeholder p {
+  margin: 0;
+}
+
+.jacard-placeholder form {
+  display: grid;
+  gap: 10px;
+}
+
+.jacard-placeholder label {
+  color: var(--oe-text);
+  font-weight: 700;
+}
+
+.jacard-placeholder form p {
+  color: var(--oe-text-muted);
+}
+
+.jacard-placeholder input {
+  width: 100%;
+  min-height: 48px;
+  padding: 10px 12px;
+  font-size: 1rem;
+}
+
+.jacard-placeholder button {
+  min-height: 48px;
+  padding: 10px 18px;
+  border: 0;
+  border-radius: var(--oe-radius-sm);
+  background: var(--jmu-purple);
+  color: #fff;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.jacard-placeholder button:hover:not(:disabled) {
+  background: #350064;
+}
+
+.student-identity {
+  border-left: 4px solid var(--jmu-gold);
+}
+
+.student-identity .student-details h2 {
+  margin-top: 0;
+}
+
+.verification-warning {
+  border-left: 4px solid var(--jmu-gold);
+}
+
+.face-page .camera-live-preview {
+  display: block;
+  width: min(100%, 440px);
+  min-height: 220px;
+  margin: 20px auto;
+  border: 3px solid var(--oe-border);
+  border-radius: var(--oe-radius-md);
+  background: #17151f;
+  object-fit: cover;
+}
+
+.face-page .camera-status {
+  font-weight: 700;
+}
+
+.face-page .camera-timer {
+  width: fit-content;
+  margin: 8px auto 16px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: var(--oe-accent-soft);
+  color: var(--oe-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.photo-check-details {
+  margin-block: 16px;
+  text-align: left;
+}
+
+.photo-check-details summary {
+  min-height: 44px;
+  padding-block: 10px;
+  color: var(--jmu-purple);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.photo-check-details p {
+  max-width: 58ch;
+  color: var(--oe-text-muted);
+}
+
+.student-exams-content {
+  width: min(100% - 32px, 920px);
+  padding-block: clamp(24px, 5vh, 52px);
+}
+
+.student-exams-heading {
+  margin-bottom: 24px;
+}
+
+.student-exams-content .exam-card {
+  border-top: 4px solid var(--jmu-gold);
+}
+
+.student-exams-content .exam-card :is(button, a) {
+  min-height: 48px;
+}
+
+@media (max-width: 600px) {
+  .home-page .home-header,
+  .verification-page .simple-header,
+  .face-page .simple-header,
+  .student-exams-page .simple-header {
+    padding-inline: 16px;
+  }
+
+  .home-page .hero-section {
+    padding-top: 40px;
+  }
+
+  .home-page .role-cards {
+    gap: 12px;
+  }
+
+  .verification-card {
+    padding: 22px 18px;
+  }
+
+  .student-identity {
+    display: block;
+  }
+
+  .student-exams-content .exam-card {
+    padding: 18px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .home-page *,
+  .verification-page *,
+  .face-page *,
+  .student-exams-page * {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

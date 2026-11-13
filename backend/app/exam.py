@@ -7,11 +7,21 @@ from math import ceil
 from datetime import timedelta
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, File, UploadFile, Header
+from fastapi import APIRouter, Depends, HTTPException, File, Form, UploadFile, Header
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 from .student_auth import issue_student_token, read_student_token
+from .face_matching import (
+    FaceImageInvalid,
+    FaceMatcherUnavailable,
+    FRAME_COUNT,
+    face_check_decision,
+    get_face_matcher,
+)
+from .roster_photos import MAX_ARCHIVE_BYTES, read_photo_roster_archive
+from .exam_video import _recording_root, _retention_deadline
 from .avatar_session import snapshot_for_exam, session_policy
 from .avatar_timing import pause_sum_sql, active_pause_until_sql
 from .developer_demo import (demo_enabled, demo_for_session, minimal_enabled,
@@ -54,6 +64,44 @@ class StartRequest(BaseModel):
     student_id: UUID
     exam_template_id: UUID
     student_token: str
+
+
+def _require_recent_face_check(db: Session, student_id: str):
+    verification = db.execute(
+        text("""
+            SELECT attempt_count, status
+            FROM student_face_verifications
+            WHERE student_id = CAST(:student_id AS uuid)
+              AND last_attempt_at > now() - interval '15 minutes'
+        """),
+        {"student_id": student_id},
+    ).mappings().first()
+    if not verification or verification["status"] != "matched":
+        raise HTTPException(
+            403,
+            "Complete the student photo check before starting this exam.",
+        )
+    return verification
+
+
+def require_active_video_recording(db: Session, session_id: str, developer_demo: bool):
+    if developer_demo:
+        return
+    recording = db.execute(
+        text("""SELECT status, next_chunk_index
+                FROM exam_session_videos
+                WHERE session_id = CAST(:sid AS uuid)"""),
+        {"sid": session_id},
+    ).mappings().first()
+    if (
+        not recording
+        or recording["status"] != "recording"
+        or int(recording["next_chunk_index"]) < 1
+    ):
+        raise HTTPException(
+            409,
+            "Camera and microphone recording must be active before submitting an answer.",
+        )
 
 
 class AnswerRequest(BaseModel):
@@ -204,7 +252,6 @@ def start_exam(req: StartRequest, db: Session = Depends(get_db)):
         or claims.get("exam_template_id") != str(req.exam_template_id)
     ):
         raise HTTPException(403, "Student token does not match this exam.")
-
     template = db.execute(
         text("SELECT * FROM exam_templates WHERE id = CAST(:t AS uuid)"),
         {"t": str(req.exam_template_id)},
@@ -242,14 +289,21 @@ def start_exam(req: StartRequest, db: Session = Depends(get_db)):
             "This student is not authorized for this exam roster.",
         )
 
+    face_check = _require_recent_face_check(db, str(req.student_id))
+    if not demo_enabled():
+        _retention_deadline()
+        _recording_root(require_space=True)
     avatar_settings, avatar_revision, avatar_mode = snapshot_for_exam(db, req.exam_template_id)
     snapshot = db.execute(
         text("""INSERT INTO exam_sessions (student_id, exam_template_id, time_limit_minutes,
                     question_time_limit_minutes, extended_time_multiplier,
-                    avatar_policy_snapshot, avatar_policy_revision, avatar_exam_mode, developer_demo)
+                    avatar_policy_snapshot, avatar_policy_revision, avatar_exam_mode, developer_demo,
+                        identity_check_completed, identity_review_required,
+                        identity_verification_attempts)
                 SELECT CAST(:s AS uuid), t.id, t.time_limit_minutes, t.question_time_limit_minutes,
                        COALESCE(r.extended_time_multiplier, 1),
-                       CAST(:avatar_policy AS jsonb), :avatar_revision, :avatar_mode, :developer_demo
+                       CAST(:avatar_policy AS jsonb), :avatar_revision, :avatar_mode, :developer_demo,
+                       TRUE, :identity_review_required, :identity_verification_attempts
                 FROM exam_templates t JOIN exam_roster r ON r.exam_template_id = t.id
                     AND r.student_id = CAST(:s AS uuid)
                 WHERE t.id = CAST(:t AS uuid)
@@ -257,7 +311,9 @@ def start_exam(req: StartRequest, db: Session = Depends(get_db)):
         {"s": str(req.student_id), "t": str(req.exam_template_id),
          "avatar_policy": json.dumps(avatar_settings.model_dump()),
          "avatar_revision": avatar_revision, "avatar_mode": avatar_mode,
-         "developer_demo": demo_enabled()},
+         "developer_demo": demo_enabled(),
+         "identity_review_required": False,
+         "identity_verification_attempts": int(face_check["attempt_count"])},
     ).mappings().first()
     if not snapshot:
         db.rollback()
@@ -389,6 +445,11 @@ def submit_answer(
         raise HTTPException(403, "Student token does not match this exam session.")
     if session["status"] != "in_progress":
         raise HTTPException(409, f"Session is {session['status']}")
+    require_active_video_recording(
+        db,
+        sid,
+        bool(session.get("developer_demo", False)),
+    )
 
     pending = db.execute(
         text(f"""SELECT id, sequence_num, avatar_root_sequence, avatar_followup_index,
@@ -723,6 +784,111 @@ def get_student_available_exams(
             }
             for exam in exams
         ],
+    }
+
+
+@router.post("/student/face-check")
+async def check_student_face(
+    eid: str = Form(...),
+    frames: list[UploadFile] = File(...),
+    db: Session = Depends(get_db),
+):
+    normalized_eid = eid.strip()
+    if not normalized_eid:
+        raise HTTPException(400, "Enter your JMU EID.")
+    if len(frames) != FRAME_COUNT:
+        raise HTTPException(400, "Record a short video with the camera to submit three frames.")
+
+    frame_bytes: list[bytes] = []
+    try:
+        for frame in frames:
+            data = await frame.read(3 * 1024 * 1024 + 1)
+            if len(data) > 3 * 1024 * 1024:
+                raise HTTPException(413, "Each captured frame must be no larger than 3 MB.")
+            frame_bytes.append(data)
+    finally:
+        for frame in frames:
+            await frame.close()
+
+    student = db.execute(
+        text("""
+            SELECT s.id, s.official_photo
+            FROM students AS s
+            WHERE lower(btrim(s.eid)) = lower(:eid)
+              AND EXISTS (
+                  SELECT 1
+                  FROM exam_roster AS r
+                  JOIN exam_templates AS t ON t.id = r.exam_template_id
+                  WHERE r.student_id = s.id
+                    AND t.status = 'published'
+              )
+            FOR UPDATE
+        """),
+        {"eid": normalized_eid},
+    ).mappings().first()
+    if not student:
+        raise HTTPException(404, "No published exam roster was found for that EID.")
+    if not student["official_photo"]:
+        raise HTTPException(
+            409,
+            "An official photo is not on file. Contact your instructor.",
+        )
+
+    verification = db.execute(
+        text("""
+            SELECT attempt_count, status
+            FROM student_face_verifications
+            WHERE student_id = CAST(:student_id AS uuid)
+              AND last_attempt_at > now() - interval '15 minutes'
+            FOR UPDATE
+        """),
+        {"student_id": str(student["id"])},
+    ).mappings().first()
+    attempts_so_far = int(verification["attempt_count"]) if verification else 0
+    if attempts_so_far >= 3 and verification["status"] == "no_match":
+        return {
+            "matched": False,
+            "allowed": False,
+            "attempt": attempts_so_far,
+            "max_attempts": 3,
+            "review_required": True,
+        }
+
+    try:
+        matched = await run_in_threadpool(
+            get_face_matcher().compare_frames,
+            student["official_photo"],
+            frame_bytes,
+        )
+    except FaceMatcherUnavailable as error:
+        raise HTTPException(503, str(error)) from error
+    except FaceImageInvalid as error:
+        raise HTTPException(422, str(error)) from error
+
+    decision = face_check_decision(matched, attempts_so_far)
+    db.execute(
+        text("""
+            INSERT INTO student_face_verifications
+                (student_id, attempt_count, status, last_attempt_at)
+            VALUES (CAST(:student_id AS uuid), :attempts, :status, now())
+            ON CONFLICT (student_id) DO UPDATE SET
+                attempt_count = EXCLUDED.attempt_count,
+                status = EXCLUDED.status,
+                last_attempt_at = EXCLUDED.last_attempt_at
+        """),
+        {
+            "student_id": str(student["id"]),
+            "attempts": decision["attempt"],
+            "status": decision["status"],
+        },
+    )
+    db.commit()
+    return {
+        "matched": decision["matched"],
+        "allowed": decision["allowed"],
+        "attempt": decision["attempt"],
+        "max_attempts": 3,
+        "review_required": decision["review_required"],
     }
 
 
@@ -1699,6 +1865,16 @@ def get_exam_progress(
                 latest.id AS session_id,
                 latest.status,
                 latest.developer_demo,
+                latest.identity_check_completed,
+                latest.identity_review_required,
+                latest.identity_verification_attempts,
+                latest.video_recording_status,
+                COALESCE(recent_face_check.attempt_count, 0) AS face_check_attempt_count,
+                COALESCE(
+                    recent_face_check.attempt_count >= 3
+                    AND recent_face_check.status = 'no_match',
+                    FALSE
+                ) AS face_check_help_required,
                 latest.started_at,
                 latest.ended_at
             FROM exam_roster AS r
@@ -1709,14 +1885,26 @@ def get_exam_progress(
                     es.id,
                     es.status,
                     es.developer_demo,
+                    es.identity_check_completed,
+                    es.identity_review_required,
+                    es.identity_verification_attempts,
+                    esv.status AS video_recording_status,
                     es.started_at,
                     es.ended_at
                 FROM exam_sessions AS es
+                LEFT JOIN exam_session_videos AS esv
+                  ON esv.session_id = es.id
                 WHERE es.student_id = s.id
                   AND es.exam_template_id = r.exam_template_id
                 ORDER BY es.started_at DESC, es.id DESC
                 LIMIT 1
             ) AS latest ON TRUE
+            LEFT JOIN LATERAL (
+                SELECT fv.attempt_count, fv.status
+                FROM student_face_verifications AS fv
+                WHERE fv.student_id = s.id
+                  AND fv.last_attempt_at > now() - interval '15 minutes'
+            ) AS recent_face_check ON TRUE
             WHERE r.exam_template_id = CAST(:exam_id AS uuid)
             ORDER BY lower(s.name), lower(s.email)
         """),
@@ -1752,13 +1940,29 @@ async def upload_exam_roster(
             detail="Exam not found or you do not own this exam.",
         )
 
-    if not file.filename or not file.filename.lower().endswith(".csv"):
-        raise HTTPException(400, "Upload a CSV file.")
+    if not file.filename:
+        raise HTTPException(400, "Choose a roster CSV or ZIP archive.")
+    filename = file.filename.lower()
+    if not filename.endswith((".csv", ".zip")):
+        raise HTTPException(400, "Upload a roster CSV or ZIP archive.")
+
+    uploaded_contents = await file.read(MAX_ARCHIVE_BYTES + 1)
+    if len(uploaded_contents) > MAX_ARCHIVE_BYTES:
+        raise HTTPException(413, "The roster upload must be no larger than 25 MB.")
+
+    official_photos: dict[str, bytes] = {}
+    if filename.endswith(".zip"):
+        try:
+            csv_contents, official_photos = read_photo_roster_archive(uploaded_contents)
+        except ValueError as error:
+            raise HTTPException(400, str(error)) from error
+    else:
+        csv_contents = uploaded_contents
 
     try:
-        contents = (await file.read()).decode("utf-8-sig")
-    except UnicodeDecodeError:
-        raise HTTPException(400, "The CSV must use UTF-8 encoding.")
+        contents = csv_contents.decode("utf-8-sig")
+    except UnicodeDecodeError as error:
+        raise HTTPException(400, "The CSV must use UTF-8 encoding.") from error
 
     reader = csv.DictReader(io.StringIO(contents))
     headers = {
@@ -1816,6 +2020,18 @@ async def upload_exam_roster(
     if not normalized_rows:
         raise HTTPException(400, "The CSV contains no students.")
 
+    if official_photos:
+        roster_eids = {row["eid"].casefold() for row in normalized_rows}
+        missing_photos = roster_eids - official_photos.keys()
+        extra_photos = official_photos.keys() - roster_eids
+        if missing_photos or extra_photos:
+            raise HTTPException(
+                400,
+                "The ZIP must contain exactly one photo for every roster EID, named photos/<EID>.jpg, .jpeg, or .png.",
+            )
+        for row in normalized_rows:
+            row["official_photo"] = official_photos[row["eid"].casefold()]
+
     added = 0
     updated = 0
 
@@ -1848,28 +2064,49 @@ async def upload_exam_roster(
                 )
 
             if by_email:
+                photo_update = (
+                    ", official_photo = :official_photo"
+                    if "official_photo" in row
+                    else ""
+                )
                 db.execute(
-                    text("""
+                    text(f"""
                         UPDATE students
-                        SET name = :name, eid = :eid
+                        SET name = :name, eid = :eid{photo_update}
                         WHERE id = CAST(:student_id AS uuid)
                     """),
                     {
-                        **row,
+                        "name": row["name"],
+                        "eid": row["eid"],
                         "student_id": str(by_email["id"]),
+                        **(
+                            {"official_photo": row["official_photo"]}
+                            if "official_photo" in row
+                            else {}
+                        ),
                     },
                 )
                 student_id = by_email["id"]
                 updated += 1
             else:
-                student_id = db.execute(
-                    text("""
-                        INSERT INTO students (name, email, eid)
-                        VALUES (:name, :email, :eid)
-                        RETURNING id
-                    """),
-                    row,
-                ).scalar_one()
+                if "official_photo" in row:
+                    student_id = db.execute(
+                        text("""
+                            INSERT INTO students (name, email, eid, official_photo)
+                            VALUES (:name, :email, :eid, :official_photo)
+                            RETURNING id
+                        """),
+                        row,
+                    ).scalar_one()
+                else:
+                    student_id = db.execute(
+                        text("""
+                            INSERT INTO students (name, email, eid)
+                            VALUES (:name, :email, :eid)
+                            RETURNING id
+                        """),
+                        row,
+                    ).scalar_one()
                 added += 1
 
             db.execute(
@@ -1904,6 +2141,7 @@ async def upload_exam_roster(
         "rows_processed": len(normalized_rows),
         "students_added": added,
         "students_updated": updated,
+        "photos_imported": len(official_photos),
     }
 
 
@@ -1939,6 +2177,7 @@ def verify_exam_eid(
             "This EID is not on the roster for this published exam.",
         )
 
+    _require_recent_face_check(db, str(student["id"]))
     student_token = issue_student_token(
         student_id=str(student["id"]),
         exam_template_id=str(request.exam_template_id),

@@ -86,7 +86,10 @@ def test_expiry_uses_attempt_limit_even_when_template_was_extended(monkeypatch, 
             if "FROM exam_sessions s" in sql:
                 return Result({"status": "in_progress", "student_id": student,
                                "exam_template_id": EXAM, "elapsed_min": 31, "time_limit_minutes": 30,
-                               "avatar_policy_snapshot": None, "avatar_policy_revision": 0})
+                               "avatar_policy_snapshot": None, "avatar_policy_revision": 0,
+                               "developer_demo": False})
+            if "FROM exam_session_videos" in sql:
+                return Result({"status": "recording", "next_chunk_index": 1})
             if "student_answer_transcript IS NULL" in sql:
                 return Result({"id": "synthetic-question", "sequence_num": 1})
             if "SELECT * FROM exam_templates" in sql:

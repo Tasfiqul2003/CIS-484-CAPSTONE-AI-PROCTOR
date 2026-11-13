@@ -19,6 +19,7 @@ from .exam import (
     insert_question,
     load_exam_material_summaries,
     read_session_state,
+    require_active_video_recording,
 )
 from .avatar_session import session_policy
 from .avatar_timing import pause_sum_sql, active_pause_until_sql
@@ -104,6 +105,11 @@ def plan_turn(req: AnswerRequest, claims: dict) -> dict:
             raise HTTPException(403, "Student token does not match this exam session.")
         if session["status"] != "in_progress":
             raise HTTPException(409, f"Session is {session['status']}")
+        require_active_video_recording(
+            db,
+            sid,
+            bool(session.get("developer_demo", False)),
+        )
 
         pending = db.execute(
             text(f"""SELECT id, sequence_num, avatar_root_sequence, avatar_followup_index,

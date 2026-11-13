@@ -1,5 +1,6 @@
 import Home from "./pages/Home";
 import "./styles/exam-ui-tokens.css";
+import "./pages/student/student-accessibility.css";
 import { DeveloperDemoProvider } from "./components/developer-demo/DemoWorkspace";
 
 import StudentVerification from "./pages/student/StudentVerification";
@@ -18,6 +19,7 @@ import ManageExam from "./pages/professor/ManageExam";
 import ExamSettingsPage, { LegacyAvatarSettingsRedirect } from "./pages/professor/ExamSettingsPage";
 import { examSettingsCategories } from "./pages/professor/examSettingsNavigation";
 import ExamSubmissions from "./pages/professor/ExamSubmissions";
+import ExamSessionReview from "./pages/professor/ExamSessionReview";
 import ExamSubmitted from "./pages/student/ExamSubmitted";
 
 function AppRoutes() {
@@ -110,6 +112,13 @@ if (
     path.endsWith("/materials")
   ) {
     return <MaterialUpload />;
+  }
+
+  if (
+    path.startsWith("/professor/exam-sessions/") &&
+    path.endsWith("/review")
+  ) {
+    return <ExamSessionReview />;
   }
 
   if (

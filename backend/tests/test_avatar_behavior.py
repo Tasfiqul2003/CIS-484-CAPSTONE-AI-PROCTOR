@@ -214,6 +214,8 @@ def test_start_token_covers_saved_mode_reading_pause_budget(monkeypatch, mode, e
     class StartDB:
         def execute(self, statement, params=None):
             sql = str(statement)
+            if "FROM student_face_verifications" in sql:
+                return Result({"status": "matched", "attempt_count": 1})
             if "SELECT * FROM exam_templates" in sql:
                 return Result({"status": "published"})
             if "INSERT INTO exam_sessions" in sql:

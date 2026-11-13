@@ -20,6 +20,12 @@ type StudentProgress = {
   started_at: string | null;
   ended_at: string | null;
   developer_demo?: boolean;
+  identity_check_completed?: boolean;
+  identity_review_required?: boolean;
+  identity_verification_attempts?: number;
+  video_recording_status?: string | null;
+  face_check_attempt_count?: number;
+  face_check_help_required?: boolean;
 };
 
 function formatDate(value: string | null) {
@@ -154,6 +160,10 @@ export default function ExamSubmissions() {
     flagged: students.filter(
       (student) => student.status === "flagged",
     ).length,
+    identityReview: students.filter(
+      student => student.identity_review_required === true
+        || student.face_check_help_required === true,
+    ).length,
   };
 
   return (
@@ -244,6 +254,11 @@ export default function ExamSubmissions() {
             <span>Awaiting review</span>
             <strong>{loading ? "—" : counts.awaitingReview}</strong>
           </article>
+          <article className="progress-summary-card">
+            <AlertCircle size={20} aria-hidden="true" />
+            <span>Photo check exceptions</span>
+            <strong>{loading ? "—" : counts.identityReview}</strong>
+          </article>
         </section>
 
         <section className="progress-table-section">
@@ -278,8 +293,10 @@ export default function ExamSubmissions() {
                     <th scope="col">Student</th>
                     <th scope="col">EID</th>
                     <th scope="col">Status</th>
+                    <th scope="col">Photo comparison</th>
                     <th scope="col">Started</th>
                     <th scope="col">Ended</th>
+                    <th scope="col">Review</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -305,8 +322,39 @@ export default function ExamSubmissions() {
                           {student.developer_demo ? "Demo · no grading" : getStatus(student)}
                         </span>
                       </td>
+                      <td>
+                        {!student.session_id
+                          ? student.face_check_help_required
+                            ? `Blocked · ${student.face_check_attempt_count ?? 3} failed matches; professor help required`
+                            : (student.face_check_attempt_count ?? 0) > 0
+                              ? `${student.face_check_attempt_count} attempt${student.face_check_attempt_count === 1 ? "" : "s"} · not verified`
+                              : "Not checked"
+                          : student.identity_review_required
+                            ? `Review required · ${student.identity_verification_attempts ?? 3} failed matches`
+                            : student.identity_check_completed
+                              ? "No exception flagged"
+                              : "No photo-check record"}
+                      </td>
                       <td>{formatDate(student.started_at)}</td>
                       <td>{formatDate(student.ended_at)}</td>
+                      <td>
+                        {student.session_id
+                          && ["pending_grading", "flagged", "graded"].includes(student.status || "")
+                          && !student.developer_demo
+                          && student.video_recording_status === "completed"
+                          ? (
+                            <a href={`/professor/exam-sessions/${encodeURIComponent(student.session_id)}/review`}>
+                              Review video and transcript
+                            </a>
+                          )
+                          : student.session_id
+                            && ["pending_grading", "flagged", "graded"].includes(student.status || "")
+                            && !student.developer_demo
+                            ? student.video_recording_status === "expired"
+                              ? "Recording expired"
+                              : "Recording incomplete"
+                          : "—"}
+                      </td>
                     </tr>
                   ))}
                 </tbody>

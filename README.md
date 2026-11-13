@@ -4,7 +4,7 @@ James Madison University capstone exploring oral assessment with professor-contr
 
 ## Developer tool menu
 
-On Windows, open the [Developer Mode folder](Developer%20Mode/) and double-click its `Start_Developer.bat` to activate/deactivate local Ollama and performance tracking. It controls optional tools only, with no website/database startup or credential prompts. Speech, FlashHead and camera controls are marked unavailable until their integrations exist. See [tool controls and limitations](Developer%20Mode/README.md). Inspect without starting tools with `.venv/Scripts/python.exe -B scripts/developer_tools.py --show-menu`. The previous full application startup remains a [separate command](docs/developer-startup.md).
+On Windows, open the [Developer Mode folder](Developer%20Mode/) and double-click its `Start_Developer.bat` to activate/deactivate local Ollama and performance tracking. It controls optional tools only, with no website/database startup or credential prompts. Speech, FlashHead and camera toggles are unavailable in this menu; assessed exam recording is managed by the web exam and requires the backend's persistent video-volume and retention configuration. See [tool controls and limitations](Developer%20Mode/README.md). Inspect without starting tools with `.venv/Scripts/python.exe -B scripts/developer_tools.py --show-menu`. The previous full application startup remains a [separate command](docs/developer-startup.md).
 
 Run the BAT from Windows File Explorer or a terminal. The root `Start_Developer.bat` forwards to the same launcher for existing commands. Clicking its file link inside Codex opens it for viewing rather than running it.
 
@@ -17,6 +17,10 @@ Saved Qwen3 4B Ollama configurations, separate examiner/follow-up/grading prompt
 The reference is `backend/ai_oral_examiner_foundation_v1.py`. It processes **one spoken turn per launch**, using `base.en` on CPU/int8, `oral-examiner-v2:latest`, and Piper `en_US-lessac-medium`. It stops recording after about five seconds of silence following detected speech, or at the 60-second limit. Read [voice setup](docs/setup.md#foundation-v1-voice-setup) before running it; Python 3.13.15 and the recorded dependency versions were used locally. Only parsed `spoken_response` text reaches speech cleanup and the phrase filter. These checks reduce unwanted output but do not guarantee reasoning suppression.
 
 The preserved September 17 run has **4/19 automated passes and 15/19 failures**. Failures include invented numeric scales, incorrect totals, missed equivalent wording, and paraphrased evidence. See [status](docs/project-status.md) and [test instructions](tests/README.md).
+
+The student JACard flow has an experimental offline photo-comparison prototype: professors can import official reference photos with a roster ZIP, and students make a short camera capture. Model weights are not included; the feature returns an explicit unavailable error until configured. A non-match never grants access; after three recent failures, the professor sees an assistance indicator. This is not a validated identity or liveness check. Assessed exams record video and audio to configured local storage for professor review alongside typed answers; this is not speech transcription. See [photo comparison setup and limitations](docs/face-verification.md) and [exam video storage and review configuration](docs/exam-video-review.md).
+
+For an offline Ubuntu deployment, see the [air-gapped update guide](docs/airgap-deployment.md). It documents the image-transfer bundle, external data volumes, TLS requirements, and migration steps.
 
 ## Model configuration history
 

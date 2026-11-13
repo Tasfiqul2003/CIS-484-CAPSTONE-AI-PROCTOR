@@ -526,6 +526,17 @@ button {
   color: white;
 }
 
+.camera-live-preview {
+  display: block;
+  width: 100%;
+  max-width: 500px;
+  aspect-ratio: 4 / 3;
+  margin: 20px auto;
+  border-radius: 12px;
+  background: #111;
+  object-fit: cover;
+}
+
 .exam-page {
   min-height: 100vh;
   padding: 50px 30px;

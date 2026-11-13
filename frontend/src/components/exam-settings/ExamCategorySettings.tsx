@@ -374,73 +374,18 @@ export default function ExamCategorySettings({ examId, category }: {
                 Recording & Transcript
               </h3>
               <p>
-                Choose what information is captured during
-                the examination.
+                Assessed attempts require camera video and microphone audio.
+                Students are notified before recording starts; the owning
+                professor can review the recording and submitted answers.
               </p>
             </div>
           </div>
           <div className="settings-toggle-list">
-            <label className="settings-toggle">
-              <div>
-                <strong>
-                  Record Video
-                </strong>
-                <small>
-                  Save the student's examination video.
-                </small>
-              </div>
-              <input
-                type="checkbox"
-                checked={settings.recordVideo}
-                onChange={(e) =>
-                  updateSetting(
-                    "recordVideo",
-                    e.target.checked
-                  )
-                }
-              />
-            </label>
-            <label className="settings-toggle">
-              <div>
-                <strong>
-                  Record Audio
-                </strong>
-                <small>
-                  Save the student's spoken responses.
-                </small>
-              </div>
-              <input
-                type="checkbox"
-                checked={settings.recordAudio}
-                onChange={(e) =>
-                  updateSetting(
-                    "recordAudio",
-                    e.target.checked
-                  )
-                }
-              />
-            </label>
-            <label className="settings-toggle">
-              <div>
-                <strong>
-                  Generate Transcript
-                </strong>
-                <small>
-                  Generate a searchable transcript of
-                  the examination.
-                </small>
-              </div>
-              <input
-                type="checkbox"
-                checked={settings.generateTranscript}
-                onChange={(e) =>
-                  updateSetting(
-                    "generateTranscript",
-                    e.target.checked
-                  )
-                }
-              />
-            </label>
+            <p>
+              Video retention is configured by the server administrator. The
+              answer transcript contains the responses submitted in the exam;
+              microphone transcription is not currently connected.
+            </p>
           </div>
         </div>
       )}

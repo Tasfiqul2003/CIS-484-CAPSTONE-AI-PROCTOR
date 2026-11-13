@@ -1,8 +1,8 @@
 @echo off
 setlocal EnableExtensions DisableDelayedExpansion
-title OralExam AI Developer Startup
-echo OralExam AI - Developer Startup
-echo Checking the local environment. Please wait...
+title CYBROS Developer Tools
+echo CYBROS - Developer Tools
+echo Opening tool controls. Please wait...
 echo.
 pushd "%~dp0.."
 if errorlevel 1 (
@@ -18,9 +18,9 @@ if not exist ".venv\Scripts\python.exe" (
     exit /b 1
 )
 
-".venv\Scripts\python.exe" -B "scripts\developer_start.py" %*
+".venv\Scripts\python.exe" -B "scripts\developer_tools.py" %*
 set "launcherExit=%errorlevel%"
-if not "%launcherExit%"=="0" echo Developer startup exited with code %launcherExit%.
+if not "%launcherExit%"=="0" echo Developer tools exited with code %launcherExit%.
 popd
 pause
 exit /b %launcherExit%

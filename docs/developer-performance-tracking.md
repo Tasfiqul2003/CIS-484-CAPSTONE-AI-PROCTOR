@@ -1,12 +1,12 @@
 # Developer Mode performance tracking
 
-Performance tracking measures one **Developer Mode launcher run**, from startup until normal shutdown. It is a local workstation tool for the professor, developer or administrator operating the launcher. It does not add a student dashboard or a remotely accessible monitoring endpoint.
+Performance tracking measures a local monitoring session. In the **BAT tool menu**, collection runs from activation until deactivation or normal menu exit. It measures host/GPU and menu-owned Ollama only, with no Docker calls or website-service attribution. The separate `scripts/developer_start.py` application launcher retains the broader application measurements described below. Neither adds a student dashboard or a remotely accessible monitoring endpoint.
 
 ## Turn tracking on or off
 
-Start `Developer Mode/Start_Developer.bat` and answer the **Performance tracking** Y/N question. Tracking defaults to off; the selected default is saved separately in ignored `.developer-performance.json`. The five older provider choices in `.developer-settings.json` are preserved. Tracking does not enable AI, voice, avatars or recording.
+Start `Developer Mode/Start_Developer.bat` and select **2** to activate/deactivate tracking. It defaults to off each menu session and does not read or rewrite saved choices. Turning tracking off displays its report while the menu remains open. **0** or Ctrl+C also stops tracking and tools owned by the menu. Older settings files are preserved. Tracking does not enable AI, voice, avatars or recording.
 
-For a single run, override the saved choice without changing it:
+To select the initial tracking state for one menu session (it can still be toggled):
 
 ```powershell
 & '.\Developer Mode\Start_Developer.bat' --performance-tracking on
@@ -14,6 +14,8 @@ For a single run, override the saved choice without changing it:
 ```
 
 `--show-menu` and `--dry-run` display the effective tracking choice without sampling, opening a monitor, requesting input or saving settings. They can be combined with the override.
+
+The separate application startup command retains its Y/N prompt and saved `.developer-performance.json` default. The application-service table and owned-service shutdown discussion below describe that command; the BAT menu never starts or stops the website, backend or database. Its untracked backend/database readings remain labeled unavailable.
 
 Host and process measurements need `psutil` in the launcher's Python environment. Install the declared optional dependency from the repository root:
 

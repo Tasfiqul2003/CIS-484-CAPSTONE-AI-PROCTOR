@@ -1,6 +1,12 @@
-# Windows developer startup
+# Windows application startup (separate from tool controls)
 
-Open the repository's **Developer Mode** folder in Windows File Explorer and double-click `Start_Developer.bat`. The launcher starts the **core-only minimal developer workspace**: React/Vite, FastAPI, migrations and the isolated PostgreSQL database. AI, FlashHead, voice, microphone and camera services stay off. The launcher resolves paths from its own location and does not require virtual-environment activation. Keep the folder inside the repository.
+`Start_Developer.bat` now opens [optional tool controls](../Developer%20Mode/README.md) only. It does not run the application startup described below. Start the preserved application launcher explicitly from the repository root:
+
+```powershell
+.\.venv\Scripts\python.exe -B scripts/developer_start.py
+```
+
+This separate command starts the **core-only minimal developer workspace**: React/Vite, FastAPI, migrations and the isolated PostgreSQL database. AI, FlashHead, voice, microphone and camera services stay off. The requirements and credentials below apply to this application command, not the BAT tool menu.
 
 A file link inside Codex opens a viewer; execute the BAT in File Explorer or a terminal. The root `Start_Developer.bat` remains a forwarding entry point. The [Word guide](../Developer%20Mode/developer-mode-guide.docx) is preserved but describes earlier startup behavior. This reference and the [Developer Mode README](../Developer%20Mode/README.md) describe the current runtime. Dated verification sections below retain their historical results.
 
@@ -30,7 +36,7 @@ Minimal mode shows a microphone-off status and keeps voice and media controls in
 
 ## Normal and nonminimal behavior
 
-The dedicated BAT/launcher has **no minimal-mode opt-out switch**. Its Compose file sets both flags directly, so setting `DEVELOPER_MINIMAL_MODE=0` in the caller's shell alone does not override that stack.
+The application launcher has **no minimal-mode opt-out switch**. Its Compose file sets both flags directly, so setting `DEVELOPER_MINIMAL_MODE=0` in the caller's shell alone does not override that stack. Starting Ollama in the separate tool menu does not override these flags either.
 
 For a separately configured backend, leave `DEVELOPER_MINIMAL_MODE` unset or set it to `0` to retain nonminimal behavior. With `DEVELOPER_DEMO_MODE=1`, that runtime prefers available real providers and uses labeled fallbacks when optional AI or content is unavailable. Without the demo flag, normal runtime behavior is unchanged. Use the existing [setup workflow](setup.md) for a separately configured application rather than expecting the core-only launcher to activate providers.
 
@@ -90,8 +96,8 @@ With tracking enabled, normal Ctrl+C shutdown also saves a uniquely named JSON/t
 From the repository root:
 
 ```powershell
-& '.\Developer Mode\Start_Developer.bat' --show-menu
-& '.\Developer Mode\Start_Developer.bat' --dry-run
+.\.venv\Scripts\python.exe -B scripts/developer_start.py --show-menu
+.\.venv\Scripts\python.exe -B scripts/developer_start.py --dry-run
 ```
 
 `--show-menu` displays the core-only minimal notice and effective performance-tracking choice. `--dry-run` prints that launch plan without asking optional-provider, performance-tracking or save-default questions. Both accept `--performance-tracking on` or `off` for inspection. Neither command saves settings, requests credentials, starts services, collects performance measurements, opens a monitor, probes optional providers, downloads models, performs inference or opens media devices.

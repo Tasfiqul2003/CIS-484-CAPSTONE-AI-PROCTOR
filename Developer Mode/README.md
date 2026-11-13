@@ -1,28 +1,30 @@
-# Developer Mode
+# Developer Mode tool controls
 
-Open this folder in Windows File Explorer and double-click **Start_Developer.bat** to start the **core-only minimal developer workspace**. Keep the folder inside the repository: the launcher uses the existing Python environment, frontend dependencies, scripts and separate developer Compose configuration in the parent folder.
+Double-click **Start_Developer.bat** here or in the repository root. It opens a menu for activating and deactivating optional tools. It does not start the website, backend, migrations or database, request credentials, or require Docker/Node. The repository `.venv` must already exist.
 
-The dedicated launcher starts React/Vite, FastAPI, migrations and isolated PostgreSQL. **AI, FlashHead, voice, microphone and camera are off.** It does not inspect optional providers, query AI metadata, start Ollama, download models or generate AI content for marked minimal demo attempts. Existing independently started providers are left alone.
+| Control | Implemented behavior |
+|---|---|
+| Local Ollama | Starts a local `ollama serve` process on `127.0.0.1:11434`; select again to stop that process. No model download, loading or inference is requested. |
+| Performance tracking | Starts the live monitor; select again to stop collection and display a report. Measures host/GPU and menu-owned Ollama where supported. No Docker calls or website-process attribution. Defaults to off each session. |
+| Speech recognition, voice playback, animated avatar, camera recording | Marked unavailable with the missing integration explained. Selecting these entries does not enable a substitute or media capture. |
 
-The exam view has a static examiner stage above a **blue question-and-response panel** with typed answers. The default is a **static faceless SVG illustration**, not FlashHead video or a live animated face. Minimal mode shows the microphone as off and does not display a pretend listening state. Media services are not connected by these placeholders.
+Keep the menu open while using its tools. Select **0**, press **Ctrl+C**, or close input normally to stop tools owned by this session. An independently running Ollama service is shown as external and left under its original controls. A forced window close or power loss cannot guarantee cleanup or a final report. The menu does not save tool defaults or credentials; older ignored settings files are left unchanged.
 
-The five older provider choices may remain saved in ignored `.developer-settings.json`, including local AI set to true. They are inactive during minimal startup and are not rewritten. Valid optional model/endpoint configuration is retained without being activated. `--show-menu` and `--dry-run` display the core-only state without prompting for optional choices or saving defaults.
+Tool activation does not change application feature flags. In particular, the separate minimal website stack still keeps AI and media off even when Ollama is running. No changes are made to the shared Ubuntu server.
 
-**Performance tracking** is a separate Y/N startup choice, off by default. Turn it on to open a live resource-usage window and receive a local report popup after stopping the launcher with Ctrl+C. The choice is saved in ignored `.developer-performance.json`; `--performance-tracking on` or `off` overrides it for one run without changing the saved default. Reports stay in ignored `.developer-reports/` and are not sent anywhere. Host/process metrics require the optional dependency in `scripts/requirements-developer.txt`. See [performance tracking setup, measurement scope and limitations](../docs/developer-performance-tracking.md).
-
-The developer Compose backend sets **both** `DEVELOPER_DEMO_MODE=1` and `DEVELOPER_MINIMAL_MODE=1`; only exact `1` values enable minimal mode. New attempts are durably marked as demos. Real authored bank questions come first, followed by labeled sample questions when saved limits permit. Allowed assistance uses labeled samples within the existing permissions, quotas and timers. Cached real summaries are preserved; temporary source excerpts are not saved as authoritative summaries. Demo attempts cannot receive grades, even after the flags are turned off. Use synthetic accounts and content.
-
-Authentication, professor ownership, student roster eligibility, PostgreSQL, migrations, credentials, Docker, Node and free ports remain required. Existing unmarked attempts never become synthetic because a flag changes; their real-provider requirements remain in effect. Demo content is not proof of student identity, microphone/camera capture or assessment quality.
-
-The launcher has **no minimal-mode opt-out switch**. The dedicated Compose file sets both flags directly, so a caller's shell override alone does not disable them. Ordinary Compose enables neither flag. A separately configured backend with minimal mode unset or `0` retains normal behavior; enabling only `DEVELOPER_DEMO_MODE=1` prefers available real providers before using labeled fallbacks. See the [technical startup reference](../docs/developer-startup.md) for prerequisites, account setup, flag boundaries and shutdown.
-
-The preserved [Word guide](developer-mode-guide.docx) describes earlier menu/startup behavior. Use this README and the technical reference for the current minimal runtime; dated verification records retain their original scope.
-
-To inspect without starting services or saving settings, run from PowerShell in the repository root:
+Inspect without tool discovery, processes, input or file writes:
 
 ```powershell
 & '.\Developer Mode\Start_Developer.bat' --show-menu
 & '.\Developer Mode\Start_Developer.bat' --dry-run
 ```
 
-The root `Start_Developer.bat` remains a forwarding entry point. A file link inside Codex opens a viewer; execute the BAT in File Explorer or a terminal.
+`--performance-tracking on` starts monitoring immediately for one interactive session; `off` keeps it off initially. Both still allow toggling in the menu. See [measurement dependencies and limitations](../docs/developer-performance-tracking.md).
+
+The previous full application launcher is preserved as a separate explicit command:
+
+```powershell
+.\.venv\Scripts\python.exe -B scripts/developer_start.py
+```
+
+That command retains its Docker, Node, free-port, database-password and bootstrap-token requirements. See [application startup](../docs/developer-startup.md). The preserved [Word guide](developer-mode-guide.docx) describes historical behavior, not this tool menu. Run the BAT in File Explorer or a terminal; a file link in Codex opens a viewer.

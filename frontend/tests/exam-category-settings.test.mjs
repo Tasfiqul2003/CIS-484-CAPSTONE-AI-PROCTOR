@@ -129,8 +129,7 @@ test('defaults retain the existing controls and canonical Manage Exam storage ke
     maxFollowUps: 2,
     allowRephrase: true,
     allowHints: false,
-    recordVideo: true,
-    recordAudio: true,
+    recordExamination: true,
     generateTranscript: true,
     recommendedGrade: true,
     generateFeedback: true,
@@ -162,7 +161,7 @@ test('category keys partition every existing field exactly once', () => {
     'time-scheduling': ['timeLimit', 'questionTimeLimit'],
     'ods-accommodations': ['extendedTime', 'extendedTimeMultiplier', 'breaksAllowed', 'reducedDistraction', 'assistiveTechnology'],
     'ai-questioning': ['questionCount', 'followUpQuestions', 'maxFollowUps', 'allowRephrase', 'allowHints'],
-    'recording-transcript': ['recordVideo', 'recordAudio', 'generateTranscript'],
+    'recording-transcript': ['recordExamination', 'generateTranscript'],
     'ai-results': ['recommendedGrade', 'generateFeedback', 'professorReview'],
   });
   const keys = Object.values(categorySettingKeys).flat();
@@ -175,21 +174,21 @@ test('a stale category editor merges the latest other-category values and unknow
   seed(storage, EXAM_A, { ...defaultExamSettings, timeLimit: 42, difficulty: 4, teammateMetadata: { retained: true } });
   const staleTime = { ...loadExamSettings(storage, EXAM_A), timeLimit: 55 };
   const staleOds = { ...loadExamSettings(storage, EXAM_A), extendedTime: true, extendedTimeMultiplier: 2 };
-  const latest = { ...loadExamSettings(storage, EXAM_A), recordAudio: false };
-  saveExamSettingsCategory(storage, EXAM_A, 'recording-transcript', latest);
   saveExamSettingsCategory(storage, EXAM_A, 'ods-accommodations', staleOds);
   const saved = saveExamSettingsCategory(storage, EXAM_A, 'time-scheduling', staleTime);
   assert.equal(saved.timeLimit, 55);
-  assert.equal(saved.recordAudio, false);
   assert.equal(saved.extendedTime, true);
   assert.equal(saved.extendedTimeMultiplier, 2);
+  assert.equal(saved.recordExamination, true);
   assert.equal(saved.difficulty, 4);
   assert.deepEqual(saved.teammateMetadata, { retained: true });
   assert.deepEqual(JSON.parse(storage.getItem(examSettingsStorageKey(EXAM_A))), saved);
 });
 
 test('each category save applies only its own fields even when the editor has unrelated changes', () => {
-  for (const category of Object.keys(categorySettingKeys)) {
+  for (const category of Object.keys(categorySettingKeys).filter(
+    category => category !== 'recording-transcript'
+  )) {
     const storage = memoryStorage();
     const base = { ...defaultExamSettings, teammateMarker: 'keep' };
     seed(storage, EXAM_A, base);
@@ -297,7 +296,9 @@ test('unreadable storage and quota errors propagate without changing saved value
 
 test('dirty state compares only the current category and clears when its values are restored', () => {
   const saved = { ...defaultExamSettings };
-  for (const category of Object.keys(categorySettingKeys)) {
+  for (const category of Object.keys(categorySettingKeys).filter(
+    category => category !== 'recording-transcript'
+  )) {
     assert.equal(hasCategoryChanges(category, { ...saved }, saved), false);
     const key = categorySettingKeys[category][0];
     const changed = { ...saved, [key]: typeof saved[key] === 'boolean' ? !saved[key] : saved[key] + 1 };

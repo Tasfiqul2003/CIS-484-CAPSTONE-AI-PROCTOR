@@ -13,6 +13,10 @@ type StartResponse = ExamTiming & {
   sequence_num: number;
   question: string;
   developer_demo?: boolean;
+  record_examination?: boolean;
+  generate_transcript?: boolean;
+  recording_consent_status?: "not_required" | "pending" | "consented" | "declined";
+  recording_consent_decided_at?: string | null;
 };
 
 type AnswerResponse = { done: true; reason?: string }
@@ -50,6 +54,10 @@ export default function StudentExam() {
   const [completedQuestions, setCompletedQuestions] = useState(0);
   const [answer, setAnswer] = useState("");
   const [showConfirmation, setShowConfirmation] = useState(false);
+  const [recordingConsentStatus, setRecordingConsentStatus] = useState<
+    "not_required" | "pending" | "consented" | "declined"
+  >("not_required");
+  const [consentSubmitting, setConsentSubmitting] = useState(false);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [assisting, setAssisting] = useState(false);
@@ -123,9 +131,20 @@ export default function StudentExam() {
         sessionToken.current = result.session_token;
         sessionStorage.setItem(storageKey, JSON.stringify({ id: result.session_id, token: result.session_token }));
       }
-      if (result.status === "in_progress") updateClock(result);
       setSessionId(result.session_id);
       setDemoAttempt(result.developer_demo === true);
+      setRecordingConsentStatus(
+        result.recording_consent_status ?? "not_required"
+      );
+
+      // Do not start the visible exam clock until a pending consent decision
+      // has been submitted. The backend resets started_at when consent is saved.
+      if (
+        result.status === "in_progress" &&
+        result.recording_consent_status !== "pending"
+      ) {
+        updateClock(result);
+      }
       sessionStorage.setItem("oralexam_exam_session_id", result.session_id);
       sessionStorage.setItem("oralexam_exam_session_token", sessionToken.current);
       // Display only: permission to use substitutes and to grade is enforced by the server.
@@ -142,6 +161,51 @@ export default function StudentExam() {
       setError(err instanceof Error ? err.message : "Unable to start the exam.");
     }).finally(() => setLoading(false));
   }, [updateClock]);
+
+  const handleRecordingConsent = useCallback(async (consent: boolean) => {
+    if (!sessionId || !sessionToken.current || consentSubmitting) return;
+
+    setConsentSubmitting(true);
+    setError("");
+
+    try {
+      const result = await apiRequest<{
+        recording_consent_status: "consented" | "declined" | "not_required";
+        recording_enabled: boolean;
+        decided_at?: string | null;
+      }>(
+        `/exam/sessions/${encodeURIComponent(sessionId)}/recording-consent`,
+        { consent },
+        sessionToken.current,
+      );
+
+      // The backend starts the exam clock when it saves the decision.
+      // Reload the session so the client uses the authoritative deadlines.
+      const response = await fetch(
+        `/api/exam/sessions/${encodeURIComponent(sessionId)}`,
+        { headers: { Authorization: `Bearer ${sessionToken.current}` } },
+      );
+
+      if (!response.ok) {
+        throw new Error(
+          "Your consent choice was saved, but exam timing could not be refreshed. Please try again."
+        );
+      }
+
+      const state = await response.json() as StartResponse;
+      if (state.status === "in_progress") updateClock(state);
+
+      setRecordingConsentStatus(result.recording_consent_status);
+    } catch (err: unknown) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Unable to save your recording consent choice. Please try again."
+      );
+    } finally {
+      setConsentSubmitting(false);
+    }
+  }, [sessionId, consentSubmitting, updateClock]);
 
   const handleNext = useCallback(async () => {
     const current = clock.current ? remainingTime(clock.current, performance.now()) : remaining;
@@ -327,6 +391,67 @@ export default function StudentExam() {
               </button>
             </div>
           </div>
+        </main>
+      </div>
+    );
+  }
+
+  if (recordingConsentStatus === "pending" && !demoAttempt) {
+    return (
+      <div className="student-exam-page">
+        <header className="student-exam-header">
+          <div className="student-exam-logo">
+            <span aria-hidden="true"><OralExamMark size={34} /></span>
+            <strong>OralExam AI</strong>
+          </div>
+          <div className="student-exam-progress">Recording Consent</div>
+        </header>
+
+        <main className="student-exam-content">
+          <section className="exam-question-card recording-consent-card">
+            <p className="exam-question-number">BEFORE YOUR EXAM</p>
+            <h1>Recording permission</h1>
+
+            <p>
+              Your professor has enabled the Record Examination option
+              for this exam.
+            </p>
+
+            <p>
+              OralExam AI is not currently connected to audio or video
+              recording. Your choice will be saved and shared with your
+              professor.
+            </p>
+
+            <p>
+              You may continue with your examination whether you allow
+              or decline recording.
+            </p>
+
+            {error && (
+              <p role="alert" className="exam-error">{error}</p>
+            )}
+
+            <div className="recording-consent-actions">
+              <button
+                type="button"
+                className="exam-next-button"
+                disabled={consentSubmitting}
+                onClick={() => void handleRecordingConsent(true)}
+              >
+                {consentSubmitting ? "Saving choice…" : "Allow recording"}
+              </button>
+
+              <button
+                type="button"
+                className="recording-decline-button"
+                disabled={consentSubmitting}
+                onClick={() => void handleRecordingConsent(false)}
+              >
+                {consentSubmitting ? "Saving choice…" : "Decline recording"}
+              </button>
+            </div>
+          </section>
         </main>
       </div>
     );

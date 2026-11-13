@@ -18,8 +18,7 @@ export type ExamSettings = {
   maxFollowUps: number;
   allowRephrase: boolean;
   allowHints: boolean;
-  recordVideo: boolean;
-  recordAudio: boolean;
+  recordExamination: boolean;
   generateTranscript: boolean;
   recommendedGrade: boolean;
   generateFeedback: boolean;
@@ -39,8 +38,7 @@ export const defaultExamSettings: ExamSettings = {
   maxFollowUps: 2,
   allowRephrase: true,
   allowHints: false,
-  recordVideo: true,
-  recordAudio: true,
+  recordExamination: true,
   generateTranscript: true,
   recommendedGrade: true,
   generateFeedback: true,
@@ -51,7 +49,7 @@ export const categorySettingKeys: Record<ExamSettingsCategory, readonly (keyof E
   "time-scheduling": ["timeLimit", "questionTimeLimit"],
   "ods-accommodations": ["extendedTime", "extendedTimeMultiplier", "breaksAllowed", "reducedDistraction", "assistiveTechnology"],
   "ai-questioning": ["questionCount", "followUpQuestions", "maxFollowUps", "allowRephrase", "allowHints"],
-  "recording-transcript": ["recordVideo", "recordAudio", "generateTranscript"],
+  "recording-transcript": ["recordExamination", "generateTranscript"],
   "ai-results": ["recommendedGrade", "generateFeedback", "professorReview"],
 };
 
@@ -63,18 +61,29 @@ export function examSettingsStorageKey(examId: string): string {
   return `oralExamSettings-/professor/exams/${examId}`;
 }
 
-export function loadExamSettings(storage: Pick<SettingsStorage, "getItem">, examId: string): StoredSettings {
+export function loadExamSettings(
+  storage: Pick<SettingsStorage, "getItem">,
+  examId: string,
+): StoredSettings {
   const raw = storage.getItem(examSettingsStorageKey(examId));
   if (raw === null) return { ...defaultExamSettings };
+
   const saved: unknown = JSON.parse(raw);
   if (!saved || typeof saved !== "object" || Array.isArray(saved)) {
     throw new Error("The saved browser draft is not a settings object.");
   }
+
   return { ...defaultExamSettings, ...saved } as StoredSettings;
 }
 
-export function hasCategoryChanges(category: ExamSettingsCategory, current: ExamSettings, saved: ExamSettings): boolean {
-  return categorySettingKeys[category].some(key => !Object.is(current[key], saved[key]));
+export function hasCategoryChanges(
+  category: ExamSettingsCategory,
+  current: ExamSettings,
+  saved: ExamSettings,
+): boolean {
+  return categorySettingKeys[category].some(
+    key => !Object.is(current[key], saved[key]),
+  );
 }
 
 export function validMaxFollowUps(value: number): boolean {
@@ -90,8 +99,12 @@ export function validQuestionTimeLimit(value: number | null): boolean {
 }
 
 export function odsTimeLimit(timeLimit: number, savedSettings: ExamSettings): number | null {
-  if (!validTimeLimit(timeLimit) || savedSettings.extendedTime !== true ||
-      ![1.25, 1.5, 2, 3].includes(savedSettings.extendedTimeMultiplier)) return null;
+  if (
+    !validTimeLimit(timeLimit) ||
+    savedSettings.extendedTime !== true ||
+    ![1.25, 1.5, 2, 3].includes(savedSettings.extendedTimeMultiplier)
+  ) return null;
+
   return timeLimit * savedSettings.extendedTimeMultiplier;
 }
 
@@ -101,25 +114,44 @@ export function saveExamSettingsCategory(
   category: ExamSettingsCategory,
   settings: ExamSettings,
 ): StoredSettings {
+  if (category === "recording-transcript") {
+    throw new Error("Recording settings must be saved through the server.");
+  }
+
   if (category === "time-scheduling" && !validTimeLimit(settings.timeLimit)) {
     throw new Error("Time per exam must be a whole number from 1 to 240 minutes.");
   }
-  if (category === "time-scheduling" && !validQuestionTimeLimit(settings.questionTimeLimit)) {
+
+  if (
+    category === "time-scheduling" &&
+    !validQuestionTimeLimit(settings.questionTimeLimit)
+  ) {
     throw new Error("Time per question must be a whole number from 1 to 240 minutes, or disabled.");
   }
-  if (category === "ai-questioning" && settings.followUpQuestions && !validMaxFollowUps(settings.maxFollowUps)) {
+
+  if (
+    category === "ai-questioning" &&
+    settings.followUpQuestions &&
+    !validMaxFollowUps(settings.maxFollowUps)
+  ) {
     throw new Error("Maximum Follow-Ups Per Question must be a whole number from 1 to 4.");
   }
+
   // Read again at save time: another category may have saved since this page loaded.
   const next = loadExamSettings(storage, examId);
+
   for (const key of categorySettingKeys[category]) {
     Object.assign(next, { [key]: settings[key] });
   }
+
   if (category === "ai-questioning") {
     // Match the former editor's save-time cleanup without changing other categories.
     delete next.difficulty;
-    if (!validMaxFollowUps(next.maxFollowUps)) next.maxFollowUps = defaultExamSettings.maxFollowUps;
+    if (!validMaxFollowUps(next.maxFollowUps)) {
+      next.maxFollowUps = defaultExamSettings.maxFollowUps;
+    }
   }
+
   storage.setItem(examSettingsStorageKey(examId), JSON.stringify(next));
   return next;
 }

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import OralExamMark from "../../components/brand/OralExamMark";
+import "./recording-notifications.css";
 
 type Professor = {
   username: string;
@@ -20,6 +21,17 @@ type Exam = {
   awaiting_grading_count: number;
   completed_count: number;
   flagged_count: number;
+};
+
+type RecordingNotification = {
+  id: string;
+  event_type: "recording_declined";
+  exam_id: string;
+  exam_title: string;
+  course: string | null;
+  student_name: string;
+  student_eid: string;
+  created_at: string;
 };
 
 function getErrorMessage(data: any, fallback: string): string {
@@ -50,6 +62,45 @@ export default function ProfessorDashboard() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [recordingNotifications, setRecordingNotifications] =
+    useState<RecordingNotification[]>([]);
+  const [notificationsLoading, setNotificationsLoading] = useState(true);
+  const [notificationError, setNotificationError] = useState("");
+
+  const loadRecordingNotifications = useCallback(async () => {
+    setNotificationsLoading(true);
+    setNotificationError("");
+
+    try {
+      const response = await fetch(
+        "/api/auth/professor/recording-notifications",
+        { credentials: "include" }
+      );
+
+      const data = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        if (response.status === 401 || response.status === 403) {
+          window.location.href = "/professor/login";
+          return;
+        }
+
+        throw new Error(
+          getErrorMessage(data, "Unable to load recording notifications.")
+        );
+      }
+
+      setRecordingNotifications(Array.isArray(data) ? data : []);
+    } catch (err) {
+      setNotificationError(
+        err instanceof Error
+          ? err.message
+          : "Unable to load recording notifications."
+      );
+    } finally {
+      setNotificationsLoading(false);
+    }
+  }, []);
 
   const loadExams = useCallback(async () => {
     const response = await fetch("/api/auth/professor/exams", {
@@ -92,7 +143,10 @@ export default function ProfessorDashboard() {
         }
 
         setProfessor(user);
-        await loadExams();
+        await Promise.all([
+          loadExams(),
+          loadRecordingNotifications(),
+        ]);
       } catch (err) {
         setError(
           err instanceof Error
@@ -105,7 +159,7 @@ export default function ProfessorDashboard() {
     }
 
     initialize();
-  }, [loadExams]);
+  }, [loadExams, loadRecordingNotifications]);
 
   async function handleLogout() {
     try {
@@ -330,6 +384,78 @@ export default function ProfessorDashboard() {
               </span>
             </article>
           </div>
+        </section>
+
+        <section
+          className="recording-notifications"
+          aria-labelledby="recording-notifications-heading"
+        >
+          <div className="recording-notifications-heading">
+            <div>
+              <p className="eyebrow">STUDENT CONSENT</p>
+              <h2 id="recording-notifications-heading">
+                Recording notifications
+              </h2>
+              <p>
+                Students who decline examination recording appear here.
+              </p>
+            </div>
+
+            <span className="recording-notification-count">
+              {recordingNotifications.length}
+            </span>
+          </div>
+
+          {notificationsLoading ? (
+            <p>Loading recording notifications...</p>
+          ) : notificationError ? (
+            <p className="dashboard-error" role="alert">
+              {notificationError}
+            </p>
+          ) : recordingNotifications.length === 0 ? (
+            <div className="recording-notifications-empty">
+              <p>No recording consent notifications.</p>
+            </div>
+          ) : (
+            <div className="recording-notification-list">
+              {recordingNotifications.map((notification) => (
+                <article
+                  className="recording-notification-item"
+                  key={notification.id}
+                >
+                  <div
+                    className="recording-notification-icon"
+                    aria-hidden="true"
+                  >
+                    !
+                  </div>
+
+                  <div className="recording-notification-details">
+                    <strong>Student declined recording</strong>
+                    <p>
+                      {notification.student_name} · {notification.student_eid}
+                    </p>
+                    <p>
+                      {notification.exam_title}
+                      {notification.course
+                        ? ` · ${notification.course}`
+                        : ""}
+                    </p>
+                    <time dateTime={notification.created_at}>
+                      {new Date(notification.created_at).toLocaleString()}
+                    </time>
+                  </div>
+
+                  <a
+                    href={`/professor/exams/${notification.exam_id}/submissions`}
+                    className="recording-notification-link"
+                  >
+                    View submissions
+                  </a>
+                </article>
+              ))}
+            </div>
+          )}
         </section>
 
         <section className="dashboard-actions">

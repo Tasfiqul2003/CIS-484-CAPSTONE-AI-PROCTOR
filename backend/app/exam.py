@@ -244,16 +244,28 @@ def start_exam(req: StartRequest, db: Session = Depends(get_db)):
 
     avatar_settings, avatar_revision, avatar_mode = snapshot_for_exam(db, req.exam_template_id)
     snapshot = db.execute(
-        text("""INSERT INTO exam_sessions (student_id, exam_template_id, time_limit_minutes,
+        text("""INSERT INTO exam_sessions (
+                    student_id, exam_template_id, time_limit_minutes,
                     question_time_limit_minutes, extended_time_multiplier,
-                    avatar_policy_snapshot, avatar_policy_revision, avatar_exam_mode, developer_demo)
+                    avatar_policy_snapshot, avatar_policy_revision, avatar_exam_mode,
+                    developer_demo, record_examination, generate_transcript,
+                    recording_consent_status
+                )
                 SELECT CAST(:s AS uuid), t.id, t.time_limit_minutes, t.question_time_limit_minutes,
                        COALESCE(r.extended_time_multiplier, 1),
-                       CAST(:avatar_policy AS jsonb), :avatar_revision, :avatar_mode, :developer_demo
+                       CAST(:avatar_policy AS jsonb), :avatar_revision, :avatar_mode,
+                       :developer_demo, CASE WHEN :developer_demo THEN FALSE ELSE t.record_examination END, t.generate_transcript,
+                       CASE
+                           WHEN :developer_demo THEN 'not_required'
+                           WHEN t.record_examination THEN 'pending'
+                           ELSE 'not_required'
+                       END
                 FROM exam_templates t JOIN exam_roster r ON r.exam_template_id = t.id
                     AND r.student_id = CAST(:s AS uuid)
                 WHERE t.id = CAST(:t AS uuid)
-                RETURNING id, time_limit_minutes, extended_time_multiplier, developer_demo"""),
+                RETURNING id, time_limit_minutes, extended_time_multiplier,
+                          developer_demo, record_examination, generate_transcript,
+                          recording_consent_status"""),
         {"s": str(req.student_id), "t": str(req.exam_template_id),
          "avatar_policy": json.dumps(avatar_settings.model_dump()),
          "avatar_revision": avatar_revision, "avatar_mode": avatar_mode,
@@ -329,6 +341,8 @@ def read_session_state(db, session_id: str, claims: dict):
     row = db.execute(text(f"""SELECT student_id, exam_template_id, status, started_at,
         time_limit_minutes, question_time_limit_minutes, extended_time_multiplier,
         avatar_policy_snapshot, avatar_policy_revision, avatar_exam_mode, developer_demo,
+        record_examination, generate_transcript, recording_consent_status,
+        recording_consent_decided_at,
         {pause_sum_sql('exam_sessions.id')} AS avatar_pause_seconds,
         {active_pause_until_sql('exam_sessions.id')} AS pause_until,
         clock_timestamp() AS server_now FROM exam_sessions
@@ -349,6 +363,13 @@ def read_session_state(db, session_id: str, claims: dict):
                          if question and question_seconds is not None else None)
     return {"session_id": session_id, "status": row["status"],
             "developer_demo": bool(row.get("developer_demo", False)),
+            "record_examination": bool(row.get("record_examination", False)),
+            "generate_transcript": bool(row.get("generate_transcript", False)),
+            "recording_consent_status": row.get("recording_consent_status", "not_required"),
+            "recording_consent_decided_at": (
+                row["recording_consent_decided_at"].isoformat()
+                if row.get("recording_consent_decided_at") else None
+            ),
             "server_now": row["server_now"].isoformat(),
             "deadline": deadline.isoformat() if deadline else None,
             "question_deadline": question_deadline.isoformat() if question_deadline else None,

@@ -135,3 +135,55 @@
 .student-exam-page summary:focus-visible { outline: 3px solid var(--exam-ui-focus); outline-offset: 3px; }
 @media (max-width: 850px) { .exam-header-controls { width: 100%; justify-content: start; } .exam-settings-slot { flex: 1 1 180px; } .exam-settings-slot button { width: 100%; } .exam-timer-chip { flex: 1 1 130px; min-width: 0; } }
 @media (max-width: 480px) { .student-exam-page .student-exam-stage-content { padding-top: 20px; } .exam-settings-slot { flex-basis: 100%; } .student-exam-page .exam-timer-chip { padding: 8px; } .exam-timer-chip span { font-size: .875rem; } .exam-timer-chip strong { font-size: 1.25rem; } .developer-exam-heading { align-items: start; flex-direction: column; } .developer-exam-badge { max-width: 100%; } }
+
+
+/* Student recording consent */
+.student-exam-page .recording-consent-card {
+  max-width: 760px;
+  margin: 0 auto;
+}
+
+.student-exam-page .recording-consent-card h1 {
+  margin-bottom: 16px;
+}
+
+.student-exam-page .recording-consent-card > p {
+  line-height: 1.7;
+}
+
+.student-exam-page .recording-consent-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 28px;
+}
+
+.student-exam-page .recording-consent-actions button {
+  min-height: var(--exam-ui-target-size);
+  padding: 12px 20px;
+  border-radius: var(--exam-ui-radius);
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.student-exam-page .recording-consent-actions .recording-decline-button {
+  border: 1px solid var(--exam-ui-border);
+  background: var(--exam-ui-surface);
+  color: var(--exam-ui-text);
+}
+
+.student-exam-page .recording-consent-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+@media (max-width: 480px) {
+  .student-exam-page .recording-consent-actions {
+    flex-direction: column;
+  }
+
+  .student-exam-page .recording-consent-actions button {
+    width: 100%;
+  }
+}

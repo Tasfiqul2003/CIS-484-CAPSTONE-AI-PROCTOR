@@ -734,9 +734,9 @@ export default function StudentExam() {
     </header>
     <main className="student-exam-content student-exam-stage-content">
       <h1 className="exam-screen-reader">Oral examination · Question {questionNumber}</h1>
-      {avatarOn && <AvatarVideoStage sessionId={sessionId} token={sessionToken.current} text={questionText}
-        sequence={questionNumber} hold={recording || submitting} />}
-      <LiveExamPresentation sessionId={sessionId} token={sessionToken.current} question={question}
+      <LiveExamPresentation sessionId={sessionId}
+        stage={avatarOn ? <AvatarVideoStage sessionId={sessionId} token={sessionToken.current} text={questionText}
+          sequence={questionNumber} hold={recording || submitting} /> : null} token={sessionToken.current} question={question}
         developerDemo={demoAttempt} developerMinimal={developerMinimal} settingsTarget={settingsTarget}
         sequence={questionNumber} answer={answer} expired={expired && !assisting} submitting={submitting}
         onTiming={updateClock} onBusyChange={setAssisting} onTextSizeChange={setTextSize} />

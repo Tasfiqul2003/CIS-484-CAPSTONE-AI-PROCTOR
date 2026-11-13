@@ -14,14 +14,16 @@ set -euo pipefail
 REPO="${REPO:-/workspace/repo}"
 AVATAR="${AVATAR:-/workspace/avatar}"
 STATE="${STATE:-/workspace/exam-stack}"
-PGDATA="$STATE/pgdata"
+# Postgres needs to own its data folder, and the network volume does not allow chown, so the database
+# lives on the container disk. It is recreated by `setup` after a pod restart (demo data only).
+PGDATA="${PGDATA:-/var/lib/postgresql/cybros-pgdata}"
 PGBIN=/usr/lib/postgresql/16/bin
 NODE_VERSION="${NODE_VERSION:-22.22.1}"
 MODEL="${LLM:-qwen3:4b-instruct}"
 BACKEND_PORT=8000; FRONT_PORT=8100; OLLAMA_PORT=8105; DB_PORT=5432
 SECRETS="$STATE/secrets.env"
 LOGS="$STATE/logs"
-export PATH="$STATE/node/bin:$PATH"
+export PATH="/opt/node/bin:$PATH"
 
 say() { printf '\n== %s ==\n' "$*"; }
 listening() { (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null; }
@@ -49,20 +51,16 @@ setup() {
   secrets
   say "System packages (Postgres 16 + pgvector)"
   apt-get update -qq
-  apt-get install -y -qq curl ca-certificates gnupg lsb-release xz-utils >/dev/null
+  apt-get install -y -qq curl ca-certificates xz-utils >/dev/null
   if [ ! -x "$PGBIN/postgres" ]; then
-    install -d /usr/share/postgresql-common/pgdg
-    curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc
-    echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
-      > /etc/apt/sources.list.d/pgdg.list
-    apt-get update -qq
+    # Ubuntu 24.04 ships Postgres 16 and pgvector in its own repositories.
     apt-get install -y -qq postgresql-16 postgresql-16-pgvector >/dev/null
   fi
 
-  say "Node $NODE_VERSION (on the volume)"
-  if [ ! -x "$STATE/node/bin/node" ]; then
+  say "Node $NODE_VERSION (on the pod disk; symlinks and scripts misbehave on the network volume)"
+  if [ ! -x "/opt/node/bin/node" ]; then
     curl -fsSL "https://nodejs.org/dist/v$NODE_VERSION/node-v$NODE_VERSION-linux-x64.tar.xz" -o /tmp/node.tar.xz
-    mkdir -p "$STATE/node" && tar -xJf /tmp/node.tar.xz -C "$STATE/node" --strip-components=1 && rm /tmp/node.tar.xz
+    mkdir -p "/opt/node" && tar --no-same-owner -xJf /tmp/node.tar.xz -C "/opt/node" --strip-components=1 && rm /tmp/node.tar.xz
   fi
   node -v
 
@@ -72,7 +70,7 @@ setup() {
   python3 -m uv pip install -q --python "$STATE/venv/bin/python" -r "$REPO/backend/requirements.txt"
 
   say "Frontend packages"
-  (cd "$REPO/frontend" && npm ci --no-audit --no-fund)
+  (cd "$REPO/frontend" && node "/opt/node/lib/node_modules/npm/bin/npm-cli.js" ci --no-audit --no-fund --no-bin-links)
 
   say "Database (first time only)"
   if [ ! -f "$PGDATA/PG_VERSION" ]; then

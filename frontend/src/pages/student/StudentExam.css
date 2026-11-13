@@ -137,7 +137,7 @@
 @media (max-width: 480px) { .student-exam-page .student-exam-stage-content { padding-top: 20px; } .exam-settings-slot { flex-basis: 100%; } .student-exam-page .exam-timer-chip { padding: 8px; } .exam-timer-chip span { font-size: .875rem; } .exam-timer-chip strong { font-size: 1.25rem; } .developer-exam-heading { align-items: start; flex-direction: column; } .developer-exam-badge { max-width: 100%; } }
 
 /* Talking avatar (shown only when the server runs the avatar service) */
-.avatar-video-stage { display: grid; gap: 0.5rem; justify-items: center; margin: 0 auto 1rem; max-width: 420px; }
+.avatar-video-stage { display: grid; gap: 0.5rem; justify-items: center; margin: 0 auto; width: 100%; max-width: 420px; }
 .avatar-video { width: 100%; aspect-ratio: 1 / 1; border-radius: 16px; background: #1d2433; object-fit: cover; }
 .avatar-video-caption { min-height: 1.5em; margin: 0; text-align: center; }
 .avatar-video-controls { display: flex; gap: 0.5rem; }

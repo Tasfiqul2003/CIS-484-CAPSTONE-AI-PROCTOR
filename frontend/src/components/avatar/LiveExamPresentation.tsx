@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Keyboard, Settings } from "lucide-react";
 import ExamStageAvatar from "./ExamStageAvatar";
@@ -19,12 +20,14 @@ const actionLabels: Record<AssistanceAction, string> = {
 };
 
 export default function LiveExamPresentation({ sessionId, token, question, sequence, answer, expired, submitting,
-  developerDemo = false, developerMinimal = false, settingsTarget = null, onTiming, onBusyChange, onTextSizeChange,
+  developerDemo = false, developerMinimal = false, settingsTarget = null, stage = null, onTiming, onBusyChange, onTextSizeChange,
 }: {
   sessionId: string; token: string; question: string; sequence: number; answer: string; expired: boolean; submitting: boolean;
   developerDemo?: boolean;
   developerMinimal?: boolean;
   settingsTarget?: HTMLElement | null;
+  /** Replaces the static examiner in the stage, for example the talking avatar video. */
+  stage?: ReactNode;
   onTiming: (timing: ExamTiming) => void; onBusyChange: (busy: boolean) => void; onTextSizeChange: (size: number) => void;
 }) {
   const [presentation, setPresentation] = useState<SessionPresentation | null>(null);
@@ -271,7 +274,7 @@ export default function LiveExamPresentation({ sessionId, token, question, seque
   if (!presentation || !preferences) return <section className="live-exam-presentation" aria-label="Examiner">
     {settingsAccess}
     <div className="exam-avatar-stage">
-      <ExamStageAvatar state={presentationError ? "Error" : "Thinking"} reducedMotion developerMinimal={developerMinimal} />
+      {stage ?? <ExamStageAvatar state={presentationError ? "Error" : "Thinking"} reducedMotion developerMinimal={developerMinimal} />}
     </div>
     <p className="live-exam-load-status" role={presentationError ? "alert" : "status"}>{presentationError || "Loading your examiner settings..."}</p>
     {presentationError && <button type="button" onClick={() => void loadPresentation()}>Reload examiner settings</button>}
@@ -284,10 +287,10 @@ export default function LiveExamPresentation({ sessionId, token, question, seque
   return <section className={`live-exam-presentation${developerMinimal ? " live-exam-presentation-minimal" : ""}`} aria-label="Examiner and assistance" style={{ fontSize: preferences.textSize }}>
     {settingsAccess}
     <div className="exam-avatar-stage">
-      <ExamStageAvatar avatar={preferences.avatar} background={preferences.background}
+      {stage ?? <ExamStageAvatar avatar={preferences.avatar} background={preferences.background}
         customAvatar={presentation.policy.defaults.customAvatar} customBackground={presentation.policy.defaults.customBackground}
         animation={!developerMinimal && presentation.policy.defaults.animation} reducedMotion={developerMinimal || reducedMotion}
-        state={state} developerMinimal={developerMinimal} />
+        state={state} developerMinimal={developerMinimal} />}
       <p className="live-exam-stage-status" role="status">{developerMinimal ? <Keyboard size={24} aria-hidden="true" /> : <span aria-hidden="true" />}{status}</p>
     </div>
     {!developerMinimal && <details className="live-exam-options" ref={options}>

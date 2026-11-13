@@ -25,6 +25,11 @@ from urllib.parse import quote, urlsplit
 from urllib.request import ProxyHandler, Request, build_opener
 import webbrowser
 
+try:
+    from scripts.developer_performance_session import PerformanceSession, load_enabled, save_enabled
+except ModuleNotFoundError:  # Direct execution from the scripts directory.
+    from developer_performance_session import PerformanceSession, load_enabled, save_enabled
+
 ROOT = Path(__file__).resolve().parents[1]
 CONFIG_NAME = ".developer-settings.json"
 FEATURES = ("local_ai", "transcription", "voice", "avatar", "camera_recording")
@@ -481,11 +486,27 @@ def launch_services(root: Path, inventory: dict, plan: dict, env: dict) -> None:
     core_started = False
     local_ai_ready = False
     ai_exit_reported = False
+    performance = None
+    stop_reason = "normal_shutdown"
     try:
         # A fixed separate project plus this guard prevents taking over an existing stack.
         if run_command(plan["compose"] + ["ps", "--status", "running", "-q"], root, env, capture=True):
             raise StartupError("The developer stack is already running. Stop it separately before using this launcher.")
         check_free_ports()
+        if plan.get("performance_tracking", False):
+            try:
+                performance = PerformanceSession(root, plan["compose"], env)
+                performance.start()
+                print("Performance tracking ON. A local report will appear after shutdown.")
+            except Exception:
+                # Optional monitoring must never prevent core startup/cleanup.
+                if performance is not None:
+                    try:
+                        performance.stop("startup_failed")
+                    except Exception:
+                        pass
+                performance = None
+                print("Performance tracking could not start; core startup will continue.")
         print(MINIMAL_NOTICE if plan.get("minimal") else DEMO_NOTICE)
         if plan["local_ai"] and not plan.get("minimal"):
             try:
@@ -497,6 +518,8 @@ def launch_services(root: Path, inventory: dict, plan: dict, env: dict) -> None:
                     owned_ai = subprocess.Popen([inventory["ollama"], "serve"], cwd=root,
                                                 env=ai_env, shell=False, creationflags=hidden_flags(),
                                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    if performance is not None:
+                        performance.register_process("local_ai", owned_ai.pid)
                     wait_for_http("http://127.0.0.1:11434/api/version", owned_ai)
                 tags = local_json("/api/tags") or {}
                 models = tags.get("models", [])
@@ -528,6 +551,8 @@ def launch_services(root: Path, inventory: dict, plan: dict, env: dict) -> None:
                 print("Warning: the Docker backend cannot reach local Ollama. Continuing with labeled developer demo fallback available; see docs/developer-startup.md.")
         owned_frontend = subprocess.Popen(plan["frontend"], cwd=root / "frontend", env=env,
                                           shell=False, creationflags=hidden_flags())
+        if performance is not None:
+            performance.register_process("frontend", owned_frontend.pid)
         wait_for_http("http://127.0.0.1:5173", owned_frontend)
         print("\nDeveloper app: http://127.0.0.1:5173")
         print(MINIMAL_NOTICE if plan.get("minimal") else
@@ -541,9 +566,20 @@ def launch_services(root: Path, inventory: dict, plan: dict, env: dict) -> None:
                 print("Warning: the optional local AI service exited. Core services remain running; labeled developer demo fallback is available.")
                 ai_exit_reported = True
             time.sleep(1)
+    except KeyboardInterrupt:
+        stop_reason = "stopped"
+        raise
+    except Exception:
+        stop_reason = "session_error" if owned_frontend is not None else "startup_failed"
+        raise
     finally:
         previous = signal.signal(signal.SIGINT, signal.SIG_IGN)
         try:
+            if performance is not None:
+                try:
+                    performance.stop(stop_reason)
+                except Exception:
+                    print("Performance report collection failed; service cleanup will continue.")
             try:
                 stop_process(owned_frontend)
             except (OSError, subprocess.TimeoutExpired) as exc:
@@ -558,6 +594,11 @@ def launch_services(root: Path, inventory: dict, plan: dict, env: dict) -> None:
             except (OSError, subprocess.TimeoutExpired) as exc:
                 print(f"Ollama cleanup failed ({type(exc).__name__}); close the process started by this launcher manually.")
         finally:
+            if performance is not None:
+                try:
+                    performance.show_report()
+                except Exception:
+                    print("Performance popup unavailable; check .developer-reports for any saved report.")
             signal.signal(signal.SIGINT, previous)
 
 
@@ -565,12 +606,18 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--show-menu", action="store_true", help="Inspect versions and choices without starting or saving anything.")
     parser.add_argument("--dry-run", action="store_true", help="Inspect the core-only plan without saving or starting services.")
+    parser.add_argument("--performance-tracking", choices=("on", "off"),
+                        help="Override performance tracking for this run without changing its saved default.")
     args = parser.parse_args(argv)
     try:
         defaults = load_choices(ROOT / CONFIG_NAME)
+        performance_default = load_enabled(ROOT)
+        performance_enabled = (args.performance_tracking == "on" if args.performance_tracking is not None
+                               else performance_default)
         inventory = discover(ROOT, os.environ, minimal=True)
         if args.show_menu:
             show_menu(inventory, defaults)
+            print(f"Performance tracking: {'ON' if performance_enabled else 'OFF'} (local live monitor and shutdown report).")
             return 0
         print("\nOralExam AI - Developer Startup")
         print(CORE_LABEL)
@@ -581,6 +628,7 @@ def main(argv=None) -> int:
         docker = find_tool("docker", os.environ)
         node = find_tool("node", os.environ)
         plan = build_plan(ROOT, choices, inventory["model"], endpoint, docker or "docker", node or "node", minimal=True)
+        plan["performance_tracking"] = performance_enabled
         if args.dry_run:
             print("\nDry run: no choices saved; no services, model downloads, or recordings started.")
             print(json.dumps(plan, indent=2))
@@ -591,10 +639,17 @@ def main(argv=None) -> int:
             raise StartupError("Docker Compose is not available. See docs/developer-startup.md.")
         check_docker_engine(docker)
         check_free_ports()
+        if args.performance_tracking is None:
+            print("\nPerformance tracking shows this computer and application services in a separate window.")
+            print("Reports stay on this computer. Stop with Ctrl+C to receive the report popup.")
+            performance_enabled = ask_yes_no("Enable performance tracking? (saved for next launch)", performance_default)
+        plan["performance_tracking"] = performance_enabled
         child_environment = with_tool_paths(os.environ, docker, node, inventory["ollama"])
         env = service_environment(child_environment, plan)
         if save:
             save_choices(ROOT / CONFIG_NAME, choices)
+        if args.performance_tracking is None and performance_enabled != performance_default:
+            save_enabled(ROOT, performance_enabled)
         launch(ROOT, inventory, plan, env)
         return 0
     except (StartupCancelled, KeyboardInterrupt):

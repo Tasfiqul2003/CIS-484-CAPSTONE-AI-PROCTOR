@@ -1,0 +1,2 @@
+# Optional host/process measurements for Developer Mode performance tracking.
+psutil>=5.9,<8

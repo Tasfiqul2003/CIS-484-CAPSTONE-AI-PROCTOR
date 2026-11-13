@@ -11,6 +11,7 @@ and timings go to /workspace/sessions/.
 """
 import datetime
 import hashlib
+import hmac
 import io
 import json
 import os
@@ -451,7 +452,8 @@ def load_models():
             from faster_whisper import WhisperModel
             from chatterbox.tts import ChatterboxTTS
             STATE["progress"] = "Loading speech recognition"
-            whisper = WhisperModel("small", device="cuda", compute_type="float16")
+            dev = os.environ.get("WHISPER_DEVICE", "cuda")   # "cpu" frees about 1 GB of GPU memory on a 16 GB card
+            whisper = WhisperModel("small", device=dev, compute_type="float16" if dev == "cuda" else "int8")
             STATE["progress"] = "Loading the voice"
             tts = ChatterboxTTS.from_pretrained(device="cuda")
             STATE["progress"] = "Loading the language model"
@@ -757,6 +759,62 @@ def media(name: str):
     return FileResponse(path, media_type="video/mp4")
 
 
+# ---------------- service API for the exam backend ----------------
+# The exam app's backend calls these on behalf of a signed-in student; browsers never call them directly.
+SERVICE_TOKEN = os.environ.get("AVATAR_SERVICE_TOKEN", "")
+MAX_SPEAK_CHARS = 1500
+
+
+def service_ok(request):
+    sent = request.headers.get("x-avatar-token", "")
+    return bool(SERVICE_TOKEN) and hmac.compare_digest(sent.encode(), SERVICE_TOKEN.encode())
+
+
+def avatar_ready():
+    return MODELS_READY.is_set() and bool(STATE.get("ready")) and bool(ACTIVE.get("image"))
+
+
+@app.get("/service/status")
+def service_status(request: Request):
+    if not service_ok(request):
+        return bad("Unauthorized.", 401)
+    return JSONResponse({"ready": avatar_ready(), "models_loaded": MODELS_READY.is_set(),
+                         "progress": STATE.get("progress"), "error": STATE.get("error"),
+                         "profile": STATE.get("profile")})
+
+
+@app.post("/service/speak")
+async def service_speak(request: Request):
+    """Text -> NDJSON stream of clip events, one per sentence, in the active professor's voice and face."""
+    if not service_ok(request):
+        return bad("Unauthorized.", 401)
+    try:
+        body = await request.json()
+    except Exception:
+        return bad("Bad request.")
+    text = " ".join(str(body.get("text") or "").split())[:MAX_SPEAK_CHARS]
+    if not text:
+        return bad("Nothing to say.")
+    if not avatar_ready():
+        return bad("The avatar is not ready yet.", 503)
+    return StreamingResponse(ndjson(pipeline_events(split_sentences(text), time.perf_counter())),
+                             media_type="application/x-ndjson")
+
+
+@app.post("/service/transcribe")
+async def service_transcribe(request: Request):
+    """Recorded answer (webm/ogg/wav) -> {"text": ...}. The audio is deleted after transcription."""
+    if not service_ok(request):
+        return bad("Unauthorized.", 401)
+    if not MODELS_READY.is_set():
+        return bad("Speech recognition is still loading.", 503)
+    data = await request.body()
+    if not data or len(data) > MAX_UPLOAD:
+        return bad("The recording is empty or larger than 25 MB.", 413 if data else 400)
+    text = await run_in_threadpool(transcribe, data)
+    return JSONResponse({"text": text})
+
+
 @app.post("/start")
 def start():
     if not STATE["ready"]:
@@ -1026,4 +1084,6 @@ cropDraw();poll();
 """
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=PORT, log_level="warning")
+    # The page has no login, so it listens on this machine only unless HOST says otherwise.
+    # start_avatar_chat.sh sets HOST=0.0.0.0 on a RunPod Pod, where the RunPod proxy needs it.
+    uvicorn.run(app, host=os.environ.get("HOST", "127.0.0.1"), port=PORT, log_level="warning")

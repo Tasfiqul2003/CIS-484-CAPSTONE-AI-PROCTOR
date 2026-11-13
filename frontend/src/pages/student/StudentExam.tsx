@@ -2,6 +2,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { formatRemaining, readExamClock, remainingTime } from "./examTiming";
 import type { ExamClock, ExamTiming, RemainingTime } from "./examTiming";
 import LiveExamPresentation from "../../components/avatar/LiveExamPresentation";
+import AvatarVideoStage from "../../components/avatar/AvatarVideoStage";
+import AnswerRecorder from "../../components/avatar/AnswerRecorder";
+import { fetchAvatarStatus } from "../../components/avatar/avatarService";
+import type { AvatarStatus } from "../../components/avatar/avatarService";
 import OralExamMark from "../../components/brand/OralExamMark";
 import { DemoAttemptNotice, useDeveloperDemo } from "../../components/developer-demo/DemoWorkspace";
 import "./StudentExam.css";
@@ -73,6 +77,16 @@ export default function StudentExam() {
   const nextChunkIndex = useRef(0);
   const uploadPromise = useRef<Promise<void> | null>(null);
   const expired = remaining.exam === 0 || remaining.question === 0;
+  const [avatar, setAvatar] = useState<AvatarStatus | null>(null);
+  const [recording, setRecording] = useState(false);
+  // The talking avatar and spoken answers appear only when this server runs the avatar service.
+  const avatarOn = !!avatar?.enabled && !developerMinimal && !!sessionId;
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void fetchAvatarStatus(controller.signal).then(setAvatar);
+    return () => controller.abort();
+  }, []);
 
   const updateClock = useCallback((timing: ExamTiming) => {
     const value = readExamClock(timing, performance.now());
@@ -652,6 +666,9 @@ export default function StudentExam() {
     <textarea id="student-exam-answer" className="student-answer-input" value={answer}
       onChange={event => setAnswer(event.target.value)} placeholder={demoAttempt ? "Type your test answer here…" : "Type your response…"}
       disabled={submitting || (expired && !assisting)} />
+    {avatarOn && <AnswerRecorder sessionId={sessionId} token={sessionToken.current}
+      disabled={submitting || (expired && !assisting)} onRecordingChange={setRecording}
+      onTranscript={text => setAnswer(current => current.trim() ? `${current.trim()} ${text}` : text)} />}
     {expired && !assisting && <p role="status">{remaining.exam === 0
       ? "Exam time has expired. Finishing your attempt."
       : "Question time has expired. Continuing with this question marked unanswered."}
@@ -717,6 +734,8 @@ export default function StudentExam() {
     </header>
     <main className="student-exam-content student-exam-stage-content">
       <h1 className="exam-screen-reader">Oral examination · Question {questionNumber}</h1>
+      {avatarOn && <AvatarVideoStage sessionId={sessionId} token={sessionToken.current} text={questionText}
+        sequence={questionNumber} hold={recording || submitting} />}
       <LiveExamPresentation sessionId={sessionId} token={sessionToken.current} question={question}
         developerDemo={demoAttempt} developerMinimal={developerMinimal} settingsTarget={settingsTarget}
         sequence={questionNumber} answer={answer} expired={expired && !assisting} submitting={submitting}
@@ -727,7 +746,7 @@ export default function StudentExam() {
         {answerForm}
       </section> : <details className="exam-response-panel" open>
         <summary>Question and answer</summary>
-        <p>Microphone transcription is not connected. Your typed answer is saved when you submit.</p>
+        <p>{avatarOn ? "Speak your answer or type it. Check the transcript before you submit." : "Microphone transcription is not connected. Your typed answer is saved when you submit."}</p>
         {answerForm}
       </details>}
     </main>

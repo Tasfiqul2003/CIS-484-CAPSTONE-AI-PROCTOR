@@ -79,6 +79,12 @@ export default function StudentExam() {
   const expired = remaining.exam === 0 || remaining.question === 0;
   const [avatar, setAvatar] = useState<AvatarStatus | null>(null);
   const [recording, setRecording] = useState(false);
+  // Hands-free turn-taking: listen when the examiner finishes, then submit after a short countdown.
+  const [handsFree, setHandsFree] = useState(() => {
+    try { return localStorage.getItem("oralexam_hands_free") !== "off"; } catch { return true; }
+  });
+  const [listenSignal, setListenSignal] = useState(0);
+  const [countdown, setCountdown] = useState<number | null>(null);
   // The talking avatar and spoken answers appear only when this server runs the avatar service.
   const avatarOn = !!avatar?.enabled && !developerMinimal && !!sessionId;
 
@@ -483,6 +489,15 @@ export default function StudentExam() {
     finalizeCompletedExam,
   ]);
 
+  useEffect(() => { setCountdown(null); }, [questionNumber]);
+  useEffect(() => {
+    if (countdown === null) return;
+    if (submitting || recording || expired) { setCountdown(null); return; }
+    if (countdown <= 0) { setCountdown(null); void handleNext(); return; }
+    const tick = window.setTimeout(() => setCountdown(value => value === null ? null : value - 1), 1000);
+    return () => window.clearTimeout(tick);
+  }, [countdown, submitting, recording, expired, handleNext]);
+
   useEffect(() => {
     if (!expired || loading || showConfirmation || submitting || assisting || !sessionId
         || automaticSubmission.current === questionNumber) return;
@@ -657,6 +672,16 @@ export default function StudentExam() {
     );
   }
 
+  const AUTO_SUBMIT_SECONDS = 5;
+  const examinerFinished = () => {
+    if (handsFree && !answer.trim() && countdown === null && !submitting) setListenSignal(value => value + 1);
+  };
+  const toggleHandsFree = (on: boolean) => {
+    setHandsFree(on);
+    if (!on) setCountdown(null);
+    try { localStorage.setItem("oralexam_hands_free", on ? "on" : "off"); } catch { /* per-browser preference only */ }
+  };
+
   const sampleQuestion = question.startsWith("[Developer demo] ");
   const questionText = sampleQuestion ? question.slice("[Developer demo] ".length) : question;
   const answerForm = <form className="exam-answer-form" onSubmit={event => { event.preventDefault(); void handleNext(); }} style={{ fontSize: textSize }}>
@@ -664,12 +689,25 @@ export default function StudentExam() {
     <h2 className="exam-current-question" aria-live="polite">{questionText}</h2>
     <label className="student-answer-label" htmlFor="student-exam-answer">{demoAttempt ? "Test answer" : "Your answer"}</label>
     <textarea id="student-exam-answer" className="student-answer-input" value={answer}
-      onChange={event => setAnswer(event.target.value)} placeholder={demoAttempt ? "Type your test answer here…" : "Type your response…"}
+      onChange={event => { setCountdown(null); setAnswer(event.target.value); }} placeholder={demoAttempt ? "Type your test answer here…" : "Type your response…"}
       disabled={submitting || (expired && !assisting)} />
     {avatarOn && <AnswerRecorder sessionId={sessionId} token={sessionToken.current}
       sharedStream={recordingActive ? mediaStream.current : null}
       disabled={submitting || (expired && !assisting)} onRecordingChange={setRecording}
-      onTranscript={text => setAnswer(current => current.trim() ? `${current.trim()} ${text}` : text)} />}
+      listenSignal={listenSignal} handsFree={handsFree}
+      onTranscript={text => {
+        setAnswer(current => current.trim() ? `${current.trim()} ${text}` : text);
+        if (handsFree) setCountdown(AUTO_SUBMIT_SECONDS);
+      }} />}
+    {avatarOn && countdown !== null && <div className="hands-free-countdown" role="status">
+      <span>Submitting your answer in {countdown} second{countdown === 1 ? "" : "s"}.</span>
+      <button type="button" onClick={() => { setCountdown(null); void handleNext(); }}>Submit now</button>
+      <button type="button" onClick={() => setCountdown(null)}>Keep editing</button>
+    </div>}
+    {avatarOn && <label className="hands-free-toggle">
+      <input type="checkbox" checked={handsFree} onChange={event => toggleHandsFree(event.target.checked)} />
+      Hands-free: listen after each question and submit when I stop talking
+    </label>}
     {expired && !assisting && <p role="status">{remaining.exam === 0
       ? "Exam time has expired. Finishing your attempt."
       : "Question time has expired. Continuing with this question marked unanswered."}
@@ -737,7 +775,7 @@ export default function StudentExam() {
       <h1 className="exam-screen-reader">Oral examination · Question {questionNumber}</h1>
       <LiveExamPresentation sessionId={sessionId}
         stage={avatarOn ? <AvatarVideoStage sessionId={sessionId} token={sessionToken.current} text={questionText}
-          sequence={questionNumber} hold={recording || submitting} /> : null} token={sessionToken.current} question={question}
+          sequence={questionNumber} hold={recording || submitting} onFinished={examinerFinished} /> : null} token={sessionToken.current} question={question}
         developerDemo={demoAttempt} developerMinimal={developerMinimal} settingsTarget={settingsTarget}
         sequence={questionNumber} answer={answer} expired={expired && !assisting} submitting={submitting}
         onTiming={updateClock} onBusyChange={setAssisting} onTextSizeChange={setTextSize} />
@@ -747,7 +785,9 @@ export default function StudentExam() {
         {answerForm}
       </section> : <details className="exam-response-panel" open>
         <summary>Question and answer</summary>
-        <p>{avatarOn ? "Speak your answer or type it. Check the transcript before you submit." : "Microphone transcription is not connected. Your typed answer is saved when you submit."}</p>
+        <p>{avatarOn ? (handsFree
+          ? "After the examiner asks, start talking. Pause for 3 seconds when you are finished; your answer is submitted 5 seconds later unless you select Keep editing or type."
+          : "Speak your answer or type it. Check the transcript before you submit.") : "Microphone transcription is not connected. Your typed answer is saved when you submit."}</p>
         {answerForm}
       </details>}
     </main>

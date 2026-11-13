@@ -10,35 +10,53 @@ type Props = {
   sequence: number;
   /** Stop talking (for example while the student records or the answer is submitting). */
   hold?: boolean;
+  /** Called once after the whole question has been spoken (or could not be), e.g. to start listening. */
+  onFinished?: () => void;
 };
 
 /** Plays the professor avatar's clips for the current question, sentence by sentence. */
-export default function AvatarVideoStage({ sessionId, token, text, sequence, hold = false }: Props) {
+export default function AvatarVideoStage({ sessionId, token, text, sequence, hold = false, onFinished }: Props) {
   const [queue, setQueue] = useState<AvatarClip[]>([]);
   const [status, setStatus] = useState<"idle" | "preparing" | "speaking" | "blocked" | "error">("idle");
   const [message, setMessage] = useState("");
   const [caption, setCaption] = useState("");
   const video = useRef<HTMLVideoElement | null>(null);
   const request = useRef<AbortController | null>(null);
+  // Speaking is finished when the clip stream has ended AND every received clip has played.
+  const streamDone = useRef(false);
+  const pending = useRef(0);
+  const finished = useRef(true);
+  const onFinishedRef = useRef(onFinished);
+  onFinishedRef.current = onFinished;
+
+  const finish = useCallback(() => {
+    if (finished.current) return;
+    finished.current = true;
+    onFinishedRef.current?.();
+  }, []);
 
   const say = useCallback((words: string) => {
     request.current?.abort();
     const controller = new AbortController();
     request.current = controller;
     setQueue([]); setCaption(""); setMessage(""); setStatus("preparing");
-    let received = 0;
+    streamDone.current = false; pending.current = 0; finished.current = false;
     void streamAvatarSpeech(sessionId, token, words, clip => {
       if (controller.signal.aborted) return;
-      received += 1;
+      pending.current += 1;
       setQueue(current => [...current, clip]);
     }, controller.signal).then(() => {
-      if (!controller.signal.aborted && received === 0) setStatus("idle");
+      if (controller.signal.aborted) return;
+      streamDone.current = true;
+      if (pending.current === 0) { setStatus("idle"); finish(); }
     }).catch((error: unknown) => {
       if (controller.signal.aborted) return;
+      streamDone.current = true;
       setStatus("error");
       setMessage(error instanceof Error ? error.message : "The avatar is unavailable. The question is shown below.");
+      if (pending.current === 0) finish();
     });
-  }, [sessionId, token]);
+  }, [sessionId, token, finish]);
 
   useEffect(() => {
     if (!sessionId || !token || !text) return;
@@ -61,6 +79,8 @@ export default function AvatarVideoStage({ sessionId, token, text, sequence, hol
   }, [hold]);
 
   const ended = () => {
+    pending.current = Math.max(0, pending.current - 1);
+    if (pending.current === 0 && streamDone.current) finish();
     setQueue(current => {
       const rest = current.slice(1);
       if (rest.length === 0) setStatus("idle");
@@ -69,7 +89,7 @@ export default function AvatarVideoStage({ sessionId, token, text, sequence, hol
   };
 
   return <section className="avatar-video-stage" aria-label="Examiner">
-    <video ref={video} className="avatar-video" playsInline preload="auto" onEnded={ended}
+    <video ref={video} className="avatar-video" playsInline preload="auto" onEnded={ended} onError={ended}
       aria-describedby="avatar-video-caption" />
     <p id="avatar-video-caption" className="avatar-video-caption" aria-live="polite">
       {status === "preparing" ? "The examiner is preparing the question…" : caption}

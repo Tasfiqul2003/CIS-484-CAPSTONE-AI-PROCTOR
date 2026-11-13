@@ -667,6 +667,7 @@ export default function StudentExam() {
       onChange={event => setAnswer(event.target.value)} placeholder={demoAttempt ? "Type your test answer here…" : "Type your response…"}
       disabled={submitting || (expired && !assisting)} />
     {avatarOn && <AnswerRecorder sessionId={sessionId} token={sessionToken.current}
+      sharedStream={recordingActive ? mediaStream.current : null}
       disabled={submitting || (expired && !assisting)} onRecordingChange={setRecording}
       onTranscript={text => setAnswer(current => current.trim() ? `${current.trim()} ${text}` : text)} />}
     {expired && !assisting && <p role="status">{remaining.exam === 0

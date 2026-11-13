@@ -7,6 +7,7 @@
 #   bash pod_exam_stack.sh setup     # after every pod (re)start: apt packages live on the container disk
 #   bash pod_exam_stack.sh start     # start Ollama (if needed), Postgres, migrations, backend, Vite
 #   bash pod_exam_stack.sh stop | status
+#   bash pod_exam_stack.sh roster EXAM_ID PHOTO.jpg   # demo students jdemo01-03, all with PHOTO as the official photo
 #
 # Ports on the pod: frontend 8100 (expose as HTTP), backend 8000, Ollama 8105, Postgres 5432 (local only).
 set -euo pipefail
@@ -22,6 +23,12 @@ NODE_VERSION="${NODE_VERSION:-22.22.1}"
 MODEL="${LLM:-qwen3:4b-instruct}"
 BACKEND_PORT=8000; FRONT_PORT=8100; OLLAMA_PORT=8105; DB_PORT=5432
 SECRETS="$STATE/secrets.env"
+# Student face check (OpenCV Zoo models, downloaded by `setup`) and the whole-exam recording.
+FACE_MODELS="$STATE/face-models"
+FACE_DETECTOR="$FACE_MODELS/face_detection_yunet_2023mar.onnx"
+FACE_RECOGNIZER="$FACE_MODELS/face_recognition_sface_2021dec.onnx"
+VIDEOS="$STATE/exam-videos"
+VIDEO_RETENTION="${EXAM_VIDEO_RETENTION_UNTIL:-2026-12-31}"
 LOGS="$STATE/logs"
 export PATH="/opt/node/bin:$PATH"
 
@@ -72,6 +79,19 @@ setup() {
   say "Frontend packages"
   (cd "$REPO/frontend" && node "/opt/node/lib/node_modules/npm/bin/npm-cli.js" ci --no-audit --no-fund --no-bin-links)
 
+  say "Face check models (OpenCV Zoo: YuNet MIT, SFace Apache-2.0; kept on the volume, never in the repo)"
+  mkdir -p "$FACE_MODELS"
+  local url=https://github.com/opencv/opencv_zoo/raw/main/models f out
+  for f in "face_detection_yunet/$(basename "$FACE_DETECTOR")" "face_recognition_sface/$(basename "$FACE_RECOGNIZER")"; do
+    out="$FACE_MODELS/$(basename "$f")"
+    # A file under 100 KB is a Git LFS pointer, not the model.
+    if [ ! -f "$out" ] || [ "$(stat -c %s "$out")" -lt 100000 ]; then
+      curl -fsSL "$url/$f" -o "$out.part" && mv "$out.part" "$out"
+    fi
+    [ "$(stat -c %s "$out")" -ge 100000 ] || { echo "Download of $out failed (got an LFS pointer)." >&2; exit 1; }
+  done
+  ls -l "$FACE_MODELS"
+
   say "Database (first time only)"
   if [ ! -f "$PGDATA/PG_VERSION" ]; then
     mkdir -p "$PGDATA" && chown -R postgres:postgres "$PGDATA" && chmod 700 "$PGDATA"
@@ -119,12 +139,17 @@ start() {
   say "Migrations"
   (cd "$REPO" && DEVELOPER_MIGRATIONS=1 DATABASE_URL="$db_url" "$STATE/venv/bin/python" scripts/developer_migrate.py)
 
+  [ -f "$FACE_DETECTOR" ] && [ -f "$FACE_RECOGNIZER" ] || { echo "Face check models are missing; run setup first." >&2; exit 1; }
+  mkdir -p "$VIDEOS" && chmod 700 "$VIDEOS"
+
   say "Backend on 127.0.0.1:$BACKEND_PORT (real AI, minimal mode off)"
   if ! listening "$BACKEND_PORT"; then
     (cd "$REPO/backend" && env DATABASE_URL="$db_url" AUTH_SECRET_KEY="$AUTH_SECRET_KEY" \
         ADMIN_BOOTSTRAP_TOKEN="$ADMIN_BOOTSTRAP_TOKEN" AUTH_COOKIE_SECURE=false \
         OLLAMA_URL="http://127.0.0.1:$OLLAMA_PORT" OLLAMA_MODEL="$MODEL" \
         AVATAR_SERVICE_URL="http://127.0.0.1:8103" AVATAR_SERVICE_TOKEN="$AVATAR_SERVICE_TOKEN" \
+        FACE_DETECTOR_MODEL_PATH="$FACE_DETECTOR" FACE_RECOGNIZER_MODEL_PATH="$FACE_RECOGNIZER" \
+        EXAM_VIDEO_DIR="$VIDEOS" EXAM_VIDEO_RETENTION_UNTIL="$VIDEO_RETENTION" \
         nohup "$STATE/venv/bin/uvicorn" app.main:app --host 127.0.0.1 --port "$BACKEND_PORT" --reload \
         > "$LOGS/backend.log" 2>&1 & echo $! > "$STATE/backend.pid")
     wait_port "$BACKEND_PORT" 60 || { echo "Backend did not start:" >&2; tail -20 "$LOGS/backend.log" >&2; exit 1; }
@@ -158,6 +183,32 @@ stop() {
   echo "Stopped the exam app (Ollama and the avatar are left as they are). Data on $PGDATA is kept."
 }
 
+roster() {
+  local exam="${1:-}" photo="${2:-}"
+  [ -n "$exam" ] && [ -f "$photo" ] || { echo "Usage: $0 roster EXAM_ID PHOTO.jpg|png" >&2; exit 1; }
+  local user pass jar zip
+  read -rp "Professor username: " user; read -rsp "Password: " pass; echo
+  jar="$(mktemp)"; zip="$(mktemp --suffix=.zip)"
+  # Synthetic demo students; each uses PHOTO (yours, on this pod only) as the official roster photo.
+  python3 - "$zip" "$photo" <<'PY'
+import sys, zipfile, pathlib
+out, photo = sys.argv[1], pathlib.Path(sys.argv[2])
+ext = ".png" if photo.suffix.lower() == ".png" else ".jpg"
+rows = [("James Ratcliffe", "james.demo@example.com", "jdemo01"),
+        ("James Test Two", "james.two@example.com", "jdemo02"),
+        ("James Test Three", "james.three@example.com", "jdemo03")]
+with zipfile.ZipFile(out, "w") as z:
+    z.writestr("roster.csv", "name,email,eid\n" + "".join(f"{n},{e},{i}\n" for n, e, i in rows))
+    for *_, eid in rows:
+        z.write(photo, f"photos/{eid}{ext}")
+PY
+  python3 -c 'import json,sys; print(json.dumps({"username":sys.argv[1],"password":sys.argv[2]}))' "$user" "$pass" \
+    | curl -sf -c "$jar" -X POST "http://127.0.0.1:$BACKEND_PORT/auth/login" -H 'Content-Type: application/json' -d @- >/dev/null \
+    || { echo "Login failed." >&2; rm -f "$jar" "$zip"; exit 1; }
+  curl -s -b "$jar" -F "file=@$zip;type=application/zip" "http://127.0.0.1:$BACKEND_PORT/exam/templates/$exam/roster"; echo
+  rm -f "$jar" "$zip"
+}
+
 status() {
   for p in "$FRONT_PORT frontend" "$BACKEND_PORT backend" "$DB_PORT postgres" "$OLLAMA_PORT ollama" "8103 avatar" "8104 render-worker"; do
     set -- $p; if listening "$1"; then echo "up    $2 ($1)"; else echo "down  $2 ($1)"; fi
@@ -166,6 +217,6 @@ status() {
 }
 
 case "${1:-}" in
-  setup) setup ;; start) start ;; stop) stop ;; status) status ;;
-  *) echo "Usage: $0 setup|start|stop|status" >&2; exit 1 ;;
+  setup) setup ;; start) start ;; stop) stop ;; status) status ;; roster) shift; roster "$@" ;;
+  *) echo "Usage: $0 setup|start|stop|status|roster" >&2; exit 1 ;;
 esac

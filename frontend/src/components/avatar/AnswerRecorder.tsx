@@ -8,6 +8,8 @@ type Props = {
   /** Receives the transcript; the student reviews and edits it before submitting. */
   onTranscript: (text: string) => void;
   onRecordingChange?: (recording: boolean) => void;
+  /** The exam's own camera+microphone recording, if running: its microphone is reused instead of opened twice. */
+  sharedStream?: MediaStream | null;
 };
 
 const MAX_SECONDS = 180;
@@ -18,7 +20,7 @@ function pickMimeType(): string {
 }
 
 /** "Speak your answer" button: records the microphone, then fills the answer box with the transcript. */
-export default function AnswerRecorder({ sessionId, token, disabled = false, onTranscript, onRecordingChange }: Props) {
+export default function AnswerRecorder({ sessionId, token, disabled = false, onTranscript, onRecordingChange, sharedStream = null }: Props) {
   const [state, setState] = useState<"idle" | "recording" | "transcribing">("idle");
   const [message, setMessage] = useState("");
   const recorder = useRef<MediaRecorder | null>(null);
@@ -39,8 +41,12 @@ export default function AnswerRecorder({ sessionId, token, disabled = false, onT
 
   const start = async () => {
     setMessage("");
+    // Clones of the exam recording's audio tracks: stopping them later does not stop the exam recording.
+    const liveAudio = sharedStream?.getAudioTracks().filter(track => track.readyState === "live") ?? [];
     try {
-      stream.current = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+      stream.current = liveAudio.length
+        ? new MediaStream(liveAudio.map(track => track.clone()))
+        : await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
     } catch {
       setMessage("Microphone access was blocked. Allow the microphone in your browser, or type your answer.");
       return;

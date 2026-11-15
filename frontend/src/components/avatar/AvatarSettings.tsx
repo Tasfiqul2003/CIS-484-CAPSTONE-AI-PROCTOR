@@ -86,7 +86,7 @@ function PhotoUpload({ kind, photo, onChange, onBusy }: {
       event.currentTarget.value = "";
       if (file) void readPhoto(file);
     }} />
-    <small id={`${id}-help`} className="avatar-help">PNG, JPEG, or WebP, up to 1 MB. Uploaded photos stay still. Save Local Draft keeps them in this browser; Save Exam Policy sends the selected photos with the policy.</small>
+    <small id={`${id}-help`} className="avatar-help">PNG, JPEG, or WebP, up to 1 MB. The photo is saved with the other settings when you select Save to exam.</small>
     {busy && <p role="status">Loading photo…</p>}
     {error && <p role="alert" className="avatar-error">{error}</p>}
     {photo && <div className="avatar-photo-selection"><img src={photo} alt={`Uploaded ${kind} photo preview`} /><button type="button" disabled={busy} onClick={() => { setError(""); onChange(null); }}>Remove {kind} photo</button></div>}
@@ -123,7 +123,7 @@ export default function AvatarSettings({ examId, defaultOpen = false }: { examId
 
 const SETTINGS_TABS = [
   ["talking", "Talking avatar"], ["presentation", "Built-in examiner"], ["students", "Student controls"],
-  ["assistance", "Assistance"], ["behavior", "Exam behavior"], ["save", "Save and share"],
+  ["assistance", "Assistance"], ["behavior", "Exam behavior"], ["preview", "Student preview"], ["save", "Saving and sharing"],
 ] as const;
 type SettingsTab = typeof SETTINGS_TABS[number][0];
 
@@ -139,8 +139,7 @@ function SettingsEditor({ examId, instructorId, identityError }: { examId: strin
   const [baseline, setBaseline] = useState(() => JSON.stringify(initial.settings ?? defaultSettings()));
   const [hasDraft, setHasDraft] = useState(!!initial.settings);
   const [message, setMessage] = useState(initial.error ?? "");
-  const [preview, setPreview] = useState(false);
-  const [previewVersion, setPreviewVersion] = useState(0);
+  const [, setPreview] = useState(false);
   const [photoVersion, setPhotoVersion] = useState(0);
   const [uploading, setUploading] = useState({ avatar: false, background: false });
   const [examPolicy, setExamPolicy] = useState<ExamPolicy | null>(null);
@@ -155,7 +154,6 @@ function SettingsEditor({ examId, instructorId, identityError }: { examId: strin
   const edited = useRef(false);
   const editGeneration = useRef(0);
   const errorRef = useRef<HTMLDivElement>(null);
-  const previewButton = useRef<HTMLButtonElement>(null);
   const errors = validateSettings(settings);
   const dirty = JSON.stringify(settings) !== baseline || examMode !== savedExamMode;
   const proposed = defaultSettings();
@@ -216,7 +214,7 @@ function SettingsEditor({ examId, instructorId, identityError }: { examId: strin
   const save = () => {
     if (uploadingPhoto) return;
     if (errors.length) { errorRef.current?.focus(); return; }
-    try { store.save(examId, instructorId, settings); setBaseline(JSON.stringify(settings)); setHasDraft(true); setMessage("Local draft saved for this exam and instructor. Live exams are unchanged."); }
+    try { store.save(examId, instructorId, settings); setBaseline(JSON.stringify(settings)); setHasDraft(true); setMessage("Draft saved on this computer. Students do not see it until you select Save to exam."); }
     catch (error) { setMessage(error instanceof Error ? error.message : "Unable to save local draft."); }
   };
   const reset = () => {
@@ -225,7 +223,7 @@ function SettingsEditor({ examId, instructorId, identityError }: { examId: strin
     setExamMode("assessed");
     setPhotoVersion(version => version + 1);
     setUploading({ avatar: false, background: false });
-    setMessage("Defaults restored in the editor. Save Exam Policy to apply them to new attempts, or Save Local Draft to keep a browser draft.");
+    setMessage("Default settings restored. Select Save to exam to use them for students.");
   };
   const sharePreview = () => {
     if (errors.length || uploadingPhoto || !instructorId) { errorRef.current?.focus(); return; }
@@ -246,7 +244,7 @@ function SettingsEditor({ examId, instructorId, identityError }: { examId: strin
       setSavedExamMode(record.exam_mode ?? examMode);
       setBaseline(JSON.stringify(record.settings));
       setHasDraft(false);
-      setMessage(`Exam policy revision ${record.revision} saved. Changes apply to new attempts; assistance limits apply per question.`);
+      setMessage("Saved to the exam. Students who start it from now on get these settings.");
     } catch (error) { setServerError(error instanceof Error ? error.message : "Unable to save exam policy."); }
     finally { setServerBusy(false); }
   };
@@ -291,38 +289,57 @@ function SettingsEditor({ examId, instructorId, identityError }: { examId: strin
       <h3 id="avatar-talking-heading">Talking avatar</h3>
       <TalkingAvatarPanel />
     </section>
-    <div className="avatar-notice" hidden={tab === "talking"}><strong>Policy changes apply to new attempts</strong><p>Save Exam Policy applies these rules to new attempts. Existing attempts retain their starting rules. Assistance limits apply per question. Volume, text size, and reduced motion remain student comfort options.</p></div>
-    {identityError && <p role="alert" className="avatar-error">{identityError}</p>}
-    <section className="avatar-section avatar-policy-persistence" aria-label="Exam policy storage" hidden={tab !== "save"}>
-      <h3>Save and share exam permissions</h3>
-      <p className="avatar-help">Save Exam Policy stores permissions on the server for this professor's exam. Share Preview Policy connects the two previews in this browser using synthetic exam content; it does not grant student access.</p>
-      <p className="avatar-policy-context" role="status">{serverBusy ? "Loading or saving exam policy…" : examPolicy ? `Saved exam policy revision ${examPolicy.revision}${examPolicy.revision === 0 ? " · defaults, not yet saved" : ""}` : "Saved exam policy unavailable"}{sharedRevision !== null ? ` · Shared preview revision ${sharedRevision}` : ""}</p>
-      {hasDraft && examPolicy && examPolicy.revision > 0 && <p className="avatar-help">The editor uses your local draft. Load Saved Exam Policy to replace it with the server version.</p>}
-      {serverError && <p className="avatar-error" role="alert">{serverError} Local drafts and shared browser previews remain separate.</p>}
-      <div className="avatar-settings-actions">
-        <button type="button" disabled={!instructorId || uploadingPhoto || errors.length > 0 || serverBusy || !examPolicy} onClick={() => void saveServer()}>Save Exam Policy</button>
-        <button type="button" disabled={!instructorId || uploadingPhoto || serverBusy} onClick={() => void reloadServer()}>Load Saved Exam Policy</button>
-        <button type="button" disabled={!instructorId || uploadingPhoto || errors.length > 0} onClick={sharePreview}>Share Preview Policy</button>
-        <button type="button" disabled={!instructorId || uploadingPhoto} onClick={loadSharedPreview}>Load Shared Preview Policy</button>
-      </div>
-      <div className="avatar-grid"><Field id="avatar-shared-mode" label="Preview exam mode" help="Instructor simulation only. Students cannot change the actual exam mode.">
-        <select id="avatar-shared-mode" value={previewMode} aria-describedby="avatar-shared-mode-help" onChange={event => setPreviewMode(event.target.value as "practice" | "assessed")}><option value="practice">Practice</option><option value="assessed">Assessed</option></select>
-      </Field></div>
-      <div className="avatar-grid"><Field id="avatar-live-mode" label="Live exam mode" help="Saved with Save Exam Policy for new attempts. This controls which assistance actions are available; the preview mode above is separate.">
-        <select id="avatar-live-mode" value={examMode} aria-describedby="avatar-live-mode-help" onChange={event => {
-          modeEdited.current = true; edited.current = true; editGeneration.current += 1;
-          setExamMode(event.target.value as "practice" | "assessed"); setMessage("");
-        }}><option value="assessed">Assessed</option><option value="practice">Practice</option></select>
-      </Field></div>
-      {sharedRevision !== null && <p><a href={`/student/settings-preview?${previewQuery}`}>Open shared student preview</a></p>}
-      {examPolicy && examPolicy.revision > 0 && <p><a href={`/student/settings-preview?${serverPreviewQuery}`}>Open saved policy preview</a> <span className="avatar-help">Professor sign-in required.</span></p>}
+    <div className="avatar-notice" hidden={!["presentation", "students", "assistance", "behavior"].includes(tab)}><strong>Changes reach students when you select Save to exam</strong><p>Students who start the exam after that get the new settings. Students already taking it keep the settings they started with.</p></div>
+    <section className="avatar-section avatar-preview-tab" aria-label="Student preview" hidden={tab !== "preview"}>
+      {tab === "preview" && <StudentAvatarPreview simple settings={settings} mode={examMode} onClose={() => setTab("talking")} />}
     </section>
-    <form noValidate className={tab === "talking" ? "is-talking-tab" : undefined} onSubmit={event => { event.preventDefault(); save(); }}>
-      <div className="avatar-settings-actions"><span role="status" className="avatar-status">{dirty ? "Unsaved changes" : hasDraft ? "Local draft · No unsaved changes" : examPolicy && examPolicy.revision > 0 ? "Saved exam policy · No unsaved changes" : "Proposed defaults · No unsaved changes"}</span><button type="submit" disabled={!instructorId || uploadingPhoto}>Save Local Draft</button><button type="button" onClick={reset}>Reset to Defaults</button><button type="button" ref={previewButton} disabled={errors.length > 0 || uploadingPhoto} onClick={() => { setPreviewVersion(v => v + 1); setPreview(true); }}>Preview as Student</button></div>
+    {identityError && <p role="alert" className="avatar-error">{identityError}</p>}
+    <section className="avatar-section avatar-policy-persistence" aria-labelledby="avatar-save-heading" hidden={tab !== "save"}>
+      <h3 id="avatar-save-heading">Saving and sharing</h3>
+      <p className="avatar-policy-context" role="status">{serverBusy ? "Loading or saving…" : examPolicy ? (examPolicy.revision === 0 ? "This exam uses the default settings. Nothing has been saved yet." : `Saved to the exam (version ${examPolicy.revision}).`) : "The saved settings could not be loaded."}{dirty ? " You have changes that are not saved yet." : ""}</p>
+      {hasDraft && examPolicy && examPolicy.revision > 0 && <p className="avatar-help">You are editing a draft from this computer, not the saved version.</p>}
+      {serverError && <p className="avatar-error" role="alert">{serverError}</p>}
+      <div className="avatar-save-options">
+        <article>
+          <h4>Save to exam</h4>
+          <p>Students who start this exam from now on get these settings. Students already taking it keep theirs.</p>
+          <div className="avatar-settings-actions">
+            <button type="button" className="avatar-primary" disabled={!instructorId || uploadingPhoto || errors.length > 0 || serverBusy || !examPolicy} onClick={() => void saveServer()}>Save to exam</button>
+            <button type="button" disabled={!instructorId || uploadingPhoto || serverBusy} onClick={() => void reloadServer()}>Undo my changes</button>
+          </div>
+          <p className="avatar-help">Undo my changes reloads the version saved to the exam.</p>
+        </article>
+        <article>
+          <h4>Draft on this computer</h4>
+          <p>Keeps unfinished changes in this browser so you can come back to them. Students never see a draft, and it does not follow you to another computer.</p>
+          <div className="avatar-settings-actions">
+            <button type="button" disabled={!instructorId || uploadingPhoto} onClick={save}>Save draft on this computer</button>
+          </div>
+        </article>
+        <article>
+          <h4>Preview page in this browser</h4>
+          <p>Makes a student-view page with a sample question that you can open in another tab, for example to show someone at your desk. It uses sample content only and does not give anyone access to the exam.</p>
+          <Field id="avatar-shared-mode" label="Show the preview as" help="Practice or Assessed, only for this preview page.">
+            <select id="avatar-shared-mode" value={previewMode} aria-describedby="avatar-shared-mode-help" onChange={event => setPreviewMode(event.target.value as "practice" | "assessed")}><option value="practice">Practice</option><option value="assessed">Assessed</option></select>
+          </Field>
+          <div className="avatar-settings-actions">
+            <button type="button" disabled={!instructorId || uploadingPhoto || errors.length > 0} onClick={sharePreview}>Make preview page</button>
+            <button type="button" disabled={!instructorId || uploadingPhoto} onClick={loadSharedPreview}>Load the preview's settings here</button>
+          </div>
+          {sharedRevision !== null && <p><a href={`/student/settings-preview?${previewQuery}`}>Open the preview page</a></p>}
+          {examPolicy && examPolicy.revision > 0 && <p><a href={`/student/settings-preview?${serverPreviewQuery}`}>Open a preview of the saved settings</a></p>}
+        </article>
+      </div>
+    </section>
+    <form noValidate className={["talking", "preview", "save"].includes(tab) ? "is-talking-tab" : undefined} onSubmit={event => { event.preventDefault(); save(); }}>
+      <div className="avatar-settings-actions avatar-save-bar"><span role="status" className="avatar-status">{serverBusy ? "Saving…" : dirty ? "Changes not saved yet" : hasDraft ? "Draft on this computer · students do not see it yet" : examPolicy && examPolicy.revision > 0 ? "Saved to the exam" : "Default settings"}</span>
+        <button type="button" className="avatar-primary" disabled={!instructorId || uploadingPhoto || errors.length > 0 || serverBusy || !examPolicy} onClick={() => void saveServer()}>Save to exam</button>
+        <button type="submit" disabled={!instructorId || uploadingPhoto}>Save draft</button>
+        <button type="button" onClick={reset}>Reset to defaults</button></div>
       <p role="status">{message}</p>
       {errors.length > 0 && <div className="avatar-error" role="alert" tabIndex={-1} ref={errorRef}><strong>Correct these settings before saving or previewing:</strong><ul>{errors.map((error, index) => <li key={index}>{error}</li>)}</ul></div>}
-      <section className="avatar-section" aria-labelledby="avatar-presentation-heading" hidden={tab !== "presentation"}><h3 id="avatar-presentation-heading">Built-in examiner</h3><p>These choices are for the built-in animated examiner, used when the talking avatar is not running on the server. Your own talking avatar is on the Talking avatar tab. Optional student choices are under Student controls.</p><div className="avatar-grid">
-        {([['avatar', 'Default avatar', avatarChoices], ['background', 'Default background', backgroundChoices], ['voice', 'Default voice', VOICES]] as const).map(([key, label, choices]) => <Field key={key} id={`avatar-default-${key}`} label={label} help={`Proposed default: ${choices.find(c => c.id === proposed.presentation[key])?.label}. ${key === 'voice' ? 'Professor controlled; students cannot choose a separate voice.' : `Student change: ${settings.student[key] ? 'allowed within selected options' : 'off'}.`}`}><select id={`avatar-default-${key}`} value={settings.presentation[key]} aria-describedby={`avatar-default-${key}-help`} onChange={event => presentation(key, event.target.value)}>{choices.map(choice => <option key={choice.id} value={choice.id}>{choice.label}</option>)}</select>{key !== 'voice' && <PhotoUpload key={`${key}-${photoVersion}`} kind={key} photo={key === 'avatar' ? settings.presentation.customAvatar : settings.presentation.customBackground} onChange={photo => setPhoto(key, photo)} onBusy={busy => setUploading(current => ({ ...current, [key]: busy }))} />}</Field>)}
+      <section className="avatar-section" aria-labelledby="avatar-presentation-heading" hidden={tab !== "presentation"}><h3 id="avatar-presentation-heading">Built-in examiner</h3><p>The built-in animated examiner is used when the talking avatar is not running on the server. Your own talking avatar is on the Talking avatar tab.</p><div className="avatar-grid">
+        {([['avatar', 'Default avatar', avatarChoices], ['background', 'Default background', backgroundChoices], ['voice', 'Default voice', VOICES]] as const).map(([key, label, choices]) => <Field key={key} id={`avatar-default-${key}`} label={label} help={`Proposed default: ${choices.find(c => c.id === proposed.presentation[key])?.label}. ${key === 'voice' ? 'Professor controlled; students cannot choose a separate voice.' : `Student change: ${settings.student[key] ? 'allowed within selected options' : 'off'}.`}`}><select id={`avatar-default-${key}`} value={settings.presentation[key]} aria-describedby={`avatar-default-${key}-help`} onChange={event => presentation(key, event.target.value)}>{choices.map(choice => <option key={choice.id} value={choice.id}>{choice.label}</option>)}</select>{key === 'background' && <PhotoUpload key={`${key}-${photoVersion}`} kind={key} photo={settings.presentation.customBackground} onChange={photo => setPhoto(key, photo)} onBusy={busy => setUploading(current => ({ ...current, [key]: busy }))} />}</Field>)}
         <Field id="avatar-default-speed" label="Default speaking speed" help={`Speaking-speed multiplier: 1× is normal, 0.5× is half speed, and 2× is twice normal speed. Student change: ${settings.student.speed ? 'within the limits below' : 'off'}. Live read-aloud uses these settings when enabled.`}><output id="avatar-speed-value" htmlFor="avatar-default-speed">{settings.presentation.speed.toFixed(2)}× ({settings.presentation.speed === 1 ? 'normal speed' : settings.presentation.speed < 1 ? 'slower than normal' : 'faster than normal'})</output><input id="avatar-default-speed" type="range" min={0.5} max={2} step={0.05} value={settings.presentation.speed} aria-describedby="avatar-default-speed-help" aria-valuetext={`${settings.presentation.speed.toFixed(2)} times normal speaking speed`} onChange={event => presentation('speed', event.target.valueAsNumber)} /></Field>
         <Check id="avatar-animation" label="Enable avatar animation" checked={settings.presentation.animation} onChange={value => presentation('animation', value)} help="Proposed default: on. Professor sets this; reduced motion suppresses animation." />
         <Check id="avatar-motion" label="Reduced motion by default" checked={settings.presentation.reducedMotion} onChange={value => presentation('reducedMotion', value)} help="Proposed default: off. Students may always reduce motion; browser motion preferences also apply." />
@@ -336,7 +353,12 @@ function SettingsEditor({ examId, instructorId, identityError }: { examId: strin
       <section className="avatar-section" aria-labelledby="avatar-assistance-heading" hidden={tab !== "assistance"}><h3 id="avatar-assistance-heading">Assistance</h3><p>Professor controls each action and its mode availability. Student input cannot change exam mode, rules, or assistance limits. Saved rules are enforced for the attempt mode selected above.</p><div className="avatar-grid">
         {(Object.keys(actionLabels) as Action[]).map(action => { const item = settings.assistance[action]; const limited = action === 'repeat' || action === 'clarification'; return <div className="avatar-policy" key={action}><Check id={`avatar-${action}`} label={actionLabels[action]} checked={item.enabled} onChange={enabled => policy(action, { enabled })} help={`${actionHelp[action]} Proposed default: ${proposed.assistance[action].enabled ? 'on, both modes' : 'off, practice only'}. Professor only.`} /><fieldset disabled={!item.enabled}><legend>{actionLabels[action]} policy</legend><Field id={`avatar-${action}-modes`} label={`${actionLabels[action]} availability`} help="Choices: practice, assessed, or both. Professor only."><select id={`avatar-${action}-modes`} aria-describedby={`avatar-${action}-modes-help`} value={item.modes} onChange={event => policy(action, { modes: event.target.value as typeof item.modes })}><option value="practice">Practice only</option><option value="assessed">Assessed only</option><option value="both">Practice and assessed</option></select></Field>{<><Field id={`avatar-${action}-limit`} label={`${actionLabels[action]} limit per question`} help={`Proposed default: ${proposed.assistance[action].limit}. Whole number 1–10 when enabled. Student cannot change allowance.`}><input {...numberProps(`avatar-${action}-limit`, item.limit, 1, 10, limit => policy(action, { limit }))} /></Field>{limited && <Check id={`avatar-${action}-timer`} label={`Timer continues during ${action === 'repeat' ? 'repeats' : 'clarification'}`} checked={item.timerContinues} onChange={timerContinues => policy(action, { timerContinues })} help="Default: on. Uncheck to pause timing while the assistance is generated and read (at most 120 seconds)." />}</>}</fieldset>{!item.enabled && <p className="avatar-help">Dependent controls are disabled because this assistance action is off.</p>}</div>; })}
       </div></section>
-      <section className="avatar-section" aria-labelledby="avatar-behavior-heading" hidden={tab !== "behavior"}><h3 id="avatar-behavior-heading">Exam behavior</h3><p>Save Exam Policy applies these settings to new attempts. Fixed response timing uses the shorter of this window and the per-question limit in Time & Scheduling. The total exam limit still applies.</p><div className="avatar-grid">
+      <section className="avatar-section" aria-labelledby="avatar-behavior-heading" hidden={tab !== "behavior"}><h3 id="avatar-behavior-heading">Exam behavior</h3><div className="avatar-grid"><Field id="avatar-live-mode" label="Exam mode" help="Assessed is the real exam. Practice allows the help options you marked for practice on the Assistance tab.">
+        <select id="avatar-live-mode" value={examMode} aria-describedby="avatar-live-mode-help" onChange={event => {
+          modeEdited.current = true; edited.current = true; editGeneration.current += 1;
+          setExamMode(event.target.value as "practice" | "assessed"); setMessage("");
+        }}><option value="assessed">Assessed</option><option value="practice">Practice</option></select>
+      </Field></div><p>Fixed response timing uses the shorter of this window and the per-question limit in Time & Scheduling. The total exam limit still applies.</p><div className="avatar-grid">
         <Field id="avatar-followups" label="Follow-up limit per question" help="Proposed default: 1. Whole number 0–5; 0 disables follow-ups. Professor only."><input {...numberProps('avatar-followups', settings.behavior.followUps, 0, 5, value => behavior('followUps', value))} /></Field>
         <Field id="avatar-order" label="Question ordering" help="Proposed default: authored order. Choices: authored or randomized. Professor only."><select id="avatar-order" aria-describedby="avatar-order-help" value={settings.behavior.order} onChange={event => behavior('order', event.target.value as Settings['behavior']['order'])}><option value="authored">Authored order</option><option value="random">Randomized</option></select></Field>
         <Field id="avatar-timing" label="Response timing" help="Proposed default: existing exam timing. An optional fixed window caps time for each response. Professor only."><select id="avatar-timing" aria-describedby="avatar-timing-help" value={settings.behavior.responseTiming} onChange={event => behavior('responseTiming', event.target.value as Settings['behavior']['responseTiming'])}><option value="exam">Use existing exam timing</option><option value="fixed">Fixed response window</option></select></Field>
@@ -344,8 +366,6 @@ function SettingsEditor({ examId, instructorId, identityError }: { examId: strin
       </div>
         <p>Question difficulty is set by the professor in the <a href={`/professor/exams/${examId}/questions`}>existing Question Bank for topics and authored questions</a>. Use <a href={`/professor/exams/${examId}/materials`}>Course Materials for professor-provided guidance and rubrics</a>. All AI scores are provisional; professors control final grades.</p>
       </section>
-      <div className="avatar-settings-actions"><button type="submit" disabled={!instructorId || uploadingPhoto}>Save Local Draft</button><button type="button" onClick={reset}>Reset to Defaults</button><span>{dirty ? 'Unsaved changes' : 'No unsaved changes'}</span></div>
     </form>
-    {preview && <StudentAvatarPreview key={previewVersion} settings={settings} onClose={() => { setPreview(false); previewButton.current?.focus(); }} />}
   </>;
 }

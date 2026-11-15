@@ -13,7 +13,7 @@ function loadName(): Promise<string> {
   return signedInName;
 }
 
-/** One top bar for professor pages: logo, page title in the middle, navigation and who is signed in. */
+/** One top bar for professor pages: logo; page title, navigation and who is signed in centred; Log Out at the right. */
 export default function ProfessorHeader({ title, current }: { title?: string; current?: "dashboard" | "exams" | "avatar" }) {
   const [name, setName] = useState("");
   useEffect(() => {
@@ -30,13 +30,15 @@ export default function ProfessorHeader({ title, current }: { title?: string; cu
       <span className="logo-icon" aria-hidden="true"><OralExamMark size={34} /></span>
       <span>OralExam AI</span>
     </a>
-    {title ? <p className="professor-topbar-title">{title}</p> : <span />}
-    <nav className="professor-topbar-nav" aria-label="Professor pages">
-      <a href="/professor/dashboard" aria-current={current === "dashboard" ? "page" : undefined}>Dashboard</a>
-      <a href="/professor/exams" aria-current={current === "exams" ? "page" : undefined}>My Exams</a>
-      <a href="/professor/avatar" aria-current={current === "avatar" ? "page" : undefined}>Avatar</a>
+    <div className="professor-topbar-center">
+      {title && <p className="professor-topbar-title">{title}</p>}
+      <nav className="professor-topbar-nav" aria-label="Professor pages">
+        <a href="/professor/dashboard" aria-current={current === "dashboard" ? "page" : undefined}>Dashboard</a>
+        <a href="/professor/exams" aria-current={current === "exams" ? "page" : undefined}>My Exams</a>
+        <a href="/professor/avatar" aria-current={current === "avatar" ? "page" : undefined}>Avatar</a>
+      </nav>
       {name && <span className="professor-topbar-user"><UserRound size={16} aria-hidden="true" />{name}</span>}
-      <button type="button" className="dashboard-logout" onClick={() => void logOut()}>Log Out</button>
-    </nav>
+    </div>
+    <button type="button" className="dashboard-logout professor-topbar-logout" onClick={() => void logOut()}>Log Out</button>
   </header>;
 }

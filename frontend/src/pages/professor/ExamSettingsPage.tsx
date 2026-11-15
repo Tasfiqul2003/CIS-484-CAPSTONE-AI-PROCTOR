@@ -15,7 +15,7 @@ export function LegacyAvatarSettingsRedirect({ examId }: { examId: string }) {
 
 export default function ExamSettingsPage({ examId, category }: { examId: string; category: ExamSettingsSlug }) {
   const selected = examSettingsCategories.find(item => item.slug === category)!;
-  return <ExamManagementLayout examId={examId} category={selected.title}>{exam =>
+  return <ExamManagementLayout examId={examId} section={category} category={selected.title}>{exam =>
     category === "avatar-interaction"
       ? <AvatarSettings examId={exam.id} defaultOpen />
       : category === "ods-accommodations"

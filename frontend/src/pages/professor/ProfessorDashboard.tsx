@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import ProfessorHeader from "../../components/professor/ProfessorHeader";
+import ExamRow from "../../components/professor/ExamRow";
 
 type Professor = {
   username: string;
@@ -20,6 +21,8 @@ type Exam = {
   awaiting_grading_count: number;
   completed_count: number;
   flagged_count: number;
+  submitted_student_count?: number;
+  roster_count?: number;
 };
 
 function getErrorMessage(data: any, fallback: string): string {
@@ -140,45 +143,6 @@ export default function ProfessorDashboard() {
         err instanceof Error
           ? err.message
           : "Unable to update exam status."
-      );
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function deleteExam(exam: Exam) {
-    const confirmed = window.confirm(
-      `Delete "${exam.title}"? This cannot be undone. Exams with student sessions cannot be deleted.`
-    );
-
-    if (!confirmed) return;
-
-    setSaving(true);
-    setError("");
-
-    try {
-      const response = await fetch(
-        `/api/exam/templates/${exam.id}`,
-        {
-          method: "DELETE",
-          credentials: "include",
-        }
-      );
-
-      const data = await response.json().catch(() => ({}));
-
-      if (!response.ok) {
-        throw new Error(
-          getErrorMessage(data, "Unable to delete this exam.")
-        );
-      }
-
-      await loadExams();
-    } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Unable to delete this exam."
       );
     } finally {
       setSaving(false);
@@ -364,39 +328,7 @@ export default function ProfessorDashboard() {
           ) : (
             <ul className="exam-rows" aria-label="Your examinations">
               {visibleExams.map((exam) => (
-                <li className="exam-row" key={exam.id}>
-                  <div className="exam-row-main">
-                    <span className="exam-row-icon" aria-hidden="true">{exam.icon || "🎙️"}</span>
-                    <div>
-                      <p className="exam-row-course">{exam.course || "Oral exam"}</p>
-                      <h3>{exam.title}</h3>
-                      <p className="exam-row-description">
-                        {exam.description || "Manage questions, course materials, and exam settings."}
-                      </p>
-                    </div>
-                    <span className={`exam-row-status ${exam.status === "published" ? "published" : "draft"}`}>
-                      {exam.status === "published" ? "Published" : "Draft"}
-                    </span>
-                  </div>
-                  <dl className="exam-row-stats exam-row-stats-grid">
-                    <div><dt>Questions</dt><dd>{exam.question_count}</dd></div>
-                    <div><dt>Submissions</dt><dd>{exam.submission_count}</dd></div>
-                    <div><dt>Completed</dt><dd>{exam.completed_count}</dd></div>
-                    <div><dt>In progress</dt><dd>{exam.in_progress_count}</dd></div>
-                    <div><dt>Awaiting grading</dt><dd>{exam.awaiting_grading_count}</dd></div>
-                    <div><dt>Flagged</dt><dd>{exam.flagged_count}</dd></div>
-                  </dl>
-                  <div className="exam-row-actions">
-                    <a className="exam-row-primary" href={`/professor/exams/${exam.id}`}>Manage exam</a>
-                    <a href={`/professor/exams/${exam.id}/submissions`}>View submissions</a>
-                    <button type="button" disabled={saving} onClick={() => togglePublication(exam)}>
-                      {exam.status === "published" ? "Unpublish" : "Publish"}
-                    </button>
-                    <button type="button" className="exam-row-danger" disabled={saving} onClick={() => deleteExam(exam)}>
-                      Delete
-                    </button>
-                  </div>
-                </li>
+                <ExamRow key={exam.id} exam={exam} busy={saving} onTogglePublication={() => togglePublication(exam)} />
               ))}
             </ul>
           )}

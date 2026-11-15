@@ -4,7 +4,6 @@ import {
   GraduationCap,
   IdCard,
   MessagesSquare,
-  Sparkles,
   UserRound,
 } from "lucide-react";
 import OralExamMark from "../components/brand/OralExamMark";
@@ -20,10 +19,6 @@ export default function Home() {
           </span>
           <span>OralExam AI</span>
         </a>
-        <span className="home-header-note">
-          <Sparkles size={15} aria-hidden="true" />
-          JMU oral exams
-        </span>
       </header>
 
       <main id="main-content" className="home-content" aria-labelledby="home-title">
@@ -72,16 +67,16 @@ export default function Home() {
             </div>
           </div>
         </section>
-
-        <section className="home-steps" aria-labelledby="home-steps-title">
-          <h2 id="home-steps-title">How it works</h2>
-          <ol>
-            <li><IdCard size={20} aria-hidden="true" /><div><strong>Check in</strong><span>Swipe your JACard and take a quick photo check.</span></div></li>
-            <li><MessagesSquare size={20} aria-hidden="true" /><div><strong>Talk it through</strong><span>Answer the examiner out loud. It asks follow-up questions.</span></div></li>
-            <li><ClipboardCheck size={20} aria-hidden="true" /><div><strong>Professor review</strong><span>Your professor reviews the recording, transcript and AI suggestions.</span></div></li>
-          </ol>
-        </section>
       </main>
+
+      <section className="home-steps" aria-labelledby="home-steps-title">
+        <h2 id="home-steps-title">How it works</h2>
+        <ol>
+          <li><IdCard size={20} aria-hidden="true" /><div><strong>Check in</strong><span>Swipe your JACard and take a quick photo check.</span></div></li>
+          <li><MessagesSquare size={20} aria-hidden="true" /><div><strong>Talk it through</strong><span>Answer the examiner out loud. It asks follow-up questions.</span></div></li>
+          <li><ClipboardCheck size={20} aria-hidden="true" /><div><strong>Professor review</strong><span>Your professor reviews the recording, transcript and AI suggestions.</span></div></li>
+        </ol>
+      </section>
 
       <footer className="home-footer">
         <p>OralExam AI · James Madison University</p>

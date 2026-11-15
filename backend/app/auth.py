@@ -369,7 +369,12 @@ def get_professor_exams(
                 ) AS completed_count,
                 COUNT(DISTINCT s.id) FILTER (
                     WHERE s.status = 'flagged'
-                ) AS flagged_count
+                ) AS flagged_count,
+                COUNT(DISTINCT s.student_id) FILTER (
+                    WHERE s.status IN ('pending_grading', 'graded', 'flagged')
+                ) AS submitted_student_count,
+                (SELECT COUNT(*) FROM exam_roster AS r
+                 WHERE r.exam_template_id = t.id) AS roster_count
             FROM exam_templates AS t
             LEFT JOIN questions AS q
                 ON q.exam_template_id = t.id
@@ -403,6 +408,9 @@ def get_professor_exams(
             "awaiting_grading_count": row["awaiting_grading_count"],
             "completed_count": row["completed_count"],
             "flagged_count": row["flagged_count"],
+            # "10 of 40 students submitted" on the dashboard.
+            "submitted_student_count": row.get("submitted_student_count", 0),
+            "roster_count": row.get("roster_count", 0),
         }
         for row in rows
     ]

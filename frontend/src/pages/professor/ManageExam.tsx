@@ -1,10 +1,99 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
+import { BookOpen, FolderOpen, Trash2, Users } from "lucide-react";
 import RosterUpload from "../../components/RosterUpload";
-import ExamManagementLayout from "./ExamManagementLayout";
+import ExamManagementLayout, { type ManagedExam } from "./ExamManagementLayout";
 import { examSettingsCategories, examSettingsPath } from "./examSettingsNavigation";
 
+function errorText(data: unknown, fallback: string) {
+  const detail = (data as { detail?: unknown } | null)?.detail;
+  return typeof detail === "string" ? detail : fallback;
+}
+
+/** The exam's front page: where it stands, what to set up, publishing, and deleting it. */
+function Overview({ exam, reload }: { exam: ManagedExam; reload: () => Promise<void> }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const published = exam.status === "published";
+  const roster = exam.roster_count ?? 0;
+
+  async function togglePublication() {
+    const action = published ? "unpublish" : "publish";
+    setBusy(true); setError("");
+    try {
+      const response = await fetch(`/api/exam/templates/${encodeURIComponent(exam.id)}/${action}`, { method: "POST", credentials: "include" });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(errorText(data, `Unable to ${action} this exam.`));
+      await reload();
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : "Unable to update the exam.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function deleteExam() {
+    if (!window.confirm(`Delete "${exam.title}"? This cannot be undone. Exams that students have taken cannot be deleted.`)) return;
+    setBusy(true); setError("");
+    try {
+      const response = await fetch(`/api/exam/templates/${encodeURIComponent(exam.id)}`, { method: "DELETE", credentials: "include" });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(errorText(data, "Unable to delete this exam."));
+      window.location.href = "/professor/exams";
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : "Unable to delete this exam.");
+      setBusy(false);
+    }
+  }
+
+  return <div className="manage-exam-overview">
+    <header className="manage-exam-overview-head">
+      <div>
+        <p className="manage-exam-overview-course">{exam.course}</p>
+        <h1>{exam.title}</h1>
+        {exam.description && <p>{exam.description}</p>}
+      </div>
+      <div className="manage-exam-overview-publish">
+        <span className={`exam-row-status ${published ? "published" : "draft"}`}>{published ? "Published" : "Draft"}</span>
+        <button type="button" className={published ? "" : "is-primary"} disabled={busy} onClick={() => void togglePublication()}>
+          {published ? "Unpublish" : "Publish"}
+        </button>
+      </div>
+    </header>
+    {error && <p role="alert" className="exam-error">{error}</p>}
+
+    <dl className="manage-exam-stats">
+      <div><dt>Questions</dt><dd>{exam.question_count ?? 0}</dd></div>
+      <div><dt>Submitted</dt><dd>{exam.submitted_student_count ?? 0}{roster > 0 ? ` / ${roster}` : ""}</dd></div>
+      <div><dt>In progress</dt><dd>{exam.in_progress_count ?? 0}</dd></div>
+      <div><dt>Flagged</dt><dd>{exam.flagged_count ?? 0}</dd></div>
+    </dl>
+    <p><a href={`/professor/exams/${encodeURIComponent(exam.id)}/submissions`}>View student progress and submissions →</a></p>
+
+    <h2 className="manage-exam-section-title">Set up</h2>
+    <ul className="manage-exam-shortcuts">
+      <li><a href={`/professor/exams/${exam.id}/questions`}><BookOpen size={18} aria-hidden="true" /><strong>Questions</strong><span>{exam.question_count ?? 0} in the bank</span></a></li>
+      <li><a href={`/professor/exams/${exam.id}/materials`}><FolderOpen size={18} aria-hidden="true" /><strong>Course materials</strong><span>What the AI draws on</span></a></li>
+      <li><a href={`/professor/exams/${exam.id}/roster`}><Users size={18} aria-hidden="true" /><strong>Student roster</strong><span>{roster} student{roster === 1 ? "" : "s"}</span></a></li>
+      {examSettingsCategories.map(category => <li key={category.slug}>
+        <a href={examSettingsPath(exam.id, category.slug)}><span className="manage-exam-nav-glyph" aria-hidden="true">{category.icon}</span>
+          <strong>{category.title.replace(" Settings", "")}</strong><span>{category.description}</span></a>
+      </li>)}
+    </ul>
+
+    <section className="manage-exam-danger" aria-labelledby="danger-heading">
+      <div>
+        <h2 id="danger-heading">Delete this exam</h2>
+        <p>Removes the exam, its questions and its settings. Exams that students have taken cannot be deleted.</p>
+      </div>
+      <button type="button" disabled={busy} onClick={() => void deleteExam()}><Trash2 size={16} aria-hidden="true" />Delete exam</button>
+    </section>
+  </div>;
+}
+
 export default function ManageExam() {
-  const examId = window.location.pathname.match(/^\/professor\/exams\/([^/]+)\/?$/)?.[1] ?? "";
+  const match = window.location.pathname.match(/^\/professor\/exams\/([^/]+)(?:\/(roster))?\/?$/);
+  const examId = match?.[1] ?? "";
+  const section = match?.[2] === "roster" ? "roster" : "overview";
   useEffect(() => {
     // An old fragment link can be followed while the overview is already open.
     // Hash-only navigation does not remount this pathname-based application.
@@ -17,44 +106,7 @@ export default function ManageExam() {
     window.addEventListener("hashchange", openLegacyAvatar);
     return () => window.removeEventListener("hashchange", openLegacyAvatar);
   }, [examId]);
-  return <ExamManagementLayout examId={examId}>{exam => <>
-    <nav className="manage-exam-options" aria-label="Exam content">
-      <a href={`/professor/exams/${exam.id}/questions`} className="manage-exam-card">
-        <div className="manage-exam-card-icon" aria-hidden="true">📚</div>
-        <div className="manage-exam-card-content">
-          <span className="manage-exam-card-label">QUESTIONS</span>
-          <h2>Question Bank</h2>
-          <p>View, add, edit, and organize the questions used during this exam.</p>
-          <span className="manage-exam-card-link">View Question Bank →</span>
-        </div>
-      </a>
-      <a href={`/professor/exams/${exam.id}/materials`} className="manage-exam-card">
-        <div className="manage-exam-card-icon" aria-hidden="true">📁</div>
-        <div className="manage-exam-card-content">
-          <span className="manage-exam-card-label">MATERIALS</span>
-          <h2>Course Materials</h2>
-          <p>View and manage documents and study materials used by the AI.</p>
-          <span className="manage-exam-card-link">View Course Materials →</span>
-        </div>
-      </a>
-    </nav>
-    <section className="manage-exam-settings" aria-labelledby="exam-settings-heading">
-      <div className="manage-exam-settings-heading">
-        <p className="eyebrow">CONFIGURATION</p>
-        <h2 id="exam-settings-heading">Exam Settings</h2>
-        <p>Choose a category to review and save its settings.</p>
-      </div>
-      <nav className="manage-exam-settings-grid" aria-label="Exam settings">
-        {examSettingsCategories.map(category => <a key={category.slug} href={examSettingsPath(exam.id, category.slug)} className="manage-exam-card manage-exam-settings-card">
-          <div className="manage-exam-card-icon" aria-hidden="true">{category.icon}</div>
-          <div className="manage-exam-card-content">
-            <h3>{category.title}</h3>
-            <p>{category.description}</p>
-            <span className="manage-exam-card-link">Manage settings →</span>
-          </div>
-        </a>)}
-      </nav>
-    </section>
-    <RosterUpload examId={exam.id} />
-  </>}</ExamManagementLayout>;
+  return <ExamManagementLayout examId={examId} section={section}>{(exam, reload) => section === "roster"
+    ? <RosterUpload examId={exam.id} />
+    : <Overview exam={exam} reload={reload} />}</ExamManagementLayout>;
 }

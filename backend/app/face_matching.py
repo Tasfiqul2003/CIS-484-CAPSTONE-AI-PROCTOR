@@ -98,6 +98,24 @@ class OpenCVFaceMatcher:
 
             return frame_set_matches(scores)
 
+    def count_faces(self, image_bytes: bytes) -> int:
+        """Number of faces the detector finds in one image (used for in-exam presence checks)."""
+        if not image_bytes or len(image_bytes) > MAX_IMAGE_BYTES:
+            raise FaceImageInvalid("The camera frame must be no larger than 3 MB.")
+        image = self._cv2.imdecode(
+            self._np.frombuffer(image_bytes, dtype=self._np.uint8),
+            self._cv2.IMREAD_COLOR,
+        )
+        if image is None:
+            raise FaceImageInvalid("The camera frame could not be decoded.")
+        height, width = image.shape[:2]
+        if width > MAX_IMAGE_DIMENSION or height > MAX_IMAGE_DIMENSION:
+            raise FaceImageInvalid("The camera frame is too large.")
+        with self._lock:
+            self._detector.setInputSize((width, height))
+            _, faces = self._detector.detect(image)
+        return 0 if faces is None else len(faces)
+
 
 @functools.lru_cache(maxsize=1)
 def _load_matcher(detector_path: str, recognizer_path: str) -> OpenCVFaceMatcher:

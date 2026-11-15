@@ -140,7 +140,7 @@ def get_submission_review(
         raise HTTPException(403, "Professor account required.")
 
     session = db.execute(
-        text("""SELECT s.status, s.developer_demo, st.name AS student_name,
+        text("""SELECT s.status, s.developer_demo, s.exam_template_id, st.name AS student_name,
                        st.eid, t.title AS exam_title, t.course, t.professor_id,
                        v.status AS video_status, v.expires_at
                 FROM exam_sessions AS s
@@ -180,6 +180,7 @@ def get_submission_review(
         "exam_title": session["exam_title"],
         "course": session["course"],
         "status": session["status"],
+        "exam_template_id": str(session["exam_template_id"]) if session.get("exam_template_id") else None,
         "video_url": f"/api/exam/sessions/{session_id}/video",
         "answers": [dict(answer) for answer in answers],
     }

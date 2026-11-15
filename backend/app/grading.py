@@ -27,6 +27,15 @@ Reply ONLY with JSON in exactly this shape:
              "rationale": "<1-3 sentences pointing to specific answers>"}]}"""
 
 
+# Used when an exam has no rubric of its own. No screen sets a rubric yet, so without this
+# default every AI assessment would be refused.
+DEFAULT_CRITERIA = [
+    {"name": "Accuracy", "max_score": 10},
+    {"name": "Depth of understanding", "max_score": 10},
+    {"name": "Clarity of explanation", "max_score": 10},
+]
+
+
 class GradeRequest(BaseModel):
     session_id: UUID
 
@@ -93,9 +102,16 @@ def grade_session(
     if already:
         raise HTTPException(409, "This session already has grades")
 
-    criteria = (session["rubric"] or {}).get("criteria", [])
-    if not criteria:
-        raise HTTPException(422, "The exam template's rubric has no criteria")
+    rubric = session["rubric"]
+    if isinstance(rubric, str):
+        try:
+            rubric = json.loads(rubric)
+        except ValueError:
+            rubric = {}
+    criteria = [c for c in ((rubric or {}).get("criteria") or []) if isinstance(c, dict) and c.get("name")]
+    default_rubric = not criteria
+    if default_rubric:
+        criteria = DEFAULT_CRITERIA
 
     answered = [dict(r) for r in db.execute(
         text("""SELECT sequence_num, question_text AS question,
@@ -166,7 +182,7 @@ def grade_session(
                        "model_suggested_score": suggested, "rationale": note})
 
     db.commit()
-    return {"session_id": sid, "grades": graded,
+    return {"session_id": sid, "grades": graded, "default_rubric": default_rubric,
             "note": "Suggested scores only; a professor must confirm each one."}
 
 
@@ -246,7 +262,7 @@ def session_report(
 
     return {
         "session": session_data,
-        "interactions": rows("""SELECT sequence_num, question_source, question_text,
+        "interactions": rows("""SELECT sequence_num, question_source, avatar_followup_index, question_text,
                                        student_answer_transcript, model_reasoning
                                 FROM interactions
                                 WHERE session_id = CAST(:sid AS uuid)

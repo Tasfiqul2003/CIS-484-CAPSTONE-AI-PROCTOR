@@ -5,6 +5,10 @@ import LiveExamPresentation from "../../components/avatar/LiveExamPresentation";
 import AvatarVideoStage from "../../components/avatar/AvatarVideoStage";
 import AnswerRecorder from "../../components/avatar/AnswerRecorder";
 import { fetchAvatarStatus } from "../../components/avatar/avatarService";
+import { isRepeatRequest } from "../../components/avatar/voiceCommands";
+import { createRecordingMix } from "../../components/exam-recording/recordingMix";
+import type { RecordingMix } from "../../components/exam-recording/recordingMix";
+import { startPresenceMonitor } from "../../components/exam-recording/presenceMonitor";
 import type { AvatarStatus } from "../../components/avatar/avatarService";
 import OralExamMark from "../../components/brand/OralExamMark";
 import { DemoAttemptNotice, useDeveloperDemo } from "../../components/developer-demo/DemoWorkspace";
@@ -17,6 +21,8 @@ type StartResponse = ExamTiming & {
   sequence_num: number;
   question: string;
   developer_demo?: boolean;
+  exam_title?: string;
+  started_at?: string | null;
 };
 
 type AnswerResponse = { done: true; reason?: string }
@@ -79,12 +85,19 @@ export default function StudentExam() {
   const expired = remaining.exam === 0 || remaining.question === 0;
   const [avatar, setAvatar] = useState<AvatarStatus | null>(null);
   const [recording, setRecording] = useState(false);
-  // Hands-free turn-taking: listen when the examiner finishes, then submit after a short countdown.
+  // Hands-free: listen when the examiner finishes and stop when the student goes quiet.
+  // The student always submits; an earlier auto-submit sent room conversation as an answer.
   const [handsFree, setHandsFree] = useState(() => {
     try { return localStorage.getItem("oralexam_hands_free") !== "off"; } catch { return true; }
   });
   const [listenSignal, setListenSignal] = useState(0);
-  const [countdown, setCountdown] = useState<number | null>(null);
+  const [examTitle, setExamTitle] = useState("");
+  const [elapsedSeconds, setElapsedSeconds] = useState<number | null>(null);
+  const examStart = useRef<number | null>(null);
+  const [examinerSpeech, setExaminerSpeech] = useState<{ id: number; text: string } | null>(null);
+  const [voiceNotice, setVoiceNotice] = useState("");
+  const recordingMix = useRef<RecordingMix | null>(null);
+  const examinerVideo = useRef<HTMLVideoElement | null>(null);
   // The talking avatar and spoken answers appear only when this server runs the avatar service.
   const avatarOn = !!avatar?.enabled && !developerMinimal && !!sessionId;
 
@@ -102,6 +115,10 @@ export default function StudentExam() {
 
   useEffect(() => {
     const tick = () => {
+      if (examStart.current !== null) {
+        const seconds = Math.max(0, Math.floor((performance.now() - examStart.current) / 1000));
+        setElapsedSeconds(current => current === seconds ? current : seconds);
+      }
       const value = clock.current;
       if (value) {
         const next = remainingTime(value, performance.now());
@@ -173,7 +190,10 @@ export default function StudentExam() {
     stream: MediaStream,
     mimeType: string,
   ) {
-    const recorder = new MediaRecorder(stream, {
+    // Record the examiner's voice too, not only the student's microphone.
+    recordingMix.current = createRecordingMix(stream);
+    if (recordingMix.current && examinerVideo.current) recordingMix.current.attach(examinerVideo.current);
+    const recorder = new MediaRecorder(recordingMix.current?.stream ?? stream, {
       mimeType,
       videoBitsPerSecond: 500_000,
       audioBitsPerSecond: 64_000,
@@ -236,6 +256,8 @@ export default function StudentExam() {
     mediaStream.current?.getTracks().forEach(track => track.stop());
     mediaStream.current = null;
     mediaRecorder.current = null;
+    recordingMix.current?.close();
+    recordingMix.current = null;
     setRecordingActive(false);
     setRecordingError("");
     setFinalizationPending(false);
@@ -297,6 +319,17 @@ export default function StudentExam() {
 
       const saved = sessionStorage.getItem(storageKey);
       if (saved && preflight.recording_required) {
+        let finished = false;
+        try {
+          const attempt = JSON.parse(saved) as { id: string; token: string };
+          const state = await fetch(`/api/exam/sessions/${encodeURIComponent(attempt.id)}`,
+            { headers: { Authorization: `Bearer ${attempt.token}` } });
+          finished = state.ok && (await state.json() as { status?: string }).status !== "in_progress";
+        } catch { /* treat as interrupted below */ }
+        if (finished) {
+          sessionStorage.removeItem(storageKey);
+          throw new Error("You have already completed this exam.");
+        }
         throw new Error(
           "This attempt may have an interrupted recording and cannot be safely resumed. Contact your professor.",
         );
@@ -355,6 +388,11 @@ export default function StudentExam() {
       }
 
       if (result.status === "in_progress") updateClock(result);
+      setExamTitle(result.exam_title ?? "");
+      if (result.started_at && result.server_now) {
+        const alreadyElapsed = Date.parse(result.server_now) - Date.parse(result.started_at);
+        if (Number.isFinite(alreadyElapsed)) examStart.current = performance.now() - Math.max(0, alreadyElapsed);
+      }
       setSessionId(result.session_id);
       setDemoAttempt(result.developer_demo === true);
       sessionStorage.setItem("oralexam_exam_session_id", result.session_id);
@@ -380,8 +418,15 @@ export default function StudentExam() {
     return () => {
       if (mediaRecorder.current?.state === "recording") mediaRecorder.current.stop();
       mediaStream.current?.getTracks().forEach(track => track.stop());
+      recordingMix.current?.close();
     };
   }, []);
+
+  // In-exam presence checks run while the assessed recording runs.
+  useEffect(() => {
+    if (!recordingActive || !sessionId || demoAttempt || !mediaStream.current) return;
+    return startPresenceMonitor(sessionId, sessionToken.current, mediaStream.current);
+  }, [recordingActive, sessionId, demoAttempt]);
 
   useEffect(() => {
     if (!recordingActive || !sessionId) return;
@@ -489,14 +534,7 @@ export default function StudentExam() {
     finalizeCompletedExam,
   ]);
 
-  useEffect(() => { setCountdown(null); }, [questionNumber]);
-  useEffect(() => {
-    if (countdown === null) return;
-    if (submitting || recording || expired) { setCountdown(null); return; }
-    if (countdown <= 0) { setCountdown(null); void handleNext(); return; }
-    const tick = window.setTimeout(() => setCountdown(value => value === null ? null : value - 1), 1000);
-    return () => window.clearTimeout(tick);
-  }, [countdown, submitting, recording, expired, handleNext]);
+  useEffect(() => { setVoiceNotice(""); }, [questionNumber]);
 
   useEffect(() => {
     if (!expired || loading || showConfirmation || submitting || assisting || !sessionId
@@ -672,14 +710,28 @@ export default function StudentExam() {
     );
   }
 
-  const AUTO_SUBMIT_SECONDS = 5;
   const examinerFinished = () => {
-    if (handsFree && !answer.trim() && countdown === null && !submitting) setListenSignal(value => value + 1);
+    if (handsFree && !answer.trim() && !submitting) setListenSignal(value => value + 1);
   };
   const toggleHandsFree = (on: boolean) => {
     setHandsFree(on);
-    if (!on) setCountdown(null);
     try { localStorage.setItem("oralexam_hands_free", on ? "on" : "off"); } catch { /* per-browser preference only */ }
+  };
+  const examinerElement = (element: HTMLVideoElement | null) => {
+    examinerVideo.current = element;
+    if (element) recordingMix.current?.attach(element);
+  };
+  const examinerSays = (text: string) => setExaminerSpeech(current => ({ id: (current?.id ?? 0) + 1, text }));
+  const heardAnswer = (text: string) => {
+    // "Can you repeat the question?" asks the examiner; it is not part of the answer.
+    if (isRepeatRequest(text)) {
+      setVoiceNotice("Repeating the question.");
+      examinerSays(questionText);
+      return false;
+    }
+    setVoiceNotice("");
+    setAnswer(current => current.trim() ? `${current.trim()} ${text}` : text);
+    return true;
   };
 
   const sampleQuestion = question.startsWith("[Developer demo] ");
@@ -689,24 +741,16 @@ export default function StudentExam() {
     <h2 className="exam-current-question" aria-live="polite">{questionText}</h2>
     <label className="student-answer-label" htmlFor="student-exam-answer">{demoAttempt ? "Test answer" : "Your answer"}</label>
     <textarea id="student-exam-answer" className="student-answer-input" value={answer}
-      onChange={event => { setCountdown(null); setAnswer(event.target.value); }} placeholder={demoAttempt ? "Type your test answer here…" : "Type your response…"}
+      onChange={event => setAnswer(event.target.value)} placeholder={demoAttempt ? "Type your test answer here…" : "Type your response…"}
       disabled={submitting || (expired && !assisting)} />
     {avatarOn && <AnswerRecorder sessionId={sessionId} token={sessionToken.current}
       sharedStream={recordingActive ? mediaStream.current : null}
       disabled={submitting || (expired && !assisting)} onRecordingChange={setRecording}
-      listenSignal={listenSignal} handsFree={handsFree}
-      onTranscript={text => {
-        setAnswer(current => current.trim() ? `${current.trim()} ${text}` : text);
-        if (handsFree) setCountdown(AUTO_SUBMIT_SECONDS);
-      }} />}
-    {avatarOn && countdown !== null && <div className="hands-free-countdown" role="status">
-      <span>Submitting your answer in {countdown} second{countdown === 1 ? "" : "s"}.</span>
-      <button type="button" onClick={() => { setCountdown(null); void handleNext(); }}>Submit now</button>
-      <button type="button" onClick={() => setCountdown(null)}>Keep editing</button>
-    </div>}
+      listenSignal={listenSignal} handsFree={handsFree} onTranscript={heardAnswer} />}
+    {avatarOn && voiceNotice && <p className="answer-recorder-note" role="status">{voiceNotice}</p>}
     {avatarOn && <label className="hands-free-toggle">
       <input type="checkbox" checked={handsFree} onChange={event => toggleHandsFree(event.target.checked)} />
-      Hands-free: listen after each question and submit when I stop talking
+      Hands-free: start listening after each question
     </label>}
     {expired && !assisting && <p role="status">{remaining.exam === 0
       ? "Exam time has expired. Finishing your attempt."
@@ -761,21 +805,33 @@ export default function StudentExam() {
   return <div className="student-exam-page">
     <header className="student-exam-header">
       <div className="student-exam-logo"><span aria-hidden="true"><OralExamMark size={40} /></span><strong>OralExam AI</strong></div>
+      {examTitle && <p className="student-exam-title">{examTitle}</p>}
       <div className="exam-header-controls">
         <div className="exam-settings-slot" ref={setSettingsTarget} />
-        <div className="exam-timer-chip" role="timer" aria-label="Exam time remaining" aria-live="off">
-          <span>Exam time left</span><strong>{remaining.exam === null ? "No limit" : formatRemaining(remaining.exam).padStart(5, "0")}</strong>
-        </div>
-        <div className="exam-timer-chip" role="timer" aria-label="Question time remaining" aria-live="off">
-          <span>Question time left</span><strong>{remaining.question === null ? "No limit" : formatRemaining(remaining.question).padStart(5, "0")}</strong>
-        </div>
+        {elapsedSeconds !== null && <div className="exam-timer-chip" role="timer" aria-label="Time elapsed" aria-live="off">
+          <span>Time elapsed</span><strong>{formatRemaining(elapsedSeconds).padStart(5, "0")}</strong>
+        </div>}
+        {remaining.exam === null && remaining.question === null
+          ? <div className="exam-timer-chip" aria-label="This exam has no time limit">
+              <span>Time limit</span><strong>None</strong>
+            </div>
+          : <>
+            <div className="exam-timer-chip" role="timer" aria-label="Exam time remaining" aria-live="off">
+              <span>Exam time left</span><strong>{remaining.exam === null ? "No limit" : formatRemaining(remaining.exam).padStart(5, "0")}</strong>
+            </div>
+            <div className="exam-timer-chip" role="timer" aria-label="Question time remaining" aria-live="off">
+              <span>Question time left</span><strong>{remaining.question === null ? "No limit" : formatRemaining(remaining.question).padStart(5, "0")}</strong>
+            </div>
+            </>}
       </div>
     </header>
     <main className="student-exam-content student-exam-stage-content">
       <h1 className="exam-screen-reader">Oral examination · Question {questionNumber}</h1>
       <LiveExamPresentation sessionId={sessionId}
         stage={avatarOn ? <AvatarVideoStage sessionId={sessionId} token={sessionToken.current} text={questionText}
-          sequence={questionNumber} hold={recording || submitting} onFinished={examinerFinished} /> : null} token={sessionToken.current} question={question}
+          sequence={questionNumber} hold={recording || submitting} onFinished={examinerFinished}
+          announce={examinerSpeech} onVideoElement={examinerElement} /> : null}
+        examinerSpeaks={avatarOn ? examinerSays : undefined} token={sessionToken.current} question={question}
         developerDemo={demoAttempt} developerMinimal={developerMinimal} settingsTarget={settingsTarget}
         sequence={questionNumber} answer={answer} expired={expired && !assisting} submitting={submitting}
         onTiming={updateClock} onBusyChange={setAssisting} onTextSizeChange={setTextSize} />
@@ -786,7 +842,7 @@ export default function StudentExam() {
       </section> : <details className="exam-response-panel" open>
         <summary>Question and answer</summary>
         <p>{avatarOn ? (handsFree
-          ? "After the examiner asks, start talking. Pause for 3 seconds when you are finished; your answer is submitted 5 seconds later unless you select Keep editing or type."
+          ? "After the examiner asks, start talking. Pause for 3 seconds when you are finished, check the transcript, then select Submit answer. To hear the question again, say “repeat the question”."
           : "Speak your answer or type it. Check the transcript before you submit.") : "Microphone transcription is not connected. Your typed answer is saved when you submit."}</p>
         {answerForm}
       </details>}

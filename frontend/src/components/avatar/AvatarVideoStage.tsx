@@ -12,10 +12,15 @@ type Props = {
   hold?: boolean;
   /** Called once after the whole question has been spoken (or could not be), e.g. to start listening. */
   onFinished?: () => void;
+  /** Extra speech, such as a spoken "repeat" request or an assistance answer. Each new id is spoken once. */
+  announce?: { id: number; text: string } | null;
+  /** Receives the video element, so the exam recording can include the examiner's voice. */
+  onVideoElement?: (element: HTMLVideoElement | null) => void;
 };
 
 /** Plays the professor avatar's clips for the current question, sentence by sentence. */
-export default function AvatarVideoStage({ sessionId, token, text, sequence, hold = false, onFinished }: Props) {
+export default function AvatarVideoStage({ sessionId, token, text, sequence, hold = false, onFinished, announce = null,
+  onVideoElement }: Props) {
   const [queue, setQueue] = useState<AvatarClip[]>([]);
   const [status, setStatus] = useState<"idle" | "preparing" | "speaking" | "blocked" | "error">("idle");
   const [message, setMessage] = useState("");
@@ -64,6 +69,16 @@ export default function AvatarVideoStage({ sessionId, token, text, sequence, hol
     return () => request.current?.abort();
   }, [sessionId, token, text, sequence, say]);
 
+  useEffect(() => {
+    if (announce?.text) say(announce.text);
+  // Only a new announcement id should speak; the text alone never re-triggers.
+  }, [announce?.id]);
+
+  const attachVideo = useCallback((element: HTMLVideoElement | null) => {
+    video.current = element;
+    onVideoElement?.(element);
+  }, [onVideoElement]);
+
   // Play the head of the queue; move on when it ends.
   useEffect(() => {
     const element = video.current;
@@ -89,7 +104,7 @@ export default function AvatarVideoStage({ sessionId, token, text, sequence, hol
   };
 
   return <section className="avatar-video-stage" aria-label="Examiner">
-    <video ref={video} className="avatar-video" playsInline preload="auto" onEnded={ended} onError={ended}
+    <video ref={attachVideo} className="avatar-video" playsInline preload="auto" onEnded={ended} onError={ended}
       aria-describedby="avatar-video-caption" />
     <p id="avatar-video-caption" className="avatar-video-caption" aria-live="polite">
       {status === "preparing" ? "The examiner is preparing the question…" : caption}
@@ -98,7 +113,8 @@ export default function AvatarVideoStage({ sessionId, token, text, sequence, hol
       {status === "blocked" && <button type="button" onClick={() => {
         video.current?.play().then(() => setStatus("speaking")).catch(() => setStatus("blocked"));
       }}>Play the examiner</button>}
-      {(status === "idle" || status === "error") && <button type="button" onClick={() => say(text)}>Replay question</button>}
+      {(status === "idle" || status === "error") && <button type="button" onClick={() => say(text)}
+        title="You can also say “repeat the question”.">Repeat question</button>}
     </div>
     {message && <p role="status" className="avatar-video-message">{message}</p>}
   </section>;

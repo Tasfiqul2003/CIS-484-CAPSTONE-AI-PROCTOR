@@ -5,8 +5,9 @@ type Props = {
   sessionId: string;
   token: string;
   disabled?: boolean;
-  /** Receives the transcript; the student reviews and edits it before submitting. */
-  onTranscript: (text: string) => void;
+  /** Receives the transcript; the student reviews and edits it before submitting.
+   *  Return false when it was a request (such as "repeat the question") rather than an answer. */
+  onTranscript: (text: string) => boolean | void;
   onRecordingChange?: (recording: boolean) => void;
   /** The exam's own camera+microphone recording, if running: its microphone is reused instead of opened twice. */
   sharedStream?: MediaStream | null;
@@ -20,6 +21,7 @@ const MAX_SECONDS = 180;
 const SILENCE_MS = 3000;
 const NO_SPEECH_MS = 20000;
 const MIN_SPEECH_MS = 300;
+const MAX_NOISE_FLOOR = 0.03;
 
 function pickMimeType(): string {
   const options = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus", "audio/mp4"];
@@ -89,7 +91,9 @@ export default function AnswerRecorder({ sessionId, token, disabled = false, onT
       const now = performance.now();
       const value = level(analyser, buffer);
       // Learn the room's background noise in the first half second; speech must be clearly louder.
-      if (now - started < 500) floor = Math.max(floor, value);
+      // Capped, because a student who starts talking right away would otherwise set the "noise" so
+      // high that their speech never counts and listening never stops.
+      if (now - started < 500) floor = Math.min(MAX_NOISE_FLOOR, Math.max(floor, value));
       const loud = value > Math.max(0.01, floor * 3);
       if (now - lastMeter > 100) { setMeter(Math.min(1, value * 8)); lastMeter = now; }
       if (loud) {
@@ -141,7 +145,7 @@ export default function AnswerRecorder({ sessionId, token, disabled = false, onT
       setState("transcribing");
       try {
         const text = await transcribeAnswer(sessionId, token, recorded);
-        if (text) { onTranscript(text); setMessage("Transcript added. Check it before it is submitted."); }
+        if (text) setMessage(onTranscript(text) === false ? "" : "Transcript added. Check it before you submit.");
         else setMessage("Nothing was heard. Try again a little closer to the microphone, or type your answer.");
       } catch (error) {
         setMessage(error instanceof Error ? error.message : "Transcription failed. Type your answer instead.");

@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import AvatarSettings from "../../components/avatar/AvatarSettings";
 import ExamCategorySettings from "../../components/exam-settings/ExamCategorySettings";
 import OdsAccommodations from "../../components/exam-settings/OdsAccommodations";
+import RubricEditor from "../../components/exam-settings/RubricEditor";
 import ExamManagementLayout from "./ExamManagementLayout";
 import { examSettingsCategories, examSettingsPath, type ExamSettingsSlug } from "./examSettingsNavigation";
 
@@ -19,6 +20,8 @@ export default function ExamSettingsPage({ examId, category }: { examId: string;
       ? <AvatarSettings examId={exam.id} defaultOpen />
       : category === "ods-accommodations"
         ? <OdsAccommodations key={exam.id} examId={exam.id} />
-        : <ExamCategorySettings examId={exam.id} category={category} />
+        : category === "ai-results"
+          ? <><RubricEditor examId={exam.id} /><ExamCategorySettings examId={exam.id} category={category} /></>
+          : <ExamCategorySettings examId={exam.id} category={category} />
   }</ExamManagementLayout>;
 }

@@ -1,12 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AlertTriangle, ArrowLeft, LoaderCircle, Sparkles } from "lucide-react";
+import { AlertTriangle, ArrowLeft, LoaderCircle, Play, RefreshCw, Sparkles } from "lucide-react";
 import ProfessorHeader from "../../components/professor/ProfessorHeader";
-
-type AnswerReview = {
-  sequence_num: number;
-  question: string;
-  answer: string | null;
-};
 
 type ReviewData = {
   student_name: string;
@@ -16,7 +10,6 @@ type ReviewData = {
   course: string | null;
   status: string;
   video_url: string;
-  answers: AnswerReview[];
 };
 
 type Grade = {
@@ -34,10 +27,25 @@ type IntegrityEvent = {
   notes: string | null;
 };
 
+type Turn = {
+  sequence_num: number;
+  question_source: string | null;
+  avatar_root_sequence: number | null;
+  avatar_followup_index: number | null;
+  question_text: string;
+  student_answer_transcript: string | null;
+  ai_evaluation: string | null;
+  topic: string | null;
+  asked_at_s: number | string | null;
+};
+
 type Report = {
-  interactions: Array<{ sequence_num: number; question_source: string | null; avatar_followup_index?: number | null }>;
+  session: { started_at?: string | null; ended_at?: string | null };
+  interactions: Turn[];
   grades: Grade[];
   integrity_events: IntegrityEvent[];
+  assessment?: { status: "done" | "running" | "failed" | "not_started"; error?: string };
+  rubric?: { default: boolean; criteria: Array<{ name: string; max_score: number }> };
 };
 
 const EVENT_LABELS: Record<string, string> = {
@@ -56,6 +64,24 @@ function numberOrNull(value: number | string | null | undefined) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function when(value?: string | null) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return `${date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })} at ${
+    date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}`;
+}
+
+/** Bank questions with their follow-ups, in exam order. */
+function groupTurns(turns: Turn[]) {
+  const groups = new Map<number, Turn[]>();
+  for (const turn of turns) {
+    const root = turn.avatar_root_sequence ?? turn.sequence_num;
+    groups.set(root, [...(groups.get(root) ?? []), turn]);
+  }
+  return [...groups.values()];
+}
+
 export default function ExamSessionReview() {
   // The page lives at /professor/exam-sessions/<session id>/review, so the ID is the segment before "review".
   const match = window.location.pathname.match(/^\/professor\/exam-sessions\/([^/]+)\/review\/?$/);
@@ -64,7 +90,7 @@ export default function ExamSessionReview() {
   const [report, setReport] = useState<Report | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [grading, setGrading] = useState(false);
+  const [retrying, setRetrying] = useState(false);
   const [gradeError, setGradeError] = useState("");
   const video = useRef<HTMLVideoElement>(null);
 
@@ -73,7 +99,7 @@ export default function ExamSessionReview() {
       const response = await fetch(`/api/exam/${encodeURIComponent(sessionId)}/report`, { credentials: "include" });
       if (response.ok) setReport(await response.json() as Report);
     } catch {
-      // The recording and transcript still show without the report.
+      // The recording still shows without the report.
     }
   }, [sessionId]);
 
@@ -86,24 +112,15 @@ export default function ExamSessionReview() {
         return;
       }
       try {
-        const response = await fetch(
-          `/api/exam/sessions/${encodeURIComponent(sessionId)}/review`,
-          { credentials: "include" },
-        );
+        const response = await fetch(`/api/exam/sessions/${encodeURIComponent(sessionId)}/review`, { credentials: "include" });
         const data = await response.json().catch(() => ({}));
         if (!response.ok) {
-          throw new Error(
-            typeof data.detail === "string"
-              ? data.detail
-              : "Unable to load the exam review.",
-          );
+          throw new Error(typeof data.detail === "string" ? data.detail : "Unable to load the exam review.");
         }
         if (!cancelled) setReview(data as ReviewData);
         if (!cancelled) await loadReport();
       } catch (err) {
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : "Unable to load the exam review.");
-        }
+        if (!cancelled) setError(err instanceof Error ? err.message : "Unable to load the exam review.");
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -112,14 +129,20 @@ export default function ExamSessionReview() {
     return () => { cancelled = true; };
   }, [sessionId, loadReport]);
 
-  async function runAssessment() {
-    setGrading(true);
+  // The assessment runs on the server when the exam finishes; check back until it is ready.
+  const assessing = report?.assessment?.status === "running";
+  useEffect(() => {
+    if (!assessing) return;
+    const timer = window.setInterval(() => void loadReport(), 3000);
+    return () => window.clearInterval(timer);
+  }, [assessing, loadReport]);
+
+  async function retryAssessment() {
+    setRetrying(true);
     setGradeError("");
     try {
       const response = await fetch("/api/exam/grade", {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
+        method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ session_id: sessionId }),
       });
       const data = await response.json().catch(() => ({}));
@@ -130,7 +153,7 @@ export default function ExamSessionReview() {
     } catch (err) {
       setGradeError(err instanceof Error ? err.message : "AI assessment failed.");
     } finally {
-      setGrading(false);
+      setRetrying(false);
     }
   }
 
@@ -140,29 +163,30 @@ export default function ExamSessionReview() {
     void video.current.play().catch(() => undefined);
   };
 
-  const followUps = new Set((report?.interactions ?? [])
-    .filter(item => (item.avatar_followup_index ?? 0) > 0).map(item => item.sequence_num));
   const grades = report?.grades ?? [];
   const suggestedTotal = grades.reduce((sum, grade) => sum + (numberOrNull(grade.model_suggested_score) ?? 0), 0);
   const maxTotal = grades.reduce((sum, grade) => sum + (numberOrNull(grade.max_score) ?? 0), 0);
   const events = report?.integrity_events ?? [];
+  const groups = groupTurns(report?.interactions ?? []);
   const progressLink = review?.exam_template_id
     ? `/professor/exams/${encodeURIComponent(review.exam_template_id)}/submissions` : "/professor/exams";
+  const rubricLink = review?.exam_template_id
+    ? `/professor/exams/${encodeURIComponent(review.exam_template_id)}/settings/ai-results` : "";
+  const status = report?.assessment?.status;
 
   return (
     <div className="professor-dashboard-page professor-review-page">
       <ProfessorHeader title="Professor review" />
       <main className="professor-review-content">
         <div className="professor-review-heading">
-          <a href={progressLink} className="back-to-exam-button">
+          <a href={progressLink} className="professor-back-button">
             <ArrowLeft size={16} aria-hidden="true" />Back to Student Progress
           </a>
-          {review && (
-            <p className="professor-review-subject">
-              <strong>{review.student_name}</strong> · {review.student_eid || "EID unavailable"} ·{" "}
-              {review.exam_title}{review.course ? ` · ${review.course}` : ""}
-            </p>
-          )}
+          {review && <div className="professor-review-title">
+            <h1>{review.student_name} <span>· {review.exam_title}</span></h1>
+            <p>{review.student_eid ? `EID ${review.student_eid}` : ""}{report?.session.started_at ? ` · ${when(report.session.started_at)}` : ""}</p>
+          </div>}
+          {review?.course && <span className="professor-review-course">{review.course}</span>}
         </div>
 
         {loading ? (
@@ -177,83 +201,81 @@ export default function ExamSessionReview() {
           </section>
         ) : review ? (
           <div className="professor-review-grid">
-            <section className="professor-review-panel professor-review-video" aria-labelledby="recording-heading">
-              <h2 id="recording-heading">Recorded exam</h2>
-              <video
-                ref={video}
-                controls
-                preload="metadata"
-                src={review.video_url}
-                aria-label={`Video and audio recording for ${review.student_name}`}
-              >
-                Your browser cannot play this exam recording.
-              </video>
-              <p className="professor-review-note">
-                Retained until the configured semester-end deadline. Only the professor who owns this exam can see it.
-              </p>
-              <div className="professor-review-flags" aria-labelledby="flags-heading">
-                <h3 id="flags-heading"><AlertTriangle size={16} aria-hidden="true" />Camera presence</h3>
-                {events.length === 0 ? (
-                  <p>No presence flags were recorded.</p>
-                ) : (
-                  <ul>
-                    {events.map((event, index) => {
-                      const at = numberOrNull(event.event_timestamp);
-                      return <li key={`${event.event_type}-${index}`}>
-                        {at !== null
-                          ? <button type="button" onClick={() => seek(at)}>{clock(at)}</button>
-                          : <span>—</span>}
-                        <span>{EVENT_LABELS[event.event_type] ?? event.notes ?? event.event_type}</span>
+            <section className="professor-review-qa" aria-labelledby="qa-heading">
+              <h2 id="qa-heading">Questions and answers</h2>
+              {groups.length === 0 ? <p>No answers were saved for this session.</p> : groups.map((turns, index) => {
+                const root = turns[0];
+                return <article className="review-question" key={root.sequence_num}>
+                  <p className="review-question-label">Question {index + 1}{root.topic ? ` · ${root.topic}` : ""}</p>
+                  <p className="review-question-essential"><span>Essential question</span>{root.question_text}</p>
+                  <ol className="review-turns">
+                    {turns.map(turn => {
+                      const at = numberOrNull(turn.asked_at_s);
+                      const followUp = (turn.avatar_followup_index ?? 0) > 0;
+                      return <li key={turn.sequence_num} className={followUp ? "is-follow-up" : ""}>
+                        <div className="review-turn-asked">
+                          <span className="review-turn-kind">{followUp ? "Follow-up asked" : "Student answer"}</span>
+                          {followUp && <span className="review-turn-question">{turn.question_text}</span>}
+                          {at !== null && <button type="button" className="review-timestamp" onClick={() => seek(at)}
+                            aria-label={`Play the recording from ${clock(at)}`}><Play size={12} aria-hidden="true" />{clock(at)}</button>}
+                        </div>
+                        <div className="review-answer">{turn.student_answer_transcript || <em>No answer submitted.</em>}</div>
+                        {turn.ai_evaluation && <p className="review-evaluation"><span>AI evaluation</span>{turn.ai_evaluation}</p>}
                       </li>;
                     })}
-                  </ul>
-                )}
-              </div>
+                  </ol>
+                </article>;
+              })}
             </section>
 
             <div className="professor-review-side">
-              <section className="professor-review-panel" aria-labelledby="assessment-heading">
-                <div className="professor-review-panel-heading">
-                  <h2 id="assessment-heading">AI assessment</h2>
-                  {grades.length === 0 && (
-                    <button type="button" className="professor-review-assess" onClick={() => void runAssessment()} disabled={grading}>
-                      {grading ? <LoaderCircle size={16} className="progress-spin" aria-hidden="true" /> : <Sparkles size={16} aria-hidden="true" />}
-                      {grading ? "Assessing…" : "Assess with AI"}
-                    </button>
-                  )}
-                </div>
-                {gradeError && <p role="alert" className="exam-error">{gradeError}</p>}
-                {grades.length === 0 ? (
-                  <p className="professor-review-note">Suggested scores from the exam's AI model. You confirm or change every score.</p>
-                ) : (
-                  <>
-                    <p className="professor-review-total">Suggested total <strong>{suggestedTotal} / {maxTotal}</strong></p>
-                    <ul className="professor-review-grades">
-                      {grades.map(grade => <li key={grade.rubric_criterion}>
-                        <div><strong>{grade.rubric_criterion}</strong>
-                          <span>{numberOrNull(grade.model_suggested_score) ?? "—"} / {numberOrNull(grade.max_score) ?? "—"}</span></div>
-                        {grade.professor_notes && <p>{grade.professor_notes.replace(/^\[AI rationale\]\s*/, "")}</p>}
-                      </li>)}
-                    </ul>
-                    <p className="professor-review-note">Suggestions only. A professor must confirm each score.</p>
-                  </>
-                )}
+              <section className="professor-review-panel professor-review-video" aria-labelledby="recording-heading">
+                <h2 id="recording-heading">Recording</h2>
+                <video ref={video} controls preload="metadata" src={review.video_url}
+                  aria-label={`Video and audio recording for ${review.student_name}`}>
+                  Your browser cannot play this exam recording.
+                </video>
+                <p className="professor-review-note">Kept until the semester-end deadline. Only you can see it.</p>
               </section>
 
-              <section className="professor-review-panel professor-review-transcript" aria-labelledby="transcript-heading">
-                <h2 id="transcript-heading">Questions and answers</h2>
-                {review.answers.length === 0 ? (
-                  <p>No answer transcript was saved for this session.</p>
-                ) : (
-                  <ol>
-                    {review.answers.map(item => (
-                      <li key={item.sequence_num}>
-                        <h3>{followUps.has(item.sequence_num) && <span className="professor-review-followup">Follow-up</span>}{item.question}</h3>
-                        <p>{item.answer || "No answer submitted."}</p>
-                      </li>
-                    ))}
-                  </ol>
-                )}
+              <section className="professor-review-panel" aria-labelledby="assessment-heading">
+                <h2 id="assessment-heading">AI assessment</h2>
+                {grades.length > 0 ? <>
+                  <p className="professor-review-total">Suggested total <strong>{suggestedTotal} / {maxTotal}</strong></p>
+                  <ul className="professor-review-grades">
+                    {grades.map(grade => <li key={grade.rubric_criterion}>
+                      <div><strong>{grade.rubric_criterion}</strong>
+                        <span>{numberOrNull(grade.model_suggested_score) ?? "—"} / {numberOrNull(grade.max_score) ?? "—"}</span></div>
+                      {grade.professor_notes && <p>{grade.professor_notes.replace(/^\[AI rationale\]\s*/, "")}</p>}
+                    </li>)}
+                  </ul>
+                </> : status === "failed" ? <>
+                  <p role="alert" className="exam-error">The AI assessment did not finish: {report?.assessment?.error}</p>
+                  <button type="button" className="professor-review-assess" onClick={() => void retryAssessment()} disabled={retrying}>
+                    {retrying ? <LoaderCircle size={16} className="progress-spin" aria-hidden="true" /> : <RefreshCw size={16} aria-hidden="true" />}
+                    {retrying ? "Assessing…" : "Try again"}
+                  </button>
+                </> : <p className="professor-review-assessing" role="status">
+                  <Sparkles size={16} aria-hidden="true" />Preparing the AI assessment… this usually takes under a minute.
+                </p>}
+                {gradeError && <p role="alert" className="exam-error">{gradeError}</p>}
+                <p className="professor-review-note">
+                  {report?.rubric?.default === false ? "Your rubric for this exam" : "Default rubric"}
+                  {rubricLink && <> · <a href={rubricLink}>Change rubric</a></>} · Suggestions only; you confirm each score.
+                </p>
+              </section>
+
+              <section className="professor-review-panel professor-review-flags" aria-labelledby="flags-heading">
+                <h2 id="flags-heading"><AlertTriangle size={16} aria-hidden="true" />Camera presence</h2>
+                {events.length === 0 ? <p>No presence flags were recorded.</p> : <ul>
+                  {events.map((event, index) => {
+                    const at = numberOrNull(event.event_timestamp);
+                    return <li key={`${event.event_type}-${index}`}>
+                      {at !== null ? <button type="button" onClick={() => seek(at)}>{clock(at)}</button> : <span>—</span>}
+                      <span>{EVENT_LABELS[event.event_type] ?? event.notes ?? event.event_type}</span>
+                    </li>;
+                  })}
+                </ul>}
               </section>
             </div>
           </div>

@@ -688,3 +688,256 @@ a.logo:visited {
 }
 .dashboard-action.dashboard-action-avatar p { color: var(--oe-text-muted, #625d70); }
 .dashboard-action.dashboard-action-avatar .dashboard-action-icon { background: var(--oe-accent-soft, #eee8f7); color: var(--oe-accent, #5b3a91); }
+
+/* ===================== Round 2 (Nov 15 review) ===================== */
+
+/* ---------- Live exam: examiner left, question and answer right ---------- */
+@media (min-width: 1100px) {
+  .student-exam-page .student-exam-stage-content.is-two-column {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(400px, 0.9fr);
+    gap: 24px;
+    align-items: start;
+    width: min(calc(100% - 48px), 1440px);
+    padding-top: 20px;
+  }
+  .is-two-column > .live-exam-presentation { position: sticky; top: 16px; }
+  .is-two-column > .exam-response-panel,
+  .is-two-column > .developer-exam-panel { margin-top: 0; }
+  .is-two-column .avatar-video-stage { max-width: min(560px, calc(100vh - 300px)); }
+}
+.is-two-column > .exam-response-panel > summary { font-size: 1.0625rem; }
+
+/* Examiner stage: a square frame that always shows something */
+.avatar-video-stage { max-width: 520px; }
+.avatar-video-frame {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 18px;
+  overflow: hidden;
+  background: radial-gradient(circle at 50% 35%, #3a3150, #1d1b26 70%);
+}
+.avatar-video-frame .avatar-video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: 0;
+  background: transparent;
+  object-fit: cover;
+  opacity: 0;
+  transition: opacity 160ms ease;
+}
+.avatar-video-frame.is-talking .avatar-video { opacity: 1; }
+.avatar-video-poster,
+.avatar-video-placeholder {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  animation: examiner-breathe 4.5s ease-in-out infinite;
+  transform-origin: 50% 60%;
+}
+.avatar-video-placeholder { display: grid; place-items: center; color: #d9d4e8; }
+.avatar-video-frame.is-talking .avatar-video-poster { animation: none; }
+.avatar-video-frame.is-preparing .avatar-video-poster { filter: saturate(0.85) brightness(0.92); }
+@keyframes examiner-breathe {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.018) translateY(-0.4%); }
+}
+.avatar-video-ring {
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  width: 28px;
+  height: 28px;
+  border: 3px solid rgba(255, 255, 255, 0.35);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: examiner-spin 0.9s linear infinite;
+}
+@keyframes examiner-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .avatar-video-poster, .avatar-video-placeholder, .avatar-video-ring { animation: none; }
+}
+.avatar-video-caption { font-size: 1rem; color: var(--oe-text, #242033); }
+
+/* Question waits until it has been asked */
+.exam-question-waiting {
+  display: grid;
+  gap: 6px;
+  margin: 0 0 20px;
+  padding: 14px 16px;
+  border: 1px dashed var(--oe-accent-border, #c9b8e2);
+  border-radius: 12px;
+  background: #faf8fd;
+  color: var(--oe-text-muted, #625d70);
+}
+.exam-question-waiting p { margin: 0; }
+.exam-question-show {
+  justify-self: start;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--oe-accent, #5b3a91);
+  font-weight: 650;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* Top-right boxes: one size, one style */
+.student-exam-page .exam-settings-slot .live-exam-settings-launch,
+.student-exam-page .exam-timer-chip {
+  min-width: 120px;
+  min-height: 52px;
+  padding: 6px 14px;
+  border: 1px solid var(--oe-accent-border, #c9b8e2);
+  border-radius: 12px;
+  background: var(--oe-surface, #fff);
+  color: var(--oe-text, #242033);
+  font-family: inherit;
+}
+.student-exam-page .exam-timer-chip span {
+  color: var(--oe-text-muted, #625d70);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.student-exam-page .exam-timer-chip strong {
+  color: var(--oe-accent, #5b3a91);
+  font-size: 1.125rem;
+  font-weight: 750;
+  letter-spacing: 0.02em;
+}
+.student-exam-page .exam-settings-slot .live-exam-settings-launch {
+  gap: 8px;
+  color: var(--oe-accent, #5b3a91);
+  font-size: 0.875rem;
+  font-weight: 650;
+}
+.student-exam-page .exam-settings-slot .live-exam-settings-launch svg { width: 18px; height: 18px; }
+
+/* ---------- Professor review, round 2: Q&A left, recording and assessment right ---------- */
+.professor-back-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 8px 16px;
+  border-radius: 10px;
+  background: var(--oe-accent, #5b3a91);
+  color: #fff;
+  font-weight: 650;
+  text-decoration: none;
+}
+.professor-back-button:hover { background: var(--oe-accent-hover, #482b78); color: #fff; }
+.professor-review-page .professor-review-heading {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 8px 20px;
+  margin-bottom: 16px;
+}
+.professor-review-title h1 { margin: 0; font-size: 1.375rem; line-height: 1.25; }
+.professor-review-title h1 span { color: var(--oe-text-muted, #625d70); font-weight: 600; }
+.professor-review-title p { margin: 2px 0 0; color: var(--oe-text-muted, #625d70); }
+.professor-review-course {
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: var(--oe-accent-soft, #eee8f7);
+  color: var(--oe-accent, #5b3a91);
+  font-weight: 700;
+  white-space: nowrap;
+}
+.professor-review-page .professor-review-grid {
+  grid-template-columns: minmax(0, 1.25fr) minmax(360px, 1fr);
+  gap: 20px;
+}
+.professor-review-qa {
+  display: grid;
+  gap: 14px;
+  align-content: start;
+  max-height: calc(100vh - 170px);
+  overflow: auto;
+  padding-right: 4px;
+}
+.professor-review-qa > h2 { margin: 0; font-size: 1.125rem; }
+.review-question {
+  padding: 16px 18px;
+  border: 1px solid var(--oe-border, #dedbe7);
+  border-left: 4px solid var(--oe-accent, #5b3a91);
+  border-radius: 14px;
+  background: var(--oe-surface, #fff);
+}
+.review-question-label {
+  margin: 0 0 4px;
+  color: var(--oe-accent, #5b3a91);
+  font-size: 0.75rem;
+  font-weight: 750;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.review-question-essential { margin: 0 0 12px; font-size: 1.125rem; font-weight: 700; line-height: 1.4; }
+.review-question-essential span,
+.review-evaluation span,
+.review-turn-kind {
+  display: block;
+  margin-bottom: 2px;
+  color: var(--oe-text-muted, #625d70);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.review-turns { display: grid; gap: 14px; margin: 0; padding: 0; list-style: none; }
+.review-turns li.is-follow-up { padding-left: 14px; border-left: 2px dashed var(--oe-accent-border, #c9b8e2); }
+.review-turn-asked { display: grid; grid-template-columns: 1fr auto; align-items: start; gap: 2px 12px; margin-bottom: 6px; }
+.review-turn-kind { grid-column: 1; margin: 0; }
+.review-turn-question { grid-column: 1; font-weight: 650; }
+.review-turns li:not(.is-follow-up) .review-turn-question { color: var(--oe-text-muted, #625d70); font-weight: 500; font-style: italic; }
+.review-timestamp {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border: 1px solid var(--oe-accent-border, #c9b8e2);
+  border-radius: 999px;
+  background: var(--oe-accent-soft, #eee8f7);
+  color: var(--oe-accent, #5b3a91);
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  cursor: pointer;
+}
+.review-answer {
+  padding: 12px 14px;
+  border: 1px solid var(--oe-border, #dedbe7);
+  border-radius: 10px;
+  background: #faf9fc;
+  font-size: 1rem;
+  line-height: 1.55;
+}
+.review-evaluation {
+  margin: 8px 0 0;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: #fff8e6;
+  color: #4a3a12;
+  font-size: 0.9375rem;
+  line-height: 1.5;
+}
+.review-evaluation span { color: #7a4b00; }
+.professor-review-page .professor-review-side { max-height: none; grid-template-rows: none; align-content: start; }
+.professor-review-page .professor-review-video video { max-height: 46vh; min-height: 200px; }
+.professor-review-assessing { display: flex; align-items: center; gap: 8px; margin: 0; color: var(--oe-accent, #5b3a91); }
+.professor-review-page .professor-review-grades { max-height: none; }
+.professor-review-flags h2 { display: flex; align-items: center; gap: 6px; }
+@media (max-width: 1000px) {
+  .professor-review-page .professor-review-heading { grid-template-columns: 1fr; }
+  .professor-review-page .professor-review-grid { grid-template-columns: 1fr; }
+  .professor-review-qa { max-height: none; order: 2; }
+}

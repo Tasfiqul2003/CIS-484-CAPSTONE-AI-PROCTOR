@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { CheckCircle2, ImageUp, LoaderCircle, Mic, Play, Square, Trash2, Upload } from "lucide-react";
+import { Camera, CheckCircle2, ImageUp, LoaderCircle, Mic, Play, Square, Trash2, Upload, X } from "lucide-react";
 import ProfessorHeader from "../../components/professor/ProfessorHeader";
 import { streamProfessorPreview } from "../../components/avatar/avatarService";
 import type { AvatarClip } from "../../components/avatar/avatarService";
@@ -73,6 +73,11 @@ export default function ProfessorAvatar() {
   const timer = useRef<number | null>(null);
   const previewVideo = useRef<HTMLVideoElement>(null);
   const previewQueue = useRef<AvatarClip[]>([]);
+  // Taking the photo with the computer's camera instead of uploading one.
+  const [cameraOn, setCameraOn] = useState(false);
+  const [cameraError, setCameraError] = useState("");
+  const cameraVideo = useRef<HTMLVideoElement>(null);
+  const cameraStream = useRef<MediaStream | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -102,6 +107,59 @@ export default function ProfessorAvatar() {
     if (timer.current !== null) window.clearInterval(timer.current);
     if (recorder.current?.state === "recording") recorder.current.stop();
   }, []);
+
+  function stopCamera() {
+    cameraStream.current?.getTracks().forEach(track => track.stop());
+    cameraStream.current = null;
+    setCameraOn(false);
+  }
+
+  useEffect(() => () => cameraStream.current?.getTracks().forEach(track => track.stop()), []);
+
+  async function startCamera() {
+    setCameraError(""); setFormError("");
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setCameraError("This browser cannot use the camera here. Upload a photo instead.");
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 960 } }, audio: false,
+      });
+      cameraStream.current = stream;
+      setCameraOn(true);
+      // The video element renders once cameraOn is true.
+      window.requestAnimationFrame(() => {
+        if (cameraVideo.current) {
+          cameraVideo.current.srcObject = stream;
+          void cameraVideo.current.play().catch(() => undefined);
+        }
+      });
+    } catch (error) {
+      setCameraError(error instanceof DOMException && error.name === "NotAllowedError"
+        ? "Camera access was blocked. Allow the camera in your browser, or upload a photo instead."
+        : "No camera could be started. Upload a photo instead.");
+    }
+  }
+
+  async function capturePhoto() {
+    const video = cameraVideo.current;
+    if (!video || video.videoWidth === 0) return;
+    // Square crop from the centre, like the avatar service does, so the preview matches the result.
+    const side = Math.min(video.videoWidth, video.videoHeight);
+    const canvas = document.createElement("canvas");
+    canvas.width = side;
+    canvas.height = side;
+    const context = canvas.getContext("2d");
+    if (!context) return;
+    // Un-mirror: the live view is mirrored like a mirror, the saved photo is not.
+    context.drawImage(video, (video.videoWidth - side) / 2, (video.videoHeight - side) / 2, side, side, 0, 0, side, side);
+    const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, "image/jpeg", 0.92));
+    if (!blob) { setCameraError("The photo could not be captured. Try again."); return; }
+    stopCamera();
+    if (side < 512) setFormError(`Your camera gives a small photo (${side} pixels). It will work, but an uploaded photo of at least 512 pixels looks better.`);
+    choosePhoto(new File([blob], "camera-photo.jpg", { type: "image/jpeg" }));
+  }
 
   function choosePhoto(file: File | null) {
     setFormError("");
@@ -304,16 +362,39 @@ export default function ProfessorAvatar() {
               <li>
                 <strong>Photo</strong>
                 <p className="avatar-hint">Face the camera, head and shoulders, plain background, good light. JPG or PNG, at least 512 pixels.</p>
-                <div className="avatar-photo-row">
-                  <div className="avatar-photo-preview">
-                    {photoUrl ? <img src={photoUrl} alt="Selected photo" /> : <ImageUp size={32} aria-hidden="true" />}
+                {cameraOn ? (
+                  <div className="avatar-camera">
+                    <div className="avatar-camera-frame">
+                      <video ref={cameraVideo} muted playsInline aria-label="Camera preview" />
+                      <div className="avatar-camera-guide" aria-hidden="true" />
+                    </div>
+                    <p className="avatar-hint">Line your face up with the oval and look straight at the camera.</p>
+                    <div className="avatar-photo-row">
+                      <button type="button" className="avatar-primary-button" onClick={() => void capturePhoto()}>
+                        <Camera size={16} aria-hidden="true" />Take photo
+                      </button>
+                      <button type="button" className="avatar-file-button" onClick={stopCamera}>
+                        <X size={16} aria-hidden="true" />Cancel
+                      </button>
+                    </div>
                   </div>
-                  <label className="avatar-file-button">
-                    <Upload size={16} aria-hidden="true" />{photo ? "Choose a different photo" : "Choose photo"}
-                    <input type="file" accept="image/jpeg,image/png" disabled={!!step}
-                      onChange={event => choosePhoto(event.target.files?.[0] ?? null)} />
-                  </label>
-                </div>
+                ) : (
+                  <div className="avatar-photo-row">
+                    <div className="avatar-photo-preview">
+                      {photoUrl ? <img src={photoUrl} alt="Selected photo" /> : <ImageUp size={32} aria-hidden="true" />}
+                    </div>
+                    <button type="button" className="avatar-file-button" onClick={() => void startCamera()} disabled={!!step}>
+                      <Camera size={16} aria-hidden="true" />{photo ? "Retake with camera" : "Take a photo"}
+                    </button>
+                    <span className="avatar-or">or</span>
+                    <label className="avatar-file-button">
+                      <Upload size={16} aria-hidden="true" />{photo ? "Choose a different photo" : "Upload a photo"}
+                      <input type="file" accept="image/jpeg,image/png" disabled={!!step}
+                        onChange={event => choosePhoto(event.target.files?.[0] ?? null)} />
+                    </label>
+                  </div>
+                )}
+                {cameraError && <p role="alert" className="exam-error">{cameraError}</p>}
               </li>
               <li>
                 <strong>Voice sample ({MIN_VOICE_SECONDS}–{MAX_VOICE_SECONDS} seconds)</strong>

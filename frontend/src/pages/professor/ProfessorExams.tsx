@@ -361,7 +361,7 @@ export default function ProfessorExams() {
                   <a className="exam-row-primary" href={`/professor/exams/${exam.id}`}>Manage exam</a>
                   <a href={`/professor/exams/${exam.id}/submissions`}>View submissions</a>
                   <button type="button" onClick={() => togglePublication(exam)} disabled={saving}>
-                    {saving ? "Saving..." : exam.status === "published" ? "Make draft" : "Publish"}
+                    {saving ? "Saving..." : exam.status === "published" ? "Unpublish" : "Publish"}
                   </button>
                   <button type="button" className="exam-row-danger" onClick={() => deleteExam(exam)} disabled={saving}>
                     Delete

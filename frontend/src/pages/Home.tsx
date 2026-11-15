@@ -28,7 +28,8 @@ export default function Home() {
 
       <main id="main-content" className="home-content" aria-labelledby="home-title">
         <section className="hero-section" aria-labelledby="home-title">
-          <div className="hero-text">
+          <div className="hero-text home-hero-with-mascot">
+            <img className="home-mascot" src="/brand/duke-dog.png" alt="Duke Dog, the JMU mascot" width="411" height="480" />
             <h1 id="home-title">
               Oral exams,
               <span> made clearer.</span>
@@ -75,9 +76,9 @@ export default function Home() {
         <section className="home-steps" aria-labelledby="home-steps-title">
           <h2 id="home-steps-title">How it works</h2>
           <ol>
-            <li><IdCard size={22} aria-hidden="true" /><strong>Check in</strong><span>Swipe your JACard and take a quick photo check.</span></li>
-            <li><MessagesSquare size={22} aria-hidden="true" /><strong>Talk it through</strong><span>Answer the examiner out loud. It asks follow-up questions.</span></li>
-            <li><ClipboardCheck size={22} aria-hidden="true" /><strong>Professor review</strong><span>Your professor reviews the recording, transcript and AI suggestions.</span></li>
+            <li><IdCard size={20} aria-hidden="true" /><div><strong>Check in</strong><span>Swipe your JACard and take a quick photo check.</span></div></li>
+            <li><MessagesSquare size={20} aria-hidden="true" /><div><strong>Talk it through</strong><span>Answer the examiner out loud. It asks follow-up questions.</span></div></li>
+            <li><ClipboardCheck size={20} aria-hidden="true" /><div><strong>Professor review</strong><span>Your professor reviews the recording, transcript and AI suggestions.</span></div></li>
           </ol>
         </section>
       </main>

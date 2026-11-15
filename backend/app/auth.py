@@ -316,11 +316,17 @@ def login(
 
 
 @router.get("/me")
-def current_user(account: dict = Depends(get_current_account)):
+def current_user(account: dict = Depends(get_current_account), db: Session = Depends(get_db)):
+    name = None
+    if account["professor_id"]:
+        # The display name for page headers ("Signed in as Dr. Rivera").
+        name = db.execute(text("SELECT name FROM professors WHERE id = CAST(:p AS uuid)"),
+                          {"p": str(account["professor_id"])}).scalar()
     return {
         "id": str(account["id"]),
         "username": account["username"],
         "role": account["role"],
+        "name": name,
         "professor_id": (
             str(account["professor_id"]) if account["professor_id"] else None
         ),

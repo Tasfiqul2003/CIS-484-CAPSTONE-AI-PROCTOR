@@ -125,7 +125,7 @@ export default function ProfessorLogin() {
           </a>
         </div>
         <aside className="professor-login-art" aria-hidden="true">
-          <OralExamMark size={88} />
+          <img className="professor-login-mascot" src="/brand/duke-dog.png" alt="" width="411" height="480" />
           <p className="professor-login-art-title">Oral exams, made clearer.</p>
           <p>Build question banks, run AI-assisted oral exams, and review every recording and transcript in one place.</p>
           <svg className="professor-login-wave" viewBox="0 0 320 80" role="presentation">

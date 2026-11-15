@@ -666,7 +666,7 @@ a.logo:visited {
 /* Professor top bar on small screens (after the base rule so it wins; page-scoped header rules in
    index.css have the same specificity). The page title is shown in the page itself there. */
 @media (max-width: 760px) {
-  .simple-header.professor-topbar {
+  header.simple-header.professor-topbar {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
@@ -674,9 +674,9 @@ a.logo:visited {
     height: auto;
     gap: 8px 12px;
   }
-  .simple-header.professor-topbar .professor-topbar-title { display: none; }
-  .simple-header.professor-topbar .professor-topbar-nav { gap: 4px; }
-  .simple-header.professor-topbar .professor-topbar-nav a { padding: 6px 8px; }
+  header.simple-header.professor-topbar .professor-topbar-title { display: none; }
+  header.simple-header.professor-topbar .professor-topbar-nav { gap: 4px; }
+  header.simple-header.professor-topbar .professor-topbar-nav a { padding: 6px 8px; }
 }
 
 /* Dashboard: avatar set-up link under "Create a new examination" */
@@ -941,3 +941,329 @@ a.logo:visited {
   .professor-review-page .professor-review-grid { grid-template-columns: 1fr; }
   .professor-review-qa { max-height: none; order: 2; }
 }
+
+/* ===================== Round 2, batch 3: dashboard, progress, home, top bar ===================== */
+
+/* ---------- Professor top bar: page title truly centred, in the portal's purple ---------- */
+header.simple-header.professor-topbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 16px;
+}
+header.simple-header.professor-topbar .professor-topbar-title {
+  margin: 0;
+  color: var(--oe-accent, #5b3a91);
+  font-size: 1.0625rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-align: center;
+  white-space: nowrap;
+}
+.professor-topbar-nav a,
+.professor-topbar-nav button { white-space: nowrap; }
+.professor-topbar-user {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 4px;
+  padding: 6px 10px;
+  border-left: 1px solid var(--oe-border, #dedbe7);
+  color: var(--oe-text, #242033);
+  font-size: 0.875rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.professor-topbar-user svg { color: var(--oe-accent, #5b3a91); }
+@media (max-width: 1100px) {
+  .professor-topbar-user { display: none; }
+}
+
+/* ---------- Dashboard ---------- */
+.professor-dashboard-page .dashboard-section-title {
+  margin: 0;
+  color: var(--oe-text, #242033);
+  font-size: 1.25rem;
+  font-weight: 750;
+}
+.professor-dashboard-page .dashboard-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin: 24px 0 32px;
+}
+.professor-dashboard-page .dashboard-actions > .dashboard-section-title { grid-column: 1 / -1; }
+.professor-dashboard-page .dashboard-actions .dashboard-action,
+.professor-dashboard-page .dashboard-actions .dashboard-action.dashboard-action-avatar {
+  min-height: 96px;
+  height: 100%;
+  border: 0;
+  background: var(--oe-accent, #5b3a91);
+  color: #fff;
+}
+.professor-dashboard-page .dashboard-actions .dashboard-action:hover { background: #4b2f7a; }
+.professor-dashboard-page .dashboard-actions .dashboard-action p,
+.professor-dashboard-page .dashboard-actions .dashboard-action.dashboard-action-avatar p { color: rgba(255, 255, 255, 0.86); }
+.professor-dashboard-page .dashboard-actions .dashboard-action.dashboard-action-avatar .dashboard-action-icon {
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
+}
+.professor-dashboard-page .dashboard-overview { margin-bottom: 32px; }
+.professor-dashboard-page .dashboard-overview-heading { margin-bottom: 12px; }
+.professor-dashboard-page .dashboard-overview-grid { gap: 12px; }
+.professor-dashboard-page button.dashboard-overview-card {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  grid-template-areas: "icon label value" "icon detail value";
+  align-items: center;
+  gap: 2px 12px;
+  min-height: 0;
+  padding: 14px 16px;
+  border: 1px solid var(--oe-border, #dedbe7);
+  border-radius: 12px;
+  background: var(--oe-surface, #fff);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.professor-dashboard-page button.dashboard-overview-card .dashboard-overview-icon { grid-area: icon; margin: 0; }
+.professor-dashboard-page button.dashboard-overview-card .dashboard-overview-label {
+  grid-area: label;
+  margin: 0;
+  color: var(--oe-text, #242033);
+  font-size: 1rem;
+  font-weight: 750;
+}
+.professor-dashboard-page button.dashboard-overview-card .dashboard-overview-detail {
+  grid-area: detail;
+  margin: 0;
+  color: var(--oe-text-muted, #625d70);
+  font-size: 0.8125rem;
+}
+.professor-dashboard-page button.dashboard-overview-card > strong {
+  grid-area: value;
+  margin: 0;
+  font-size: 1.5rem;
+  line-height: 1;
+}
+.professor-dashboard-page button.dashboard-overview-card:hover { border-color: var(--oe-accent-border, #c9b8e2); }
+.professor-dashboard-page button.dashboard-overview-card[aria-pressed="true"] {
+  border-color: var(--oe-accent, #5b3a91);
+  background: var(--oe-accent-soft, #eee8f7);
+  box-shadow: inset 0 0 0 1px var(--oe-accent, #5b3a91);
+}
+.professor-dashboard-page button.dashboard-overview-card:focus-visible { outline: 3px solid var(--oe-focus, #8f6bd1); outline-offset: 2px; }
+.professor-dashboard-page .dashboard-section-heading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.professor-dashboard-page .dashboard-section-heading > :last-child { margin-left: auto; }
+.dashboard-filter-clear,
+.progress-filter-clear {
+  padding: 4px 10px;
+  border: 1px solid var(--oe-accent-border, #c9b8e2);
+  border-radius: 999px;
+  background: var(--oe-surface, #fff);
+  color: var(--oe-accent, #5b3a91);
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.professor-dashboard-page .professor-exams-content {
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+}
+/* Stats line up in the same three columns on every row. */
+.exam-row-stats.exam-row-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(3, max-content);
+  gap: 4px 20px;
+}
+.exam-row-actions > button.exam-row-danger,
+.exam-row-actions > button.exam-row-danger:hover {
+  border-color: #b42318;
+  background: #b42318;
+  color: #fff;
+}
+.exam-row-actions > button.exam-row-danger:hover { background: #912018; }
+@media (max-width: 800px) {
+  .professor-dashboard-page .dashboard-actions { grid-template-columns: 1fr; }
+  .exam-row-stats.exam-row-stats-grid { grid-template-columns: repeat(2, max-content); }
+}
+
+/* ---------- Student progress: centred page, compact summary filters ---------- */
+.professor-progress-page .dashboard-main {
+  width: min(1120px, calc(100% - 48px));
+  margin: 0 auto;
+  padding: 24px 0 48px;
+}
+.professor-progress-page .progress-heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 8px 0 20px;
+}
+.professor-progress-page .progress-heading h1 { margin: 2px 0 6px; font-size: 2rem; }
+.professor-progress-page .progress-heading p { margin: 0; color: var(--oe-text-muted, #625d70); }
+.professor-progress-page .progress-heading-course {
+  color: var(--oe-accent, #5b3a91) !important;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.professor-progress-page .progress-summary {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 28px;
+}
+.professor-progress-page button.progress-summary-card {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-areas: "icon label" "icon value";
+  align-items: center;
+  justify-items: start;
+  gap: 0 10px;
+  padding: 10px 14px;
+  border: 1px solid var(--oe-border, #dedbe7);
+  border-radius: 12px;
+  background: var(--oe-surface, #fff);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.professor-progress-page button.progress-summary-card > svg { grid-area: icon; color: var(--oe-accent, #5b3a91); }
+.professor-progress-page button.progress-summary-card > span {
+  grid-area: label;
+  color: var(--oe-text, #242033);
+  font-size: 0.875rem;
+  font-weight: 650;
+}
+.professor-progress-page button.progress-summary-card > strong { grid-area: value; font-size: 1.375rem; line-height: 1.2; }
+.professor-progress-page button.progress-summary-card:hover { border-color: var(--oe-accent-border, #c9b8e2); }
+.professor-progress-page button.progress-summary-card[aria-pressed="true"] {
+  border-color: var(--oe-accent, #5b3a91);
+  background: var(--oe-accent-soft, #eee8f7);
+  box-shadow: inset 0 0 0 1px var(--oe-accent, #5b3a91);
+}
+.professor-progress-page .progress-table-section .dashboard-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.professor-progress-page .progress-table-section h2 { margin: 0; font-size: 1.25rem; }
+.professor-progress-page .progress-count { display: inline-flex; align-items: center; gap: 10px; }
+.professor-progress-page .progress-table td { padding-top: 10px; padding-bottom: 10px; }
+.progress-table-empty { padding: 24px !important; color: var(--oe-text-muted, #625d70); text-align: center; }
+@media (max-width: 900px) {
+  .professor-progress-page .progress-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .professor-progress-page .progress-heading { flex-direction: column; align-items: flex-start; }
+}
+
+/* ---------- Home: mascot beside the title, plain numbered steps ---------- */
+.home-page .home-content { padding-top: 32px; padding-bottom: 32px; }
+.home-page .hero-section { gap: 24px; }
+.home-page .hero-text.home-hero-with-mascot {
+  display: grid;
+  grid-template-columns: auto auto;
+  grid-template-areas: "dog title" "dog text";
+  justify-content: center;
+  align-items: center;
+  column-gap: 28px;
+  text-align: left;
+}
+.home-hero-with-mascot .home-mascot { grid-area: dog; width: 132px; height: auto; }
+.home-hero-with-mascot h1 { grid-area: title; margin: 0; }
+.home-hero-with-mascot .hero-description { grid-area: text; margin: 8px 0 0; }
+.home-page .home-steps { margin-top: 28px; }
+.home-page .home-steps ol { counter-reset: step; gap: 24px; }
+.home-page .home-steps li {
+  counter-increment: step;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 0;
+  border: 0;
+  background: none;
+  text-align: left;
+}
+.home-page .home-steps li svg { flex: 0 0 auto; margin-top: 2px; }
+.home-page .home-steps li > div { display: grid; gap: 2px; }
+.home-page .home-steps li strong::before { content: counter(step) ". "; color: var(--oe-accent, #5b3a91); }
+@media (max-width: 720px) {
+  .home-page .hero-text.home-hero-with-mascot {
+    grid-template-columns: 1fr;
+    grid-template-areas: "dog" "title" "text";
+    justify-items: center;
+    text-align: center;
+  }
+  .home-hero-with-mascot .home-mascot { width: 96px; }
+}
+
+/* ---------- Professor login: mascot on the purple panel, plain back link ---------- */
+.professor-login-mascot { width: 120px; height: auto; filter: drop-shadow(0 6px 16px rgba(0, 0, 0, 0.25)); }
+.professor-login-page a.back-home {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--oe-accent, #5b3a91);
+  font-weight: 600;
+  text-decoration: none;
+}
+.professor-login-page a.back-home:hover { text-decoration: underline; }
+
+/* ---------- Photo check: square camera box ---------- */
+.face-page .camera-frame {
+  width: min(100%, 420px);
+  margin-left: auto;
+  margin-right: auto;
+  height: auto;
+  aspect-ratio: 1 / 1;
+}
+
+/* Rows: stats in a fixed-width middle column, actions as a tidy 2 x 2 block. */
+.exam-row {
+  grid-template-columns: minmax(220px, 1fr) max-content minmax(0, 300px);
+}
+.exam-row-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.exam-row-actions > :is(a, button) { justify-content: center; }
+.professor-topbar-nav { gap: 4px; }
+.professor-topbar-nav a { padding: 8px 10px; }
+header.simple-header.professor-topbar .professor-topbar-title { letter-spacing: 0.05em; font-size: 1rem; }
+@media (max-width: 1000px) {
+  .exam-row { grid-template-columns: 1fr; }
+  .exam-row-actions { grid-template-columns: repeat(4, max-content); }
+}
+@media (max-width: 560px) {
+  .exam-row-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+/* Top bar on small screens: repeated here so it comes after the centred-title rule above. */
+@media (max-width: 760px) {
+  header.simple-header.professor-topbar {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    height: auto;
+    gap: 8px 12px;
+  }
+  header.simple-header.professor-topbar .professor-topbar-title { display: none; }
+}
+.dashboard-section-heading-main { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.professor-progress-page .progress-table td:nth-child(5),
+.professor-progress-page .progress-table td:nth-child(6) { white-space: nowrap; }

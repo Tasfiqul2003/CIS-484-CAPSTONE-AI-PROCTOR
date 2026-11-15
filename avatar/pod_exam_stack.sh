@@ -35,6 +35,8 @@ export PATH="/opt/node/bin:$PATH"
 say() { printf '\n== %s ==\n' "$*"; }
 listening() { (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null; }
 wait_port() { local i; for i in $(seq 1 "${2:-60}"); do listening "$1" && return 0; sleep 1; done; return 1; }
+# Wait until nothing listens on a port (a stopping server can take a few seconds to let go).
+wait_closed() { local i; for i in $(seq 1 "${2:-20}"); do listening "$1" || return 0; sleep 1; done; return 1; }
 
 secrets() {
   mkdir -p "$STATE" "$LOGS"
@@ -154,7 +156,9 @@ start() {
         > "$LOGS/backend.log" 2>&1 & echo $! > "$STATE/backend.pid")
     wait_port "$BACKEND_PORT" 60 || { echo "Backend did not start:" >&2; tail -20 "$LOGS/backend.log" >&2; exit 1; }
   fi
-  curl -s "http://127.0.0.1:$BACKEND_PORT/health/db"; echo
+  curl -s "http://127.0.0.1:$BACKEND_PORT/health/db" \
+    || { echo "The backend on port $BACKEND_PORT is not answering. Run stop, then start again." >&2; exit 1; }
+  echo
 
   say "Frontend (Vite) on 0.0.0.0:$FRONT_PORT"
   if ! listening "$FRONT_PORT"; then
@@ -179,6 +183,8 @@ stop() {
   done
   pkill -f "uvicorn app.main:app --host 127.0.0.1 --port $BACKEND_PORT" 2>/dev/null || true
   pkill -f "vite.js --host 0.0.0.0 --port $FRONT_PORT" 2>/dev/null || true
+  wait_closed "$BACKEND_PORT" || echo "Port $BACKEND_PORT is still in use after 20 seconds." >&2
+  wait_closed "$FRONT_PORT" || echo "Port $FRONT_PORT is still in use after 20 seconds." >&2
   [ -f "$PGDATA/postmaster.pid" ] && su postgres -c "$PGBIN/pg_ctl -D '$PGDATA' -m fast stop" >/dev/null || true
   echo "Stopped the exam app (Ollama and the avatar are left as they are). Data on $PGDATA is kept."
 }

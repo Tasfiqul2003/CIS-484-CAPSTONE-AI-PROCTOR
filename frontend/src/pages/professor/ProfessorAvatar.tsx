@@ -11,6 +11,7 @@ type Avatar = {
   created: string | null;
   complete: boolean;
   active: boolean;
+  selected?: boolean;
   mine: boolean;
 };
 
@@ -21,6 +22,9 @@ type Overview = {
   build_error?: string | null;
   consent_text?: string;
   active?: (Partial<Avatar> & { other?: boolean }) | null;
+  /** The avatar this professor's exams use (loaded when a student starts one of their exams). */
+  selected?: Avatar | null;
+  other_exam_running?: boolean;
   avatars?: Avatar[];
 };
 
@@ -92,6 +96,7 @@ export default function ProfessorAvatar() {
 
   // While an avatar is being prepared, check its progress every two seconds.
   const preparing = !!overview?.enabled && !!overview.active?.id && !overview.ready && !overview.build_error;
+  const [notice, setNotice] = useState("");
   useEffect(() => {
     if (!preparing) return;
     const id = window.setInterval(() => void load(), 2000);
@@ -260,8 +265,14 @@ export default function ProfessorAvatar() {
   }
 
   async function activate(id: string) {
-    setBusyId(id); setListError("");
-    try { await api(`/avatars/${encodeURIComponent(id)}/activate`, { method: "POST" }); await load(); }
+    setBusyId(id); setListError(""); setNotice("");
+    try {
+      const result = await api<{ loaded?: boolean }>(`/avatars/${encodeURIComponent(id)}/activate`, { method: "POST" });
+      if (result.loaded === false) {
+        setNotice("Saved. Another professor's exam is running now, so this avatar will load when your next exam starts.");
+      }
+      await load();
+    }
     catch (error) { setListError(error instanceof Error ? error.message : "The avatar could not be started."); }
     finally { setBusyId(""); }
   }
@@ -299,6 +310,8 @@ export default function ProfessorAvatar() {
 
   const active = overview?.active ?? null;
   const avatars = overview?.avatars ?? [];
+  const selected = overview?.selected ?? null;
+  const selectedLoaded = !!selected && active?.id === selected.id;
 
   return (
     <div className="professor-dashboard-page professor-avatar-page">
@@ -320,30 +333,38 @@ export default function ProfessorAvatar() {
 
         {overview?.enabled && <>
           <section className="avatar-panel avatar-current" aria-labelledby="avatar-current-heading">
-            <h2 id="avatar-current-heading">In use for exams</h2>
-            {!active ? (
-              <p>No avatar is in use yet. Create one below.</p>
-            ) : active.other ? (
-              <p>Another professor's avatar is in use on this server right now. Starting yours replaces it for every exam.</p>
+            <h2 id="avatar-current-heading">Your exams use</h2>
+            {!selected ? (
+              <p>{active?.other
+                ? "No avatar chosen yet. Create one below, or your exams use the avatar that happens to be loaded."
+                : "No avatar chosen yet. Create one below."}</p>
             ) : (
               <div className="avatar-current-body">
-                <img src={`/api/avatar/professor/avatars/${encodeURIComponent(active.id ?? "")}/photo`}
-                  alt={`Photo used for ${active.name}`} />
+                <img src={`/api/avatar/professor/avatars/${encodeURIComponent(selected.id)}/photo`}
+                  alt={`Photo used for ${selected.name}`} />
                 <div>
-                  <p className="avatar-current-name">{active.name}</p>
-                  {overview.build_error ? (
+                  <p className="avatar-current-name">{selected.name}</p>
+                  {!selectedLoaded ? <>
+                    <p className="avatar-state">Loads automatically when a student starts one of your exams.</p>
+                    <button type="button" className="avatar-secondary-button" onClick={() => void activate(selected.id)}
+                      disabled={!!busyId || !!overview.other_exam_running}>
+                      <Play size={16} aria-hidden="true" />{busyId === selected.id ? "Loading…" : "Load now to preview"}
+                    </button>
+                    {overview.other_exam_running && <p className="avatar-hint">Another professor's exam is running, so previews wait until it ends.</p>}
+                  </> : overview.build_error ? (
                     <p role="alert" className="exam-error">{overview.build_error}</p>
-                  ) : overview.ready ? (
-                    <p className="avatar-state ready"><CheckCircle2 size={18} aria-hidden="true" />Ready. Exams with the talking avatar use it.</p>
-                  ) : (
+                  ) : overview.ready ? <>
+                    <p className="avatar-state ready"><CheckCircle2 size={18} aria-hidden="true" />Loaded and ready.</p>
+                    <button type="button" className="avatar-secondary-button" onClick={() => void preview()}
+                      disabled={previewing}>
+                      <Play size={16} aria-hidden="true" />{previewing ? "Playing preview…" : "Preview"}
+                    </button>
+                  </> : (
                     <p className="avatar-state" role="status"><LoaderCircle size={18} className="progress-spin" aria-hidden="true" />
                       {overview.progress || "Preparing"}… This can take a few minutes the first time.</p>
                   )}
-                  <button type="button" className="avatar-secondary-button" onClick={() => void preview()}
-                    disabled={!overview.ready || previewing}>
-                    <Play size={16} aria-hidden="true" />{previewing ? "Playing preview…" : "Preview"}
-                  </button>
                   {previewError && <p role="alert" className="exam-error">{previewError}</p>}
+                  {notice && <p role="status" className="avatar-hint">{notice}</p>}
                 </div>
                 <video ref={previewVideo} className="avatar-preview-video" playsInline onEnded={playNextPreviewClip}
                   onError={playNextPreviewClip} hidden={!previewing} aria-label="Avatar preview" />
@@ -435,7 +456,7 @@ export default function ProfessorAvatar() {
               <button type="button" className="avatar-primary-button" onClick={() => void createAvatar()} disabled={!canCreate}>
                 {step ? <><LoaderCircle size={16} className="progress-spin" aria-hidden="true" />{step}…</> : "Create and use this avatar"}
               </button>
-              <p className="avatar-hint">One avatar is in use on this server at a time; creating one switches every exam to it.
+              <p className="avatar-hint">Your exams use the avatar you choose here; other professors' exams use theirs.
                 The photo and recording stay on the exam server, never in the database or the code repository.</p>
             </div>
           </section>
@@ -457,13 +478,13 @@ export default function ProfessorAvatar() {
                       </span>
                     </div>
                     <div className="avatar-list-badges">
-                      {item.active && <span className="avatar-badge in-use">In use</span>}
+                      {item.id === selected?.id && <span className="avatar-badge in-use">Used for my exams</span>}
                       {!item.complete && <span className="avatar-badge incomplete">Incomplete</span>}
                     </div>
                     <div className="avatar-list-actions">
-                      {item.complete && !item.active && (
+                      {item.complete && item.id !== selected?.id && (
                         <button type="button" onClick={() => void activate(item.id)} disabled={!!busyId}>
-                          {busyId === item.id ? "Starting…" : "Use for exams"}
+                          {busyId === item.id ? "Saving…" : "Use for my exams"}
                         </button>
                       )}
                       {item.mine && (confirmDelete === item.id ? <>

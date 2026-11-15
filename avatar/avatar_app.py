@@ -47,6 +47,7 @@ MEDIA = os.path.join(WORK, "avatar_media")
 SESSIONS = os.path.join(WORK, "sessions")
 PROFILES = os.path.join(WORK, "profiles")       # one folder per professor: photo.jpg, voice.wav, profile.json, lines.json
 ACTIVE_FILE = os.path.join(PROFILES, "active.txt")
+SELECTIONS_FILE = os.path.join(PROFILES, "selections.json")   # exam-app professor id -> the avatar their exams use
 os.makedirs(MEDIA, exist_ok=True)
 os.makedirs(PROFILES, exist_ok=True)
 os.makedirs(SESSIONS, exist_ok=True)
@@ -380,8 +381,27 @@ def process_voice(pid, data):
             os.remove(src)
 
 
+def read_selections():
+    try:
+        with open(SELECTIONS_FILE) as f:
+            data = json.load(f)
+        return {str(k): str(v) for k, v in data.items() if ID_RE.fullmatch(str(v))} if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def write_selections(selections):
+    tmp = SELECTIONS_FILE + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(selections, f, indent=2)
+    os.replace(tmp, SELECTIONS_FILE)
+
+
 def delete_profile(pid):
     d = pdir(pid)
+    selections = read_selections()
+    if pid in selections.values():
+        write_selections({k: v for k, v in selections.items() if v != pid})
     shutil.rmtree(d, ignore_errors=True)
     for name in os.listdir(MEDIA):
         if name.startswith(f"pre_{pid}_"):
@@ -821,7 +841,35 @@ def service_profiles(request: Request):
     if not service_ok(request):
         return bad("Unauthorized.", 401)
     return JSONResponse({"profiles": [service_profile(p["id"]) for p in list_profiles()],
-                         "active": ACTIVE.get("id"), "consent_text": CONSENT_TEXT})
+                         "active": ACTIVE.get("id"), "consent_text": CONSENT_TEXT,
+                         "selections": read_selections()})
+
+
+@app.post("/service/selections")
+async def service_select(request: Request):
+    """Record which avatar a professor's exams use ({"owner": ..., "id": pid or null}). Loading it is separate."""
+    if not service_ok(request):
+        return bad("Unauthorized.", 401)
+    try:
+        body = await request.json()
+    except Exception:
+        return bad("Bad request.")
+    owner = str(body.get("owner") or "")[:64]
+    pid = body.get("id")
+    if not owner:
+        return bad("Missing owner.")
+    selections = read_selections()
+    if pid is None:
+        selections.pop(owner, None)
+    else:
+        try:
+            if not is_complete(str(pid)):
+                return bad("This avatar needs both a photo and a voice sample.")
+        except ValueError:
+            return bad("Unknown profile.", 404)
+        selections[owner] = str(pid)
+    write_selections(selections)
+    return JSONResponse({"ok": True})
 
 
 @app.post("/service/profiles")
@@ -877,6 +925,9 @@ def service_activate(pid: str, request: Request):
         name = read_meta(pid)["name"]
     except (ValueError, OSError):
         return bad("Unknown profile.", 404)
+    # Already loaded or loading: several students starting the same professor's exam start it once.
+    if (STATE.get("profile") or {}).get("id") == pid and not STATE.get("build_error"):
+        return JSONResponse({"ok": True, "already": True})
     STATE.update(ready=False, build_error=None, profile={"id": pid, "name": name}, progress="Starting")
     threading.Thread(target=activate_profile, args=(pid, split_sentences(SERVICE_WARMUP_LINE)), daemon=True).start()
     return JSONResponse({"ok": True})

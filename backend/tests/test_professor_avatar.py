@@ -44,12 +44,37 @@ def service(monkeypatch):
     return calls
 
 
+class Rows:
+    def __init__(self, row):
+        self.row = row
+
+    def first(self):
+        return self.row
+
+    def mappings(self):
+        return self
+
+
+class ExamDB:
+    """Which professor owns the session's exam, and whether another professor's exam is running."""
+    def __init__(self, owner="prof-me", other_running=False):
+        self.owner, self.other_running = owner, other_running
+
+    def execute(self, statement, params=None):
+        sql = " ".join(str(statement).split())
+        if sql.startswith("SELECT t.professor_id FROM exam_sessions"):
+            return Rows({"professor_id": self.owner})
+        if sql.startswith("SELECT 1 FROM exam_sessions"):
+            return Rows((1,) if self.other_running else None)
+        raise AssertionError(sql)
+
+
 def run(coroutine):
     return asyncio.run(coroutine)
 
 
 def test_list_hides_other_professors_avatars_and_their_names(service):
-    result = run(avatar_bridge.professor_avatars(account=ME))
+    result = run(avatar_bridge.professor_avatars(account=ME, db=ExamDB()))
     ids = {a["id"] for a in result["avatars"]}
     assert ids == {"mine-0001", "legacy-0003"}
     # Another professor's avatar is in use: reported without its name.
@@ -90,3 +115,44 @@ def test_preview_refuses_another_professors_active_avatar(service):
     with pytest.raises(HTTPException) as error:
         run(avatar_bridge.professor_preview(account=ME))
     assert error.value.status_code == 404
+
+
+@pytest.fixture
+def switching(monkeypatch):
+    """A service where the loaded avatar is someone else's and prof-me picked mine-0001."""
+    calls = []
+    listing = dict(PROFILES, active="theirs-0002", selections={"prof-me": "mine-0001"})
+
+    async def fake(method, path, **kwargs):
+        calls.append((method, path, kwargs))
+        if path == "/service/profiles":
+            return Reply(listing)
+        return Reply({"ok": True})
+
+    monkeypatch.setattr(avatar_bridge, "SERVICE_URL", "http://avatar.test")
+    monkeypatch.setattr(avatar_bridge, "SERVICE_TOKEN", "synthetic-token")
+    monkeypatch.setattr(avatar_bridge, "_service", fake)
+    return calls
+
+
+def test_a_students_exam_loads_their_professors_avatar(switching):
+    assert run(avatar_bridge._exam_avatar(ExamDB(), "session-1")) == "mine-0001"
+    assert ("POST", "/service/profiles/mine-0001/activate", {}) in switching
+
+
+def test_no_switch_while_another_professors_exam_is_running(switching):
+    assert run(avatar_bridge._exam_avatar(ExamDB(other_running=True), "session-1")) == "theirs-0002"
+    assert not [c for c in switching if c[0] == "POST"]
+
+
+def test_exams_of_a_professor_without_a_choice_keep_the_loaded_avatar(switching):
+    assert run(avatar_bridge._exam_avatar(ExamDB(owner="prof-new"), "session-1")) == "theirs-0002"
+    assert not [c for c in switching if c[0] == "POST"]
+
+
+def test_choosing_an_avatar_saves_it_and_loads_it_only_when_free(switching):
+    assert run(avatar_bridge.professor_activate("mine-0001", account=ME, db=ExamDB(other_running=True))) == {"ok": True, "loaded": False}
+    assert ("POST", "/service/selections", {"json": {"owner": "prof-me", "id": "mine-0001"}}) in switching
+    assert not [c for c in switching if c[1].endswith("/activate")]
+    assert run(avatar_bridge.professor_activate("mine-0001", account=ME, db=ExamDB())) == {"ok": True, "loaded": True}
+    assert [c for c in switching if c[1].endswith("/activate")]

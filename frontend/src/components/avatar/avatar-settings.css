@@ -662,3 +662,46 @@
   animation: none !important;
   transition: none !important;
 }
+
+/* Section tabs: one part of the settings at a time. */
+.avatar-tabs {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 0 0 16px;
+  padding: 6px;
+  border: 1px solid var(--oe-border, #dedbe7);
+  border-radius: 12px;
+  background: var(--oe-surface, #fff);
+}
+.avatar-tabs button {
+  padding: 8px 14px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--oe-text-muted, #625d70);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.avatar-tabs button:hover { background: var(--oe-accent-soft, #eee8f7); color: var(--oe-accent, #5b3a91); }
+.avatar-tabs button[aria-pressed="true"] { background: var(--oe-accent, #5b3a91); color: #fff; }
+.avatar-tabs button:focus-visible { outline: 3px solid var(--oe-focus, #8f6bd1); outline-offset: 2px; }
+.avatar-section[hidden], .avatar-notice[hidden] { display: none !important; }
+
+.talking-avatar-body {
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  gap: 16px;
+  align-items: start;
+}
+.talking-avatar-body img { width: 120px; height: 120px; border-radius: 12px; object-fit: cover; background: var(--oe-accent-soft, #eee8f7); }
+.talking-avatar-body button { display: inline-flex; align-items: center; gap: 6px; }
+.talking-avatar-name { margin: 0 0 4px; font-size: 1.0625rem; font-weight: 700; }
+.talking-avatar-ready { display: flex; align-items: center; gap: 6px; color: #17643a; }
+.talking-avatar-video { grid-column: 1 / -1; width: min(100%, 420px); border-radius: 12px; background: #111; }
+/* The talking avatar tab has nothing to save in the exam policy. */
+.is-talking-tab .avatar-settings-actions { display: none; }

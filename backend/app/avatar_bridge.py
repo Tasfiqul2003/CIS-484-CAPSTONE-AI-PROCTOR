@@ -8,6 +8,7 @@ The avatar service is optional: without AVATAR_SERVICE_URL every route reports i
 the exam keeps working with typed answers.
 """
 
+import asyncio
 import json
 import os
 import re
@@ -33,6 +34,8 @@ MEDIA_NAME = re.compile(r"[A-Za-z0-9_.-]{1,80}\.mp4")
 PROFILE_ID = re.compile(r"[a-z0-9-]{1,40}")
 MAX_UPLOAD = 25_000_000
 PREVIEW_TEXT = "Hello. I will be your examiner today. Take your time, and answer in your own words."
+# How long a student's first question waits for their professor's avatar to load.
+SWITCH_WAIT_S = 240
 
 
 def _enabled() -> bool:
@@ -130,6 +133,9 @@ async def speak(session_id: UUID, request: Request, authorization: str | None = 
     if not said or len(said) > MAX_TEXT:
         raise HTTPException(422, f"Text must be 1-{MAX_TEXT} characters.")
 
+    target = await _exam_avatar(db, str(session_id))
+    if target:
+        await _wait_until_loaded(target)
     return await _relay_speech(said)
 
 
@@ -140,8 +146,8 @@ async def examiner_poster(session_id: UUID, authorization: str | None = Header(d
     if not _enabled():
         raise HTTPException(404, "Not found.")
     _active_session(db, str(session_id), authorization)
-    status = (await _service("GET", "/service/status")).json()
-    pid = (status.get("profile") or {}).get("id") or ""
+    # Asking for the photo at the start of the exam also starts loading the professor's avatar.
+    pid = await _exam_avatar(db, str(session_id)) or ""
     if not PROFILE_ID.fullmatch(pid):
         raise HTTPException(404, "No examiner photo yet.")
     r = await _service("GET", f"/service/profiles/{pid}/photo")
@@ -241,13 +247,62 @@ async def _owned(pid: str, account: dict, allow_unowned: bool = False) -> dict:
     raise HTTPException(404, "Avatar not found.")
 
 
+# One avatar is loaded on the GPU at a time, but each professor picks the avatar their own exams use.
+# When a student starts an exam, the backend loads that professor's avatar, unless another
+# professor's exam is running right now (switching would change the examiner mid-exam for them).
+
+def _other_exam_running(db: Session, professor_id: str, session_id: str | None = None) -> bool:
+    row = db.execute(text("""
+        SELECT 1 FROM exam_sessions AS s JOIN exam_templates AS t ON t.id = s.exam_template_id
+        WHERE s.status = 'in_progress' AND s.started_at > now() - interval '3 hours'
+          AND CAST(t.professor_id AS text) <> :prof AND CAST(s.id AS text) <> :sid
+        LIMIT 1
+    """), {"prof": professor_id, "sid": session_id or ""}).first()
+    return row is not None
+
+
+async def _exam_avatar(db: Session, session_id: str) -> str | None:
+    """The avatar this session's exam should use, loading it first when it is not the one on the GPU."""
+    row = db.execute(text("""
+        SELECT t.professor_id FROM exam_sessions AS s JOIN exam_templates AS t ON t.id = s.exam_template_id
+        WHERE s.id = :id
+    """), {"id": session_id}).mappings().first()
+    listing = await _profiles()
+    active = listing.get("active")
+    if row is None:
+        return active
+    professor = str(row["professor_id"])
+    chosen = (listing.get("selections") or {}).get(professor)
+    complete = {p.get("id") for p in listing.get("profiles", []) if p.get("complete")}
+    if not chosen or chosen not in complete or chosen == active:
+        return active
+    if _other_exam_running(db, professor, session_id):
+        return active
+    r = await _service("POST", f"/service/profiles/{chosen}/activate")
+    return chosen if r.status_code == 200 else active
+
+
+async def _wait_until_loaded(pid: str) -> None:
+    """Wait (the student sees "The examiner is getting ready") until `pid` is loaded and ready."""
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + SWITCH_WAIT_S
+    while True:
+        status = (await _service("GET", "/service/status")).json()
+        if status.get("ready") and (status.get("profile") or {}).get("id") == pid:
+            return
+        if status.get("build_error") or loop.time() > deadline:
+            raise HTTPException(503, "The avatar is not ready yet.")
+        await asyncio.sleep(1)
+
+
 @router.get("/professor/avatars")
-async def professor_avatars(account: dict = Depends(require_professor)):
+async def professor_avatars(account: dict = Depends(require_professor), db: Session = Depends(get_db)):
     if not _enabled():
         return {"enabled": False}
     me = str(account.get("professor_id") or "")
     listing = await _profiles()
     status = (await _service("GET", "/service/status")).json()
+    chosen = (listing.get("selections") or {}).get(me)
     visible = []
     for profile in listing.get("profiles", []):
         owner = profile.get("owner")
@@ -255,11 +310,16 @@ async def professor_avatars(account: dict = Depends(require_professor)):
             continue  # other professors' avatars stay private
         visible.append({"id": profile["id"], "name": profile.get("name"), "created": profile.get("created"),
                         "complete": bool(profile.get("complete")), "active": bool(profile.get("active")),
+                        "selected": profile["id"] == chosen,
                         "mine": bool(owner), "consent_recorded": bool(profile.get("consent_recorded"))})
     active = (status.get("profile") or {})
     active_visible = next((p for p in visible if p["id"] == active.get("id")), None)
     return {
         "enabled": True,
+        # The avatar this professor's exams use, and whether it can be loaded right now for a preview.
+        # Before a professor picks one, their exams use whichever avatar is loaded.
+        "selected": next((p for p in visible if p["selected"]), None) or active_visible,
+        "other_exam_running": _other_exam_running(db, me),
         "ready": bool(status.get("ready")),
         "models_loaded": bool(status.get("models_loaded")),
         "progress": status.get("progress"),
@@ -317,12 +377,19 @@ async def professor_photo_preview(pid: str, account: dict = Depends(require_prof
 
 
 @router.post("/professor/avatars/{pid}/activate")
-async def professor_activate(pid: str, account: dict = Depends(require_professor)):
+async def professor_activate(pid: str, account: dict = Depends(require_professor), db: Session = Depends(get_db)):
+    """Use this avatar for my exams, and load it now unless another professor's exam is running."""
     await _owned(pid, account, allow_unowned=True)
+    me = str(account.get("professor_id") or "")
+    r = await _service("POST", "/service/selections", json={"owner": me, "id": pid})
+    if r.status_code != 200:
+        _service_error(r, "The avatar could not be chosen.")
+    if _other_exam_running(db, me):
+        return {"ok": True, "loaded": False}
     r = await _service("POST", f"/service/profiles/{pid}/activate")
     if r.status_code != 200:
         _service_error(r, "The avatar could not be started.")
-    return {"ok": True}
+    return {"ok": True, "loaded": True}
 
 
 @router.post("/professor/avatars/{pid}/delete")

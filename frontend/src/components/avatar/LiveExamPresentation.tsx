@@ -332,7 +332,7 @@ export default function LiveExamPresentation({ sessionId, token, question, seque
       <summary>Examiner controls and assistance</summary>
       <div className="live-exam-options-content">
         <p>{examinerSpeaks
-          ? "The examiner reads each question aloud. To hear it again, say “repeat the question” or select Repeat question under the video."
+          ? "The examiner reads each question aloud. To hear it again, say “repeat the question”, or use the buttons below."
           : "Use the question and typed answer below. Optional read-aloud uses your browser's standard English voice; microphone capture is not connected."}</p>
         <div className="live-exam-controls">
           {speechSupported && !examinerSpeaks && <button type="button" disabled={expired || submitting || assistanceBusy || preferences.volume === 0} onClick={() => {

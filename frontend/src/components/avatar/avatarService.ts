@@ -88,3 +88,33 @@ export async function transcribeAnswer(sessionId: string, token: string, audio: 
   }
   return ((await response.json()) as { text?: string }).text?.trim() ?? "";
 }
+
+/** Professor preview: the active avatar says a short line. Same NDJSON clip stream as the exam. */
+export async function streamProfessorPreview(onClip: (clip: AvatarClip) => void, signal?: AbortSignal): Promise<void> {
+  const response = await fetch("/api/avatar/professor/preview", { method: "POST", credentials: "include", signal });
+  if (!response.ok || !response.body) {
+    let detail = "";
+    try { detail = (await response.json() as { detail?: string }).detail ?? ""; } catch { /* no body */ }
+    throw new Error(detail || `The preview could not play (${response.status}).`);
+  }
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  for (;;) {
+    const { value, done } = await reader.read();
+    buffer += done ? decoder.decode() : decoder.decode(value, { stream: true });
+    const { events, rest } = ndjsonLines(done ? buffer + "\n" : buffer);
+    buffer = rest;
+    for (const raw of events) {
+      const event = raw as { type?: string; url?: string; text?: string; message?: string };
+      if (event.type === "clip" && typeof event.url === "string" && event.url.startsWith("/api/avatar/media/")) {
+        onClip({ url: event.url, text: event.text ?? "" });
+      } else if (event.type === "error") {
+        throw new Error(event.message || "The avatar could not finish the preview.");
+      } else if (event.type === "done") {
+        return;
+      }
+    }
+    if (done) return;
+  }
+}

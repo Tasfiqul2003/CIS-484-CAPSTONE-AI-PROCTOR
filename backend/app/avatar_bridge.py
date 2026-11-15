@@ -15,10 +15,11 @@ from uuid import UUID
 
 import httpx
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from .auth import require_professor
 from .db import get_db
 from .student_auth import read_student_token
 
@@ -29,6 +30,9 @@ SERVICE_TOKEN = os.getenv("AVATAR_SERVICE_TOKEN", "")
 MAX_TEXT = 1500
 MAX_AUDIO = 10_000_000
 MEDIA_NAME = re.compile(r"[A-Za-z0-9_.-]{1,80}\.mp4")
+PROFILE_ID = re.compile(r"[a-z0-9-]{1,40}")
+MAX_UPLOAD = 25_000_000
+PREVIEW_TEXT = "Hello. I will be your examiner today. Take your time, and answer in your own words."
 
 
 def _enabled() -> bool:
@@ -54,35 +58,8 @@ def _active_session(db: Session, session_id: str, authorization: str | None) -> 
         raise HTTPException(409, "This attempt is no longer in progress.")
 
 
-@router.get("/status")
-def avatar_status():
-    """Whether the talking avatar and spoken answers can be used right now. No personal data."""
-    if not _enabled():
-        return {"enabled": False, "ready": False}
-    try:
-        r = httpx.get(f"{SERVICE_URL}/service/status", headers=_headers(), timeout=5)
-        r.raise_for_status()
-        body = r.json()
-        return {"enabled": True, "ready": bool(body.get("ready")),
-                "speech_input": bool(body.get("models_loaded")), "progress": body.get("progress")}
-    except (httpx.HTTPError, ValueError):
-        return {"enabled": True, "ready": False, "speech_input": False, "progress": "Avatar service unreachable"}
-
-
-@router.post("/sessions/{session_id}/speak")
-async def speak(session_id: UUID, request: Request, authorization: str | None = Header(default=None),
-                db: Session = Depends(get_db)):
-    if not _enabled():
-        raise HTTPException(503, "The avatar service is not configured.")
-    _active_session(db, str(session_id), authorization)
-    try:
-        body = await request.json()
-    except ValueError:
-        raise HTTPException(400, "Bad request.")
-    said = " ".join(str(body.get("text") or "").split())
-    if not said or len(said) > MAX_TEXT:
-        raise HTTPException(422, f"Text must be 1-{MAX_TEXT} characters.")
-
+async def _relay_speech(said: str) -> StreamingResponse:
+    """Stream the avatar service's clips for `said`, with clip URLs rewritten to this backend."""
     client = httpx.AsyncClient(timeout=httpx.Timeout(10, read=600))
     try:
         upstream = await client.send(
@@ -122,6 +99,38 @@ async def speak(session_id: UUID, request: Request, authorization: str | None = 
             await client.aclose()
 
     return StreamingResponse(relay(), media_type="application/x-ndjson")
+
+
+@router.get("/status")
+def avatar_status():
+    """Whether the talking avatar and spoken answers can be used right now. No personal data."""
+    if not _enabled():
+        return {"enabled": False, "ready": False}
+    try:
+        r = httpx.get(f"{SERVICE_URL}/service/status", headers=_headers(), timeout=5)
+        r.raise_for_status()
+        body = r.json()
+        return {"enabled": True, "ready": bool(body.get("ready")),
+                "speech_input": bool(body.get("models_loaded")), "progress": body.get("progress")}
+    except (httpx.HTTPError, ValueError):
+        return {"enabled": True, "ready": False, "speech_input": False, "progress": "Avatar service unreachable"}
+
+
+@router.post("/sessions/{session_id}/speak")
+async def speak(session_id: UUID, request: Request, authorization: str | None = Header(default=None),
+                db: Session = Depends(get_db)):
+    if not _enabled():
+        raise HTTPException(503, "The avatar service is not configured.")
+    _active_session(db, str(session_id), authorization)
+    try:
+        body = await request.json()
+    except ValueError:
+        raise HTTPException(400, "Bad request.")
+    said = " ".join(str(body.get("text") or "").split())
+    if not said or len(said) > MAX_TEXT:
+        raise HTTPException(422, f"Text must be 1-{MAX_TEXT} characters.")
+
+    return await _relay_speech(said)
 
 
 @router.get("/media/{name}")
@@ -168,3 +177,154 @@ async def transcribe(session_id: UUID, request: Request, authorization: str | No
     if r.status_code != 200:
         raise HTTPException(503, "Speech recognition is not available right now.")
     return {"text": str(r.json().get("text", ""))[:5000]}
+
+
+# ---------------- professor side: create and manage the talking avatar ----------------
+# The photo and voice sample go straight to the avatar service, which stores them on the exam
+# server (never in this database or the repository). Each avatar records the professor who made
+# it; a professor sees and changes only their own. Avatars made in the standalone prototype page
+# have no owner: they are shown to every professor as "made outside the exam app", can be used
+# for exams, and can only be deleted from that page.
+
+async def _service(method: str, path: str, **kwargs) -> httpx.Response:
+    if not _enabled():
+        raise HTTPException(503, "The avatar service is not configured on this server.")
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(10, read=180)) as client:
+            return await client.request(method, f"{SERVICE_URL}{path}", headers=_headers(), **kwargs)
+    except httpx.HTTPError:
+        raise HTTPException(503, "The avatar service is unreachable.")
+
+
+def _service_error(r: httpx.Response, fallback: str):
+    try:
+        message = str(r.json().get("error") or "")
+    except ValueError:
+        message = ""
+    raise HTTPException(400 if r.status_code < 500 else 503, message or fallback)
+
+
+async def _profiles() -> dict:
+    r = await _service("GET", "/service/profiles")
+    if r.status_code != 200:
+        _service_error(r, "The avatar list is unavailable.")
+    return r.json()
+
+
+async def _owned(pid: str, account: dict, allow_unowned: bool = False) -> dict:
+    if not PROFILE_ID.fullmatch(pid or ""):
+        raise HTTPException(404, "Avatar not found.")
+    me = str(account.get("professor_id") or "")
+    for profile in (await _profiles()).get("profiles", []):
+        if profile.get("id") == pid:
+            owner = profile.get("owner")
+            if (owner and owner == me) or (allow_unowned and not owner):
+                return profile
+            break
+    raise HTTPException(404, "Avatar not found.")
+
+
+@router.get("/professor/avatars")
+async def professor_avatars(account: dict = Depends(require_professor)):
+    if not _enabled():
+        return {"enabled": False}
+    me = str(account.get("professor_id") or "")
+    listing = await _profiles()
+    status = (await _service("GET", "/service/status")).json()
+    visible = []
+    for profile in listing.get("profiles", []):
+        owner = profile.get("owner")
+        if owner and owner != me:
+            continue  # other professors' avatars stay private
+        visible.append({"id": profile["id"], "name": profile.get("name"), "created": profile.get("created"),
+                        "complete": bool(profile.get("complete")), "active": bool(profile.get("active")),
+                        "mine": bool(owner), "consent_recorded": bool(profile.get("consent_recorded"))})
+    active = (status.get("profile") or {})
+    active_visible = next((p for p in visible if p["id"] == active.get("id")), None)
+    return {
+        "enabled": True,
+        "ready": bool(status.get("ready")),
+        "models_loaded": bool(status.get("models_loaded")),
+        "progress": status.get("progress"),
+        "build_error": status.get("build_error"),
+        "consent_text": listing.get("consent_text"),
+        # Another professor's active avatar is reported without its name.
+        "active": active_visible or ({"id": None, "name": None, "mine": False, "other": True} if active.get("id") else None),
+        "avatars": visible,
+    }
+
+
+@router.post("/professor/avatars")
+async def professor_create_avatar(request: Request, account: dict = Depends(require_professor)):
+    try:
+        body = await request.json()
+    except ValueError:
+        raise HTTPException(400, "Bad request.")
+    if body.get("consent") is not True:
+        raise HTTPException(422, "Confirm the consent statement first.")
+    r = await _service("POST", "/service/profiles", json={
+        "name": str(body.get("name") or "")[:60], "consent": True, "owner": str(account.get("professor_id") or "")})
+    if r.status_code != 200:
+        _service_error(r, "The avatar could not be created.")
+    return r.json()
+
+
+async def _upload(pid: str, kind: str, request: Request, account: dict):
+    await _owned(pid, account)
+    data = await request.body()
+    if not data or len(data) > MAX_UPLOAD:
+        raise HTTPException(413 if data else 400, "The file is empty or larger than 25 MB.")
+    r = await _service("PUT", f"/service/profiles/{pid}/{kind}", content=data)
+    if r.status_code != 200:
+        _service_error(r, f"The {kind} could not be saved.")
+    return r.json()
+
+
+@router.put("/professor/avatars/{pid}/photo")
+async def professor_photo(pid: str, request: Request, account: dict = Depends(require_professor)):
+    return await _upload(pid, "photo", request, account)
+
+
+@router.put("/professor/avatars/{pid}/voice")
+async def professor_voice(pid: str, request: Request, account: dict = Depends(require_professor)):
+    return await _upload(pid, "voice", request, account)
+
+
+@router.get("/professor/avatars/{pid}/photo")
+async def professor_photo_preview(pid: str, account: dict = Depends(require_professor)):
+    await _owned(pid, account, allow_unowned=True)
+    r = await _service("GET", f"/service/profiles/{pid}/photo")
+    if r.status_code != 200:
+        raise HTTPException(404, "No photo yet.")
+    return Response(r.content, media_type="image/jpeg", headers={"Cache-Control": "private, no-store"})
+
+
+@router.post("/professor/avatars/{pid}/activate")
+async def professor_activate(pid: str, account: dict = Depends(require_professor)):
+    await _owned(pid, account, allow_unowned=True)
+    r = await _service("POST", f"/service/profiles/{pid}/activate")
+    if r.status_code != 200:
+        _service_error(r, "The avatar could not be started.")
+    return {"ok": True}
+
+
+@router.post("/professor/avatars/{pid}/delete")
+async def professor_delete(pid: str, account: dict = Depends(require_professor)):
+    await _owned(pid, account)
+    r = await _service("POST", f"/service/profiles/{pid}/delete")
+    if r.status_code != 200:
+        _service_error(r, "The avatar could not be deleted.")
+    return {"ok": True}
+
+
+@router.post("/professor/preview")
+async def professor_preview(account: dict = Depends(require_professor)):
+    """Speak a short line with the active avatar, so the professor can see and hear it."""
+    if not _enabled():
+        raise HTTPException(503, "The avatar service is not configured.")
+    status = (await _service("GET", "/service/status")).json()
+    active = (status.get("profile") or {}).get("id")
+    if not active:
+        raise HTTPException(409, "No avatar is in use yet.")
+    await _owned(active, account, allow_unowned=True)
+    return await _relay_speech(PREVIEW_TEXT)

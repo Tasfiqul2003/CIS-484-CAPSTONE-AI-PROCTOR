@@ -678,3 +678,13 @@ a.logo:visited {
   .simple-header.professor-topbar .professor-topbar-nav { gap: 4px; }
   .simple-header.professor-topbar .professor-topbar-nav a { padding: 6px 8px; }
 }
+
+/* Dashboard: avatar set-up link under "Create a new examination" */
+.dashboard-actions { display: grid; gap: 12px; }
+.dashboard-action.dashboard-action-avatar {
+  background: var(--oe-surface, #fff);
+  color: var(--oe-text, #242033);
+  border: 1px solid var(--oe-accent-border, #c9b8e2);
+}
+.dashboard-action.dashboard-action-avatar p { color: var(--oe-text-muted, #625d70); }
+.dashboard-action.dashboard-action-avatar .dashboard-action-icon { background: var(--oe-accent-soft, #eee8f7); color: var(--oe-accent, #5b3a91); }

@@ -317,15 +317,18 @@ def list_profiles():
     return sorted(out, key=lambda p: p["name"].lower())
 
 
-def create_profile(name):
+def create_profile(name, owner=None):
     name = " ".join(str(name or "").split())[:60]
     if not name:
         raise ValueError("Enter the professor's name.")
     pid = (re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")[:24] or "professor") + "-" + uuid.uuid4().hex[:4]
     os.makedirs(pdir(pid))
     now = datetime.datetime.now().isoformat(timespec="seconds")
-    write_meta(pid, {"id": pid, "name": name, "created": now,
-                     "consent": {"given": True, "at": now, "statement": CONSENT_TEXT}})
+    meta = {"id": pid, "name": name, "created": now,
+            "consent": {"given": True, "at": now, "statement": CONSENT_TEXT}}
+    if owner:
+        meta["owner"] = str(owner)[:64]   # the exam app's professor id; the exam backend checks it
+    write_meta(pid, meta)
     return pid
 
 
@@ -398,8 +401,9 @@ def fixed_lines():
     return list(dict.fromkeys(fixed))
 
 
-def activate_profile(pid):
-    """Make this professor the one the exam uses and pre-render the fixed lines (clips saved from earlier runs are reused)."""
+def activate_profile(pid, lines=None):
+    """Make this professor the one the exam uses and pre-render the fixed lines (clips saved from earlier runs are reused).
+    The exam app passes one short warm-up line: its questions come from the exam, not from this prototype's script."""
     with PREP_LOCK:
         MODELS_READY.wait()
         try:
@@ -416,7 +420,7 @@ def activate_profile(pid):
             for sent, clip in saved.items():
                 if os.path.exists(os.path.join(MEDIA, clip["url"].split("/")[-1])):
                     CACHE[sent] = clip
-            fixed = fixed_lines()
+            fixed = fixed_lines() if lines is None else lines
             for i, sent in enumerate(fixed, 1):
                 STATE["progress"] = f"Preparing the avatar's lines ({i}/{len(fixed)})"
                 clip_for(sent)
@@ -780,7 +784,7 @@ def service_status(request: Request):
         return bad("Unauthorized.", 401)
     return JSONResponse({"ready": avatar_ready(), "models_loaded": MODELS_READY.is_set(),
                          "progress": STATE.get("progress"), "error": STATE.get("error"),
-                         "profile": STATE.get("profile")})
+                         "build_error": STATE.get("build_error"), "profile": STATE.get("profile")})
 
 
 @app.post("/service/speak")
@@ -799,6 +803,94 @@ async def service_speak(request: Request):
         return bad("The avatar is not ready yet.", 503)
     return StreamingResponse(ndjson(pipeline_events(split_sentences(text), time.perf_counter())),
                              media_type="application/x-ndjson")
+
+
+SERVICE_WARMUP_LINE = "Hello. I will be your examiner today."
+
+
+def service_profile(pid):
+    meta = read_meta(pid)
+    return {"id": pid, "name": meta.get("name", pid), "owner": meta.get("owner"),
+            "created": meta.get("created"), "complete": is_complete(pid),
+            "consent_recorded": bool((meta.get("consent") or {}).get("given")),
+            "active": ACTIVE.get("id") == pid}
+
+
+@app.get("/service/profiles")
+def service_profiles(request: Request):
+    if not service_ok(request):
+        return bad("Unauthorized.", 401)
+    return JSONResponse({"profiles": [service_profile(p["id"]) for p in list_profiles()],
+                         "active": ACTIVE.get("id"), "consent_text": CONSENT_TEXT})
+
+
+@app.post("/service/profiles")
+async def service_new_profile(request: Request):
+    if not service_ok(request):
+        return bad("Unauthorized.", 401)
+    try:
+        body = await request.json()
+    except Exception:
+        return bad("Bad request.")
+    if body.get("consent") is not True:
+        return bad("Consent is required.")
+    try:
+        return JSONResponse({"id": create_profile(body.get("name"), owner=body.get("owner"))})
+    except ValueError as e:
+        return bad(str(e))
+
+
+@app.put("/service/profiles/{pid}/photo")
+async def service_put_photo(pid: str, request: Request):
+    if not service_ok(request):
+        return bad("Unauthorized.", 401)
+    return await upload(request, pid, process_photo)
+
+
+@app.put("/service/profiles/{pid}/voice")
+async def service_put_voice(pid: str, request: Request):
+    if not service_ok(request):
+        return bad("Unauthorized.", 401)
+    return await upload(request, pid, process_voice)
+
+
+@app.get("/service/profiles/{pid}/photo")
+def service_photo(pid: str, request: Request):
+    if not service_ok(request):
+        return bad("Unauthorized.", 401)
+    try:
+        path = os.path.join(pdir(pid), "photo.jpg")
+    except ValueError:
+        return bad("Unknown profile.", 404)
+    if not os.path.exists(path):
+        return bad("No photo yet.", 404)
+    return FileResponse(path, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
+
+
+@app.post("/service/profiles/{pid}/activate")
+def service_activate(pid: str, request: Request):
+    if not service_ok(request):
+        return bad("Unauthorized.", 401)
+    try:
+        if not is_complete(pid):
+            return bad("This avatar needs both a photo and a voice sample.")
+        name = read_meta(pid)["name"]
+    except (ValueError, OSError):
+        return bad("Unknown profile.", 404)
+    STATE.update(ready=False, build_error=None, profile={"id": pid, "name": name}, progress="Starting")
+    threading.Thread(target=activate_profile, args=(pid, split_sentences(SERVICE_WARMUP_LINE)), daemon=True).start()
+    return JSONResponse({"ok": True})
+
+
+@app.post("/service/profiles/{pid}/delete")
+def service_delete(pid: str, request: Request):
+    if not service_ok(request):
+        return bad("Unauthorized.", 401)
+    try:
+        delete_profile(pid)
+    except ValueError:
+        return bad("Unknown profile.", 404)
+    return JSONResponse({"ok": True})
 
 
 @app.post("/service/transcribe")

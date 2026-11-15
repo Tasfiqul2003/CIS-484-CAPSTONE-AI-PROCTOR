@@ -1,7 +1,7 @@
 import OralExamMark from "../brand/OralExamMark";
 
 /** One top bar for professor pages: logo, page title in the middle, and a way back to the dashboard. */
-export default function ProfessorHeader({ title, current }: { title?: string; current?: "dashboard" | "exams" }) {
+export default function ProfessorHeader({ title, current }: { title?: string; current?: "dashboard" | "exams" | "avatar" }) {
   const logOut = async () => {
     try { await fetch("/api/auth/logout", { method: "POST", credentials: "include" }); }
     finally { window.location.href = "/professor/login"; }
@@ -15,6 +15,7 @@ export default function ProfessorHeader({ title, current }: { title?: string; cu
     <nav className="professor-topbar-nav" aria-label="Professor pages">
       <a href="/professor/dashboard" aria-current={current === "dashboard" ? "page" : undefined}>Dashboard</a>
       <a href="/professor/exams" aria-current={current === "exams" ? "page" : undefined}>My Exams</a>
+      <a href="/professor/avatar" aria-current={current === "avatar" ? "page" : undefined}>Avatar</a>
       <button type="button" className="dashboard-logout" onClick={() => void logOut()}>Log Out</button>
     </nav>
   </header>;

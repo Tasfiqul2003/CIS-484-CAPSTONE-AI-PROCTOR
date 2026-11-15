@@ -351,6 +351,14 @@ export default function ProfessorDashboard() {
             </div>
             <span className="dashboard-action-arrow" aria-hidden="true">→</span>
           </a>
+          <a href="/professor/avatar" className="dashboard-action dashboard-action-avatar">
+            <span className="dashboard-action-icon" aria-hidden="true">◉</span>
+            <div>
+              <strong>Set up your exam avatar</strong>
+              <p>Upload a photo and a short voice sample so the examiner looks and sounds like you.</p>
+            </div>
+            <span className="dashboard-action-arrow" aria-hidden="true">→</span>
+          </a>
         </section>
 
         <div className="dashboard-section-heading">

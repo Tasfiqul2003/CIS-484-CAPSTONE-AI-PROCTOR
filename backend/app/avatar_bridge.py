@@ -133,6 +133,23 @@ async def speak(session_id: UUID, request: Request, authorization: str | None = 
     return await _relay_speech(said)
 
 
+@router.get("/sessions/{session_id}/poster")
+async def examiner_poster(session_id: UUID, authorization: str | None = Header(default=None),
+                          db: Session = Depends(get_db)):
+    """The examiner's still photo, shown while the avatar gets ready or waits between questions."""
+    if not _enabled():
+        raise HTTPException(404, "Not found.")
+    _active_session(db, str(session_id), authorization)
+    status = (await _service("GET", "/service/status")).json()
+    pid = (status.get("profile") or {}).get("id") or ""
+    if not PROFILE_ID.fullmatch(pid):
+        raise HTTPException(404, "No examiner photo yet.")
+    r = await _service("GET", f"/service/profiles/{pid}/photo")
+    if r.status_code != 200:
+        raise HTTPException(404, "No examiner photo yet.")
+    return Response(r.content, media_type="image/jpeg", headers={"Cache-Control": "private, no-store"})
+
+
 @router.get("/media/{name}")
 async def media(name: str):
     """Clip files have random or content-hash names and no student data; <video> cannot send a bearer token."""

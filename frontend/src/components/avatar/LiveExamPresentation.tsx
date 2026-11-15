@@ -20,7 +20,7 @@ const actionLabels: Record<AssistanceAction, string> = {
 };
 
 export default function LiveExamPresentation({ sessionId, token, question, sequence, answer, expired, submitting,
-  developerDemo = false, developerMinimal = false, settingsTarget = null, stage = null, examinerSpeaks, onTiming, onBusyChange, onTextSizeChange,
+  developerDemo = false, developerMinimal = false, settingsTarget = null, stage = null, examinerSpeaks, assistRequest = null, onTiming, onBusyChange, onTextSizeChange,
 }: {
   sessionId: string; token: string; question: string; sequence: number; answer: string; expired: boolean; submitting: boolean;
   developerDemo?: boolean;
@@ -30,6 +30,8 @@ export default function LiveExamPresentation({ sessionId, token, question, seque
   stage?: ReactNode;
   /** When the talking avatar is on, it speaks questions and assistance instead of browser read-aloud. */
   examinerSpeaks?: (text: string) => void;
+  /** A spoken request ("repeat the question", "can you clarify"); each new id is handled once. */
+  assistRequest?: { id: number; action: AssistanceAction } | null;
   onTiming: (timing: ExamTiming) => void; onBusyChange: (busy: boolean) => void; onTextSizeChange: (size: number) => void;
 }) {
   const [presentation, setPresentation] = useState<SessionPresentation | null>(null);
@@ -281,6 +283,24 @@ export default function LiveExamPresentation({ sessionId, token, question, seque
     }
   }
 
+  useEffect(() => {
+    if (!assistRequest) return;
+    const allowance = assistance?.actions[assistRequest.action];
+    if (!allowance && assistRequest.action === "repeat" && examinerSpeaks) {
+      // This exam sets no repeat limit: replay the question freely.
+      examinerSpeaks(question);
+      return;
+    }
+    if (!allowance || allowance.remaining === 0) {
+      setAssistanceNotice(current => ({ id: (current?.id ?? 0) + 1,
+        text: allowance ? `No ${assistRequest.action === "repeat" ? "repeats" : "clarifications"} left for this question`
+          : `${actionLabels[assistRequest.action]} is not available for this exam` }));
+      return;
+    }
+    void ask(assistRequest.action);
+  // A new request id is the only trigger; ask() reads the latest state itself.
+  }, [assistRequest?.id]);
+
   const settingsButton = <button type="button" className="live-exam-settings-launch" ref={launchButton}
     disabled={!presentation || !preferences} onClick={() => setPanelOpen(true)}><Settings size={22} aria-hidden="true" />Student settings</button>;
   const settingsAccess = settingsTarget ? createPortal(settingsButton, settingsTarget) : <div className="live-exam-settings-access">{settingsButton}</div>;
@@ -307,19 +327,6 @@ export default function LiveExamPresentation({ sessionId, token, question, seque
         state={state} developerMinimal={developerMinimal} />}
       <p className="live-exam-stage-status" role="status">{developerMinimal ? <Keyboard size={24} aria-hidden="true" /> : <span aria-hidden="true" />}{status}</p>
     </div>
-    {!developerMinimal && assistance && Object.keys(assistance.actions).length > 0 && <section className="live-exam-quick-assist" aria-label="Question assistance">
-      {assistanceActions.filter(action => assistance.actions[action]).map(action => {
-        const allowance = assistance.actions[action]!;
-        return <button type="button" key={action}
-          disabled={allowance.remaining === 0 || expired || submitting || assistanceBusy || (action === "correctness" && !answer.trim())}
-          onClick={() => void ask(action)}>
-          {actionLabels[action]}<span className="live-exam-quick-assist-count">{allowance.remaining} left</span>
-        </button>;
-      })}
-      {assistanceBusy && <p role="status">{assistanceText ? "Reading assistance…" : "Preparing assistance…"}</p>}
-      {assistanceText && <div className="live-exam-assistance-text" role="status">{assistanceText}</div>}
-      {assistanceError && <p role="alert">{assistanceError}</p>}
-    </section>}
     {assistanceNotice && <div className="live-exam-assist-toast" role="status" key={assistanceNotice.id}>{assistanceNotice.text}</div>}
     {!developerMinimal && <details className="live-exam-options" ref={options}>
       <summary>Examiner controls and assistance</summary>
@@ -339,7 +346,23 @@ export default function LiveExamPresentation({ sessionId, token, question, seque
         {speechError && <p role="alert">{speechError}</p>}
         {developerDemo && <p className="developer-demo-note">Demo media: the on-screen examiner works without an external avatar service. If browser speech is unavailable, use the readable question and assistance text. No voice cloning or video recording is simulated.</p>}
         <small>Saved examiner policy revision {presentation.revision}{assistance ? ` · ${assistance.mode} rules` : ""}{developerDemo ? " · demo attempt" : ""}</small>
-        {assistance && Object.keys(assistance.actions).length > 0 && <p>Assistance allowances apply to each question. Preference changes and reloads do not restore uses.</p>}
+        {assistance && Object.keys(assistance.actions).length > 0 && <section className="live-exam-assistance" aria-labelledby="live-assistance-heading">
+          <h2 id="live-assistance-heading">Question assistance</h2>
+          <p>{examinerSpeaks ? "You can also ask out loud, for example “repeat the question” or “can you clarify”. " : ""}
+            Allowances apply to each question. Preference changes and reloads do not restore uses.</p>
+          {assistanceActions.filter(action => assistance.actions[action]).map(action => {
+            const allowance = assistance.actions[action]!;
+            return <div className="live-exam-assistance-item" key={action}>
+              <div><strong>{actionLabels[action]}</strong><span id={`live-assistance-${action}-remaining`} aria-live="polite">{allowance.remaining} of {allowance.limit} remaining</span></div>
+              <button type="button" disabled={allowance.remaining === 0 || expired || submitting || assistanceBusy || (action === "correctness" && !answer.trim())}
+                aria-describedby={`live-assistance-${action}-remaining`}
+                onClick={() => void ask(action)}>{actionLabels[action]}</button>
+            </div>;
+          })}
+          {assistanceBusy && <p role="status">{assistanceText ? "Reading assistance…" : "Preparing assistance…"}</p>}
+          {assistanceText && <div className="live-exam-assistance-text" role="status">{assistanceText}</div>}
+        </section>}
+        {assistanceError && <p role="alert">{assistanceError}</p>}
         <div className="live-exam-controls">
           {assistanceError && <button type="button" disabled={preparing.current || submitting} onClick={() => void reloadAssistance()}>Retry loading assistance</button>}
           {retry.current && <button type="button" disabled={preparing.current || submitting} onClick={() => void ask(retry.current!.action)}>Retry assistance request</button>}

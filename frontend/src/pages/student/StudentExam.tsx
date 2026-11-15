@@ -4,8 +4,9 @@ import type { ExamClock, ExamTiming, RemainingTime } from "./examTiming";
 import LiveExamPresentation from "../../components/avatar/LiveExamPresentation";
 import AvatarVideoStage from "../../components/avatar/AvatarVideoStage";
 import AnswerRecorder from "../../components/avatar/AnswerRecorder";
-import { fetchAvatarStatus } from "../../components/avatar/avatarService";
-import { isRepeatRequest } from "../../components/avatar/voiceCommands";
+import { fetchAvatarStatus, fetchExaminerPoster } from "../../components/avatar/avatarService";
+import { isClarifyRequest, isRepeatRequest } from "../../components/avatar/voiceCommands";
+import type { AssistanceAction } from "../../components/avatar/sessionAssistance";
 import { createRecordingMix } from "../../components/exam-recording/recordingMix";
 import type { RecordingMix } from "../../components/exam-recording/recordingMix";
 import { startPresenceMonitor } from "../../components/exam-recording/presenceMonitor";
@@ -96,6 +97,11 @@ export default function StudentExam() {
   const examStart = useRef<number | null>(null);
   const [examinerSpeech, setExaminerSpeech] = useState<{ id: number; text: string } | null>(null);
   const [voiceNotice, setVoiceNotice] = useState("");
+  const [assistRequest, setAssistRequest] = useState<{ id: number; action: AssistanceAction } | null>(null);
+  const [poster, setPoster] = useState("");
+  // The question text appears once the examiner has said it (or on request), so it is not read ahead.
+  const [spokenFor, setSpokenFor] = useState(0);
+  const [questionTextShown, setQuestionTextShown] = useState(false);
   const recordingMix = useRef<RecordingMix | null>(null);
   const examinerVideo = useRef<HTMLVideoElement | null>(null);
   // The talking avatar and spoken answers appear only when this server runs the avatar service.
@@ -534,7 +540,15 @@ export default function StudentExam() {
     finalizeCompletedExam,
   ]);
 
-  useEffect(() => { setVoiceNotice(""); }, [questionNumber]);
+  useEffect(() => { setVoiceNotice(""); setQuestionTextShown(false); }, [questionNumber]);
+
+  useEffect(() => {
+    if (!avatarOn || !sessionId) return;
+    const controller = new AbortController();
+    let url = "";
+    void fetchExaminerPoster(sessionId, sessionToken.current, controller.signal).then(value => { url = value; setPoster(value); });
+    return () => { controller.abort(); if (url) URL.revokeObjectURL(url); };
+  }, [avatarOn, sessionId]);
 
   useEffect(() => {
     if (!expired || loading || showConfirmation || submitting || assisting || !sessionId
@@ -711,6 +725,7 @@ export default function StudentExam() {
   }
 
   const examinerFinished = () => {
+    setSpokenFor(questionNumber);
     if (handsFree && !answer.trim() && !submitting) setListenSignal(value => value + 1);
   };
   const toggleHandsFree = (on: boolean) => {
@@ -723,10 +738,11 @@ export default function StudentExam() {
   };
   const examinerSays = (text: string) => setExaminerSpeech(current => ({ id: (current?.id ?? 0) + 1, text }));
   const heardAnswer = (text: string) => {
-    // "Can you repeat the question?" asks the examiner; it is not part of the answer.
-    if (isRepeatRequest(text)) {
-      setVoiceNotice("Repeating the question.");
-      examinerSays(questionText);
+    // "Can you repeat the question?" or "can you clarify?" asks the examiner; it is not part of the answer.
+    const request: AssistanceAction | null = isRepeatRequest(text) ? "repeat" : isClarifyRequest(text) ? "clarification" : null;
+    if (request) {
+      setVoiceNotice("");
+      setAssistRequest(current => ({ id: (current?.id ?? 0) + 1, action: request }));
       return false;
     }
     setVoiceNotice("");
@@ -738,7 +754,12 @@ export default function StudentExam() {
   const questionText = sampleQuestion ? question.slice("[Developer demo] ".length) : question;
   const answerForm = <form className="exam-answer-form" onSubmit={event => { event.preventDefault(); void handleNext(); }} style={{ fontSize: textSize }}>
     <p className="exam-question-number">{sampleQuestion ? "Sample question" : `Question ${questionNumber}`}</p>
-    <h2 className="exam-current-question" aria-live="polite">{questionText}</h2>
+    {!avatarOn || spokenFor === questionNumber || questionTextShown
+      ? <h2 className="exam-current-question" aria-live="polite">{questionText}</h2>
+      : <div className="exam-question-waiting">
+          <p>Listen to the examiner. The question appears here once it has been asked.</p>
+          <button type="button" className="exam-question-show" onClick={() => setQuestionTextShown(true)}>Show the question now</button>
+        </div>}
     <label className="student-answer-label" htmlFor="student-exam-answer">{demoAttempt ? "Test answer" : "Your answer"}</label>
     <textarea id="student-exam-answer" className="student-answer-input" value={answer}
       onChange={event => setAnswer(event.target.value)} placeholder={demoAttempt ? "Type your test answer here…" : "Type your response…"}
@@ -825,13 +846,13 @@ export default function StudentExam() {
             </>}
       </div>
     </header>
-    <main className="student-exam-content student-exam-stage-content">
+    <main className={`student-exam-content student-exam-stage-content${avatarOn ? " is-two-column" : ""}`}>
       <h1 className="exam-screen-reader">Oral examination · Question {questionNumber}</h1>
       <LiveExamPresentation sessionId={sessionId}
         stage={avatarOn ? <AvatarVideoStage sessionId={sessionId} token={sessionToken.current} text={questionText}
           sequence={questionNumber} hold={recording || submitting} onFinished={examinerFinished}
-          announce={examinerSpeech} onVideoElement={examinerElement} /> : null}
-        examinerSpeaks={avatarOn ? examinerSays : undefined} token={sessionToken.current} question={question}
+          announce={examinerSpeech} onVideoElement={examinerElement} poster={poster} /> : null}
+        examinerSpeaks={avatarOn ? examinerSays : undefined} assistRequest={assistRequest} token={sessionToken.current} question={question}
         developerDemo={demoAttempt} developerMinimal={developerMinimal} settingsTarget={settingsTarget}
         sequence={questionNumber} answer={answer} expired={expired && !assisting} submitting={submitting}
         onTiming={updateClock} onBusyChange={setAssisting} onTextSizeChange={setTextSize} />

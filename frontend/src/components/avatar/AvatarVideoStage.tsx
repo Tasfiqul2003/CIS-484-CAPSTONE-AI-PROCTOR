@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import OralExamMark from "../brand/OralExamMark";
 import { streamAvatarSpeech } from "./avatarService";
 import type { AvatarClip } from "./avatarService";
 
@@ -16,11 +17,13 @@ type Props = {
   announce?: { id: number; text: string } | null;
   /** Receives the video element, so the exam recording can include the examiner's voice. */
   onVideoElement?: (element: HTMLVideoElement | null) => void;
+  /** The examiner's still photo, shown while getting ready and between questions. */
+  poster?: string;
 };
 
 /** Plays the professor avatar's clips for the current question, sentence by sentence. */
 export default function AvatarVideoStage({ sessionId, token, text, sequence, hold = false, onFinished, announce = null,
-  onVideoElement }: Props) {
+  onVideoElement, poster = "" }: Props) {
   const [queue, setQueue] = useState<AvatarClip[]>([]);
   const [status, setStatus] = useState<"idle" | "preparing" | "speaking" | "blocked" | "error">("idle");
   const [message, setMessage] = useState("");
@@ -103,19 +106,25 @@ export default function AvatarVideoStage({ sessionId, token, text, sequence, hol
     });
   };
 
+  const talking = status === "speaking" || status === "blocked";
   return <section className="avatar-video-stage" aria-label="Examiner">
-    <video ref={attachVideo} className="avatar-video" playsInline preload="auto" onEnded={ended} onError={ended}
-      aria-describedby="avatar-video-caption" />
-    <p id="avatar-video-caption" className="avatar-video-caption" aria-live="polite">
-      {status === "preparing" ? "The examiner is preparing the question…" : caption}
-    </p>
-    <div className="avatar-video-controls">
-      {status === "blocked" && <button type="button" onClick={() => {
-        video.current?.play().then(() => setStatus("speaking")).catch(() => setStatus("blocked"));
-      }}>Play the examiner</button>}
-      {(status === "idle" || status === "error") && <button type="button" onClick={() => say(text)}
-        title="You can also say “repeat the question”.">Repeat question</button>}
+    <div className={`avatar-video-frame${talking ? " is-talking" : ""}${status === "preparing" ? " is-preparing" : ""}`}>
+      {/* Idle or getting ready: the examiner's photo with a slow breathing motion, never a blank box. */}
+      {poster
+        ? <img className="avatar-video-poster" src={poster} alt="" aria-hidden="true" />
+        : <div className="avatar-video-placeholder" aria-hidden="true"><OralExamMark size={72} /></div>}
+      <video ref={attachVideo} className="avatar-video" playsInline preload="auto" onEnded={ended} onError={ended}
+        aria-describedby="avatar-video-caption" />
+      {status === "preparing" && <span className="avatar-video-ring" aria-hidden="true" />}
     </div>
+    <p id="avatar-video-caption" className="avatar-video-caption" aria-live="polite">
+      {status === "preparing" ? "The examiner is getting ready…" : caption}
+    </p>
+    {status === "blocked" && <div className="avatar-video-controls">
+      <button type="button" onClick={() => {
+        video.current?.play().then(() => setStatus("speaking")).catch(() => setStatus("blocked"));
+      }}>Play the examiner</button>
+    </div>}
     {message && <p role="status" className="avatar-video-message">{message}</p>}
   </section>;
 }

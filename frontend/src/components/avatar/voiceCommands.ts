@@ -12,3 +12,12 @@ export function isRepeatRequest(transcript: string): boolean {
   if (words.length === 0 || words.length > 10) return false;
   return REPEAT.test(words.join(" "));
 }
+
+const CLARIFY = /\b(clarify|rephrase|reword|what do you mean|what does that mean|don'?t understand|do not understand|say it (differently|another way)|put it another way|explain the question)\b/;
+
+/** True when a short transcript asks for the question in other words ("Can you clarify?"). */
+export function isClarifyRequest(transcript: string): boolean {
+  const words = transcript.toLowerCase().replace(/[^a-z' ]+/g, " ").split(/\s+/).filter(Boolean);
+  if (words.length === 0 || words.length > 12) return false;
+  return CLARIFY.test(words.join(" "));
+}

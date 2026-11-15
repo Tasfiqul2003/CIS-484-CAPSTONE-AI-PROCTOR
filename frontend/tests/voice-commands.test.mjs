@@ -23,3 +23,12 @@ test('answers are never mistaken for a repeat request', () => {
     assert.equal(isRepeatRequest(said), false, said);
   }
 });
+
+test('requests to clarify are recognised, answers are not', async () => {
+  const { isClarifyRequest } = await import(`data:text/javascript,${encodeURIComponent(compiled.outputText)}`);
+  for (const said of ['Can you clarify?', 'What do you mean?', "I don't understand the question", 'Could you rephrase that?'])
+    assert.equal(isClarifyRequest(said), true, said);
+  for (const said of ['A primary key uniquely identifies each row.', 'Can you repeat the question?',
+    'To clarify my answer, normalization removes duplicate data from related tables in the schema.'])
+    assert.equal(isClarifyRequest(said), false, said);
+});

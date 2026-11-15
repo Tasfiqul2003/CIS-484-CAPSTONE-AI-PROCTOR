@@ -118,3 +118,16 @@ export async function streamProfessorPreview(onClip: (clip: AvatarClip) => void,
     if (done) return;
   }
 }
+
+/** The examiner's still photo as an object URL ("" when there is none). The caller revokes it. */
+export async function fetchExaminerPoster(sessionId: string, token: string, signal?: AbortSignal): Promise<string> {
+  try {
+    const response = await fetch(`/api/avatar/sessions/${encodeURIComponent(sessionId)}/poster`, {
+      headers: { Authorization: `Bearer ${token}` }, signal,
+    });
+    if (!response.ok) return "";
+    return URL.createObjectURL(await response.blob());
+  } catch {
+    return "";
+  }
+}

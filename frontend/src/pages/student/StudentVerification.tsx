@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { CheckCircle2 } from "lucide-react";
 import JACardScanner from "../../components/JACardScanner";
 import OralExamMark from "../../components/brand/OralExamMark";
 
@@ -101,28 +102,23 @@ export default function StudentVerification() {
                   <h2>{student.name}</h2>
                   <p>JMU EID · {student.eid}</p>
                 </div>
-                <span className="verified-badge">Record found</span>
-              </div>
-
-              <div className="verification-warning">
-                <strong>Next: photo check</strong>
-                <p>Look at the camera for 3–6 seconds. No need to hold your card.</p>
+                <span className="verified-badge record-found-badge"><CheckCircle2 size={18} aria-hidden="true" />Record found</span>
               </div>
 
               <button type="button" className="continue-button" onClick={continueToFaceCheck}>
                 Continue to photo check
-              </button>
-              <button type="button" className="back-button" onClick={restart}>
-                Not you? Scan another card
               </button>
             </>
           )}
 
           {error && <p role="alert" className="exam-error">{error}</p>}
 
-          <a className="back-button student-home-link" href="/">
-            Home
-          </a>
+          <div className="verification-secondary-actions">
+            {student && <button type="button" className="back-button" onClick={restart}>
+              Not you? Scan another card
+            </button>}
+            <a className="back-button student-home-link" href="/">Home</a>
+          </div>
         </div>
       </main>
     </div>

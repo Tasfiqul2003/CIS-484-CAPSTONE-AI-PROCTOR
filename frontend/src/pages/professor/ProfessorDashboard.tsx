@@ -370,113 +370,43 @@ export default function ProfessorDashboard() {
               <p>Create your first exam to get started.</p>
             </div>
           ) : (
-            <div className="exam-grid">
+            <ul className="exam-rows" aria-label="Your examinations">
               {exams.map((exam) => (
-                <article
-                  className="professor-exam-card"
-                  key={exam.id}
-                >
-                  <div className="exam-card-title">
-                    <div className="professor-exam-icon">
-                      {exam.icon || "🎙️"}
-                    </div>
-
+                <li className="exam-row" key={exam.id}>
+                  <div className="exam-row-main">
+                    <span className="exam-row-icon" aria-hidden="true">{exam.icon || "🎙️"}</span>
                     <div>
-                      <div className="exam-course">
-                        {exam.course || "ORAL EXAM"}
-                      </div>
-                      <h2>{exam.title}</h2>
+                      <p className="exam-row-course">{exam.course || "Oral exam"}</p>
+                      <h3>{exam.title}</h3>
+                      <p className="exam-row-description">
+                        {exam.description || "Manage questions, course materials, and exam settings."}
+                      </p>
                     </div>
-
-                    <span
-                      className={`exam-status-badge ${
-                        exam.status === "published"
-                          ? "published"
-                          : "draft"
-                      }`}
-                    >
-                      {exam.status === "published"
-                        ? "Published"
-                        : "Draft"}
+                    <span className={`exam-row-status ${exam.status === "published" ? "published" : "draft"}`}>
+                      {exam.status === "published" ? "Published" : "Draft"}
                     </span>
                   </div>
-
-                  <p className="exam-description">
-                    {exam.description ||
-                      "Manage questions, course materials, and exam settings."}
-                  </p>
-
-                  <div className="exam-stats exam-stats-detailed">
-                    <div className="exam-stat">
-                      <span className="exam-stat-label">Questions</span>
-                      <strong>{exam.question_count}</strong>
-                    </div>
-
-                    <div className="exam-stat">
-                      <span className="exam-stat-label">Submissions</span>
-                      <strong>{exam.submission_count}</strong>
-                    </div>
-
-                    <div className="exam-stat">
-                      <span className="exam-stat-label">Completed</span>
-                      <strong>{exam.completed_count}</strong>
-                    </div>
-
-                    <div className="exam-stat">
-                      <span className="exam-stat-label">In Progress</span>
-                      <strong>{exam.in_progress_count}</strong>
-                    </div>
-
-                    <div className="exam-stat">
-                      <span className="exam-stat-label">Awaiting Grading</span>
-                      <strong>{exam.awaiting_grading_count}</strong>
-                    </div>
-
-                    <div className="exam-stat">
-                      <span className="exam-stat-label">Flagged</span>
-                      <strong>{exam.flagged_count}</strong>
-                    </div>
-                  </div>
-
-                  <div className="exam-card-actions">
-                    <a href={`/professor/exams/${exam.id}`}>
-                      Manage Exam
-                    </a>
-
-                    <a
-                      className="view-submissions-button"
-                      href={`/professor/exams/${exam.id}/submissions`}
-                    >
-                      View Submissions
-                    </a>
-
-                    <button
-                      type="button"
-                      className={`publication-button ${
-                        exam.status === "published"
-                          ? "is-published"
-                          : "is-draft"
-                      }`}
-                      disabled={saving}
-                      onClick={() => togglePublication(exam)}
-                    >
-                      {exam.status === "published"
-                        ? "Make Draft"
-                        : "Publish Exam"}
+                  <dl className="exam-row-stats">
+                    <div><dt>Questions</dt><dd>{exam.question_count}</dd></div>
+                    <div><dt>Submissions</dt><dd>{exam.submission_count}</dd></div>
+                    <div><dt>Completed</dt><dd>{exam.completed_count}</dd></div>
+                    <div><dt>In progress</dt><dd>{exam.in_progress_count}</dd></div>
+                    <div><dt>Awaiting grading</dt><dd>{exam.awaiting_grading_count}</dd></div>
+                    <div><dt>Flagged</dt><dd>{exam.flagged_count}</dd></div>
+                  </dl>
+                  <div className="exam-row-actions">
+                    <a className="exam-row-primary" href={`/professor/exams/${exam.id}`}>Manage exam</a>
+                    <a href={`/professor/exams/${exam.id}/submissions`}>View submissions</a>
+                    <button type="button" disabled={saving} onClick={() => togglePublication(exam)}>
+                      {exam.status === "published" ? "Make draft" : "Publish"}
                     </button>
-
-                    <button
-                      type="button"
-                      className="delete-exam-button"
-                      disabled={saving}
-                      onClick={() => deleteExam(exam)}
-                    >
-                      Delete Exam
+                    <button type="button" className="exam-row-danger" disabled={saving} onClick={() => deleteExam(exam)}>
+                      Delete
                     </button>
                   </div>
-                </article>
+                </li>
               ))}
-            </div>
+            </ul>
           )}
         </section>
       </main>

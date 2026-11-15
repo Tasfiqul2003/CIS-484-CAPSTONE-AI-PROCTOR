@@ -8,7 +8,7 @@ import {
   RefreshCw,
   Users,
 } from "lucide-react";
-import OralExamMark from "../../components/brand/OralExamMark";
+import ProfessorHeader from "../../components/professor/ProfessorHeader";
 
 type StudentProgress = {
   student_id: string;
@@ -167,24 +167,14 @@ export default function ExamSubmissions() {
   };
 
   return (
-    <div className="professor-dashboard">
-      <header className="dashboard-header">
-        <a
-          href="/professor/dashboard"
-          className="dashboard-brand"
-          aria-label="Return to professor dashboard"
-        >
-          <OralExamMark />
-          <span>OralExam AI</span>
-        </a>
-
-        <a href="/professor/dashboard" className="progress-back-link">
-          <ArrowLeft size={16} aria-hidden="true" />
-          Dashboard
-        </a>
-      </header>
+    <div className="professor-dashboard professor-progress-page">
+      <ProfessorHeader title="Student progress" />
 
       <main className="dashboard-main">
+        <a href="/professor/exams" className="back-to-exam-button progress-back-row">
+          <ArrowLeft size={16} aria-hidden="true" />
+          Back to My Exams
+        </a>
         <section className="dashboard-welcome">
           <div>
             <p className="eyebrow">EXAM MANAGEMENT</p>

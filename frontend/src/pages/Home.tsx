@@ -1,6 +1,9 @@
 import {
   ArrowRight,
+  ClipboardCheck,
   GraduationCap,
+  IdCard,
+  MessagesSquare,
   Sparkles,
   UserRound,
 } from "lucide-react";
@@ -67,6 +70,15 @@ export default function Home() {
               </a>
             </div>
           </div>
+        </section>
+
+        <section className="home-steps" aria-labelledby="home-steps-title">
+          <h2 id="home-steps-title">How it works</h2>
+          <ol>
+            <li><IdCard size={22} aria-hidden="true" /><strong>Check in</strong><span>Swipe your JACard and take a quick photo check.</span></li>
+            <li><MessagesSquare size={22} aria-hidden="true" /><strong>Talk it through</strong><span>Answer the examiner out loud. It asks follow-up questions.</span></li>
+            <li><ClipboardCheck size={22} aria-hidden="true" /><strong>Professor review</strong><span>Your professor reviews the recording, transcript and AI suggestions.</span></li>
+          </ol>
         </section>
       </main>
 

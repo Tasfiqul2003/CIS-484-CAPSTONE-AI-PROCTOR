@@ -1,6 +1,6 @@
 
 import { useEffect, useState } from "react";
-import OralExamMark from "../../components/brand/OralExamMark";
+import ProfessorHeader from "../../components/professor/ProfessorHeader";
 
 type Exam = {
   id: string;
@@ -226,29 +226,7 @@ export default function ProfessorExams() {
 
   return (
     <div className="professor-exams-page">
-      <header className="simple-header">
-        <div className="logo">
-          <span className="logo-icon" aria-hidden="true"><OralExamMark size={34} /></span>
-          <span>OralExam AI</span>
-        </div>
-
-        <button
-          type="button"
-          className="dashboard-logout"
-          onClick={async () => {
-            try {
-              await fetch("/api/auth/logout", {
-                method: "POST",
-                credentials: "include",
-              });
-            } finally {
-              window.location.href = "/professor/login";
-            }
-          }}
-        >
-          Log Out
-        </button>
-      </header>
+      <ProfessorHeader title="My exams" current="exams" />
 
       <main className="professor-exams-content">
         <div className="professor-exams-heading">
@@ -361,79 +339,37 @@ export default function ProfessorExams() {
             <p>Create your first exam to get started.</p>
           </section>
         ) : (
-          <section className="exam-grid">
+          <ul className="exam-rows" aria-label="Your examinations">
             {exams.map((exam) => (
-              <div className="professor-exam-card" key={exam.id}>
-                <div className="exam-card-top">
-                  <span className="exam-course">{exam.course}</span>
-                  <span className="exam-status">
+              <li className="exam-row" key={exam.id}>
+                <div className="exam-row-main">
+                  <span className="exam-row-icon" aria-hidden="true">{exam.icon || "🎙️"}</span>
+                  <div>
+                    <p className="exam-row-course">{exam.course}</p>
+                    <h3>{exam.title}</h3>
+                    <p className="exam-row-description">{exam.description || "No description provided."}</p>
+                  </div>
+                  <span className={`exam-row-status ${exam.status === "published" ? "published" : "draft"}`}>
                     {exam.status === "published" ? "Published" : "Draft"}
                   </span>
                 </div>
-
-                <h2 className="exam-card-title">
-                  {exam.icon ? `${exam.icon} ` : ""}
-                  {exam.title}
-                </h2>
-
-                <p className="exam-description">
-                  {exam.description || "No description provided."}
-                </p>
-
-                <div className="exam-stats">
-                  <div>
-                    <strong>{exam.question_count}</strong>
-                    <span>Questions</span>
-                  </div>
-
-                  <div>
-                    <strong>{exam.submission_count}</strong>
-                    <span>Submissions</span>
-                  </div>
-                </div>
-
-                <div className="exam-card-actions">
-                  <a
-                    href={`/professor/exams/${exam.id}`}
-                    className="manage-exam-button"
-                  >
-                    📝 Manage Exam →
-                  </a>
-
-                  <a
-                    href={`/professor/exams/${exam.id}/submissions`}
-                    className="view-submissions-button"
-                  >
-                    📊 View Submissions →
-                  </a>
-
-                  <button
-                    type="button"
-                    className={`publication-button ${
-                      exam.status === "published" ? "is-published" : "is-draft"
-                    }`}
-                    onClick={() => togglePublication(exam)}
-                    disabled={saving}
-                  >
-                    {saving
-                      ? "Saving..."
-                      : exam.status === "published"
-                        ? "✓ Published · Make Draft"
-                        : "🚀 Publish Exam"}
+                <dl className="exam-row-stats">
+                  <div><dt>Questions</dt><dd>{exam.question_count}</dd></div>
+                  <div><dt>Submissions</dt><dd>{exam.submission_count}</dd></div>
+                </dl>
+                <div className="exam-row-actions">
+                  <a className="exam-row-primary" href={`/professor/exams/${exam.id}`}>Manage exam</a>
+                  <a href={`/professor/exams/${exam.id}/submissions`}>View submissions</a>
+                  <button type="button" onClick={() => togglePublication(exam)} disabled={saving}>
+                    {saving ? "Saving..." : exam.status === "published" ? "Make draft" : "Publish"}
                   </button>
-
-                  <button
-                    type="button"
-                    className="delete-exam-button"
-                    onClick={() => deleteExam(exam)}
-                    disabled={saving}
-                  >
-                    🗑️ Delete Exam
+                  <button type="button" className="exam-row-danger" onClick={() => deleteExam(exam)} disabled={saving}>
+                    Delete
                   </button>
                 </div>
-              </div>
+              </li>
             ))}
-          </section>
+          </ul>
         )}
       </main>
     </div>

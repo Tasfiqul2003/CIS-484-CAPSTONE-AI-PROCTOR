@@ -75,6 +75,19 @@ Exam questions and the stock lines are rendered ahead of time when a professor c
 student starts an exam, one sentence at a time while no student is waiting on a live clip. Only follow-up questions,
 which depend on the student's answer, are rendered live.
 
+## What is kept on disk
+
+| Path | Holds | Kept for |
+| --- | --- | --- |
+| `profiles/<id>/photo.jpg`, `voice.wav` | The professor's photo and voice sample | Until the profile is deleted |
+| `avatar_media/pre_<id>_*.mp4`, `idle_<id>.mp4` | Lines and the idle loop made ahead of time | Until the profile is deleted |
+| `avatar_media/*.mp4` (anything else) | One-off clips: follow-ups, assistance replies, previews | 60 minutes (`MEDIA_TTL_MINUTES`) |
+| Student audio | — | Never written; deleted as soon as Whisper has read it |
+
+The raw voice upload (`voice_in.bin`) is deleted once ffmpeg has converted it, and the conversion drops any
+video track, so a professor who uploads an MP4 leaves only audio behind. One-off clips are swept every ten
+minutes and at startup; the lines made ahead of time are reused every exam, so they stay.
+
 ## Licenses of the pieces
 
 - faster-whisper (MIT) and its Systran small model (MIT)

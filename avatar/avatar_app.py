@@ -200,6 +200,49 @@ def render(sentence, wav_path, seconds, name=None):
             "render_s": round(time.perf_counter() - t, 2)}
 
 
+# Clips worth keeping: the lines made ahead of time and the idle loop are reused every exam.
+KEEP_PREFIXES = ("pre_", "idle_")
+# Everything else (a follow-up, an assistance reply, a preview) is played once. It is the professor's
+# face and voice, so it is not kept on disk any longer than a running exam could still ask for it.
+MEDIA_TTL_S = max(5.0, float(os.environ.get("MEDIA_TTL_MINUTES", "60"))) * 60
+SWEEP_EVERY_S = 600
+
+
+def sweep_media():
+    """Delete one-off clips and any stray working files. Returns (files removed, bytes freed)."""
+    cutoff = time.time() - MEDIA_TTL_S
+    keep = {str(c.get("url", "")).rsplit("/", 1)[-1] for c in CACHE.values()}
+    removed = freed = 0
+    try:
+        names = os.listdir(MEDIA)
+    except OSError:
+        return 0, 0
+    for name in names:
+        if name in keep or name.startswith(KEEP_PREFIXES):
+            continue
+        path = os.path.join(MEDIA, name)
+        try:
+            info = os.stat(path)
+            if info.st_mtime < cutoff:
+                os.remove(path)
+                removed += 1
+                freed += info.st_size
+        except OSError:
+            pass                                 # a clip being written, or already gone
+    if removed:
+        log_timing("old clips removed", 0, f"{removed} files, {freed / 1e6:.1f} MB")
+    return removed, freed
+
+
+def media_janitor():
+    while True:
+        time.sleep(SWEEP_EVERY_S)
+        try:
+            sweep_media()
+        except Exception as e:
+            print(f"[sweep] {type(e).__name__}: {e}", flush=True)
+
+
 IDLE_SECONDS = 4.0          # a short loop; long enough not to feel repetitive, short enough to render once
 
 
@@ -733,7 +776,7 @@ def start_events():
         SESSION.pop(k, None)
     keep = {c["url"].split("/")[-1] for c in CACHE.values()}
     for name in os.listdir(MEDIA):               # drop clips from earlier sessions
-        if name.endswith(".mp4") and name not in keep and not name.startswith("pre_"):
+        if name.endswith(".mp4") and name not in keep and not name.startswith(KEEP_PREFIXES):
             os.remove(os.path.join(MEDIA, name))
     t0 = time.perf_counter()
     yield from pipeline_events(split_sentences(GREETING) + split_sentences(QUESTIONS[0][1]), t0)
@@ -812,6 +855,8 @@ def ndjson(gen):
 async def lifespan(_app):
     threading.Thread(target=startup, daemon=True).start()
     threading.Thread(target=prerender_worker, daemon=True).start()
+    threading.Thread(target=media_janitor, daemon=True).start()
+    sweep_media()                                # clear whatever an earlier run left behind
     yield
 
 

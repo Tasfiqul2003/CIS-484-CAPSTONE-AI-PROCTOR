@@ -181,7 +181,7 @@ def test_exam_questions_are_sent_to_be_made_ahead_of_time_once_per_session(switc
     body = sent[0][2]["json"]
     assert body["profile"] == "mine-0001"
     assert body["lines"][-2:] == ["What is a primary key?", "Explain normalization."]
-    assert set(avatar_bridge.REACTIONS) <= set(body["lines"])
+    assert set(avatar_bridge.PRERENDER_LINES) <= set(body["lines"])
 
 
 def test_a_failed_clip_request_never_breaks_the_exam_and_is_tried_again(monkeypatch):

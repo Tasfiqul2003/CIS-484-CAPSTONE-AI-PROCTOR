@@ -21,7 +21,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from .auth import require_professor
-from .avatar_lines import FOLLOW_UP_FALLBACKS, REACTIONS
+from .avatar_lines import LEAD_LINES, PRERENDER_LINES
 from .db import get_db
 from .student_auth import read_student_token
 
@@ -136,9 +136,9 @@ async def speak(session_id: UUID, request: Request, authorization: str | None = 
     if not said or len(said) > MAX_TEXT:
         raise HTTPException(422, f"Text must be 1-{MAX_TEXT} characters.")
 
-    # Only the stock reactions are accepted as a lead-in, so it always has a ready-made clip.
+    # Only the stock lines are accepted as a lead-in, so it always has a ready-made clip.
     lead = " ".join(str(body.get("lead") or "").split())
-    lead = lead if lead in REACTIONS else ""
+    lead = lead if lead in LEAD_LINES else ""
 
     target = await _exam_avatar(db, str(session_id))
     if target:
@@ -319,7 +319,7 @@ async def _prepare_exam_clips(db: Session, pid: str, *, session_id: str | None =
                 WHERE CAST(t.professor_id AS text) = :prof AND t.status = 'published'
                 ORDER BY q.created_at LIMIT 150
             """), {"prof": professor_id or ""}).all()
-        lines = REACTIONS + FOLLOW_UP_FALLBACKS + [str(row[0]) for row in rows if row[0]]
+        lines = PRERENDER_LINES + [str(row[0]) for row in rows if row[0]]
         await _service("POST", "/service/prerender", json={"profile": pid, "lines": lines})
     except Exception:
         _PREPARED.discard(key)  # Clips made ahead are an optimisation; the exam works without them.

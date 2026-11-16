@@ -21,11 +21,13 @@ type Props = {
   poster?: string;
   /** A short line the examiner says before this question ("Thank you."), when the server sent one. */
   lead?: string;
+  /** Wait this long before speaking a new question, so the student is not spoken to the instant the page opens. */
+  startDelayMs?: number;
 };
 
 /** Plays the professor avatar's clips for the current question, sentence by sentence. */
 export default function AvatarVideoStage({ sessionId, token, text, sequence, hold = false, onFinished, announce = null,
-  onVideoElement, poster = "", lead = "" }: Props) {
+  onVideoElement, poster = "", lead = "", startDelayMs = 0 }: Props) {
   // Read when a new question is spoken; a later change alone never makes the examiner speak again.
   const leadLine = useRef(lead);
   leadLine.current = lead;
@@ -73,9 +75,10 @@ export default function AvatarVideoStage({ sessionId, token, text, sequence, hol
 
   useEffect(() => {
     if (!sessionId || !token || !text) return;
-    say(text, leadLine.current);
-    return () => request.current?.abort();
-  }, [sessionId, token, text, sequence, say]);
+    // Questions are ready to play at once now, so a short pause gives the student a moment to settle.
+    const timer = window.setTimeout(() => say(text, leadLine.current), startDelayMs);
+    return () => { window.clearTimeout(timer); request.current?.abort(); };
+  }, [sessionId, token, text, sequence, say, startDelayMs]);
 
   useEffect(() => {
     if (announce?.text) say(announce.text);

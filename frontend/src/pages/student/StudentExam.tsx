@@ -21,6 +21,8 @@ type StartResponse = ExamTiming & {
   status: string;
   sequence_num: number;
   question: string;
+  /** A ready-made line the examiner says before the question (a greeting, or "Thank you."). */
+  reaction?: string;
   developer_demo?: boolean;
   exam_title?: string;
   started_at?: string | null;
@@ -407,6 +409,7 @@ export default function StudentExam() {
       sessionStorage.setItem("oralexam_exam_session_token", sessionToken.current);
       // Display only: permission to use substitutes and to grade is enforced by the server.
       sessionStorage.setItem("oralexam_developer_demo", String(result.developer_demo === true));
+      setReaction(result.reaction ?? "");
       setQuestion(result.question);
       setQuestionNumber(result.sequence_num);
       if (result.status !== "in_progress") {
@@ -513,7 +516,8 @@ export default function StudentExam() {
         }
         updateClock(state);
         if (state.sequence_num !== questionNumber) {
-          setReaction("");
+          // The server greets the student before the first question; later questions carry their own line.
+          setReaction(state.reaction ?? "");
           setQuestion(state.question);
           setQuestionNumber(state.sequence_num);
           setAnswer("");
@@ -855,7 +859,8 @@ export default function StudentExam() {
       <LiveExamPresentation sessionId={sessionId}
         stage={avatarOn ? <AvatarVideoStage sessionId={sessionId} token={sessionToken.current} text={questionText}
           sequence={questionNumber} hold={recording || submitting} onFinished={examinerFinished}
-          announce={examinerSpeech} onVideoElement={examinerElement} poster={poster} lead={reaction} /> : null}
+          announce={examinerSpeech} onVideoElement={examinerElement} poster={poster} lead={reaction}
+          startDelayMs={questionNumber <= 1 ? 2500 : 700} /> : null}
         examinerSpeaks={avatarOn ? examinerSays : undefined} assistRequest={assistRequest} token={sessionToken.current} question={question}
         developerDemo={demoAttempt} developerMinimal={developerMinimal} settingsTarget={settingsTarget}
         sequence={questionNumber} answer={answer} expired={expired && !assisting} submitting={submitting}

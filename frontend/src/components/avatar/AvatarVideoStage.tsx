@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import OralExamMark from "../brand/OralExamMark";
-import { streamAvatarSpeech } from "./avatarService";
+import { fetchExaminerIdle, streamAvatarSpeech } from "./avatarService";
 import type { AvatarClip } from "./avatarService";
 
 type Props = {
@@ -35,6 +35,8 @@ export default function AvatarVideoStage({ sessionId, token, text, sequence, hol
   const [status, setStatus] = useState<"idle" | "preparing" | "speaking" | "blocked" | "error">("idle");
   const [message, setMessage] = useState("");
   const [caption, setCaption] = useState("");
+  // A short clip of the examiner waiting, looped between questions. "" falls back to the still photo.
+  const [idle, setIdle] = useState("");
   const video = useRef<HTMLVideoElement | null>(null);
   const request = useRef<AbortController | null>(null);
   // Speaking is finished when the clip stream has ended AND every received clip has played.
@@ -72,6 +74,18 @@ export default function AvatarVideoStage({ sessionId, token, text, sequence, hol
       if (pending.current === 0) finish();
     });
   }, [sessionId, token, finish]);
+
+  useEffect(() => {
+    if (!sessionId || !token) return;
+    const controller = new AbortController();
+    // The clip is made in the background once the avatar loads, so it may not exist on the first ask.
+    const find = () => void fetchExaminerIdle(sessionId, token, controller.signal).then(url => {
+      if (url) { setIdle(url); window.clearInterval(timer); }
+    });
+    const timer = window.setInterval(find, 20000);
+    find();
+    return () => { controller.abort(); window.clearInterval(timer); };
+  }, [sessionId, token]);
 
   useEffect(() => {
     if (!sessionId || !token || !text) return;
@@ -117,10 +131,13 @@ export default function AvatarVideoStage({ sessionId, token, text, sequence, hol
   const talking = status === "speaking" || status === "blocked";
   return <section className="avatar-video-stage" aria-label="Examiner">
     <div className={`avatar-video-frame${talking ? " is-talking" : ""}${status === "preparing" ? " is-preparing" : ""}`}>
-      {/* Idle or getting ready: the examiner's photo with a slow breathing motion, never a blank box. */}
-      {poster
-        ? <img className="avatar-video-poster" src={poster} alt="" aria-hidden="true" />
-        : <div className="avatar-video-placeholder" aria-hidden="true"><OralExamMark size={72} /></div>}
+      {/* Waiting or getting ready: the examiner idling on a loop, or their photo, never a blank box. */}
+      {idle
+        ? <video className="avatar-video-poster avatar-video-idle" src={idle} autoPlay loop muted playsInline
+            aria-hidden="true" />
+        : poster
+          ? <img className="avatar-video-poster" src={poster} alt="" aria-hidden="true" />
+          : <div className="avatar-video-placeholder" aria-hidden="true"><OralExamMark size={72} /></div>}
       <video ref={attachVideo} className="avatar-video" playsInline preload="auto" onEnded={ended} onError={ended}
         aria-describedby="avatar-video-caption" />
       {status === "preparing" && <span className="avatar-video-ring" aria-hidden="true" />}

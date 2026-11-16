@@ -165,6 +165,22 @@ async def examiner_poster(session_id: UUID, authorization: str | None = Header(d
     return Response(r.content, media_type="image/jpeg", headers={"Cache-Control": "private, no-store"})
 
 
+@router.get("/sessions/{session_id}/idle")
+async def examiner_idle(session_id: UUID, authorization: str | None = Header(default=None),
+                        db: Session = Depends(get_db)):
+    """A short clip of the examiner waiting, looped between questions instead of a frozen photo."""
+    if not _enabled():
+        raise HTTPException(404, "Not found.")
+    _active_session(db, str(session_id), authorization)
+    r = await _service("GET", "/service/idle")
+    if r.status_code != 200:
+        raise HTTPException(404, "No idle clip yet.")
+    name = str(r.json().get("url", "")).rsplit("/", 1)[-1]
+    if not MEDIA_NAME.fullmatch(name):
+        raise HTTPException(404, "No idle clip yet.")
+    return {"url": f"/api/avatar/media/{name}"}
+
+
 @router.get("/media/{name}")
 async def media(name: str):
     """Clip files have random or content-hash names and no student data; <video> cannot send a bearer token."""

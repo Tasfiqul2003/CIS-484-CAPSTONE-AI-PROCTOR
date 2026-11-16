@@ -200,6 +200,37 @@ def render(sentence, wav_path, seconds, name=None):
             "render_s": round(time.perf_counter() - t, 2)}
 
 
+IDLE_SECONDS = 4.0          # a short loop; long enough not to feel repetitive, short enough to render once
+
+
+def idle_clip():
+    """A short clip of the active professor saying nothing, looped while the examiner waits.
+
+    FlashHead is driven by audio, so silence gives a closed mouth with the model's own small head and
+    eye movement. Rendered once per profile and kept on disk beside the spoken lines.
+    """
+    pid = ACTIVE.get("id")
+    if not pid:
+        return None
+    name = f"idle_{pid}.mp4"
+    out = os.path.join(MEDIA, name)
+    if os.path.exists(out):
+        return {"url": "/media/" + name, "seconds": IDLE_SECONDS}
+    wav = os.path.join(MEDIA, f"idle_{pid}.wav")
+    t = time.perf_counter()
+    try:
+        sf.write(wav, np.zeros(int(16000 * IDLE_SECONDS), dtype="float32"), 16000)
+        render("(idle)", wav, IDLE_SECONDS, name=name)   # removes the wav
+    except Exception as e:
+        print(f"[idle] {type(e).__name__}: {e}", flush=True)
+        for leftover in (wav, out):
+            if os.path.exists(leftover):
+                os.remove(leftover)
+        return None
+    log_timing("idle loop made", time.perf_counter() - t, f"{IDLE_SECONDS:.0f} s loop")
+    return {"url": "/media/" + name, "seconds": IDLE_SECONDS}
+
+
 def clip_for(sentence):
     """Pre-render one fixed line for the active professor; the clip and an index are kept on disk across restarts."""
     if sentence not in CACHE:
@@ -212,9 +243,15 @@ def clip_for(sentence):
     return CACHE[sentence]
 
 
+IDLE_MARKER = "\x00idle"   # not a sentence: tells the background worker to make the idle loop
+
+
 def queue_prerender(pid, lines):
     """Queue sentences to render ahead of time for this profile. Returns (queued, already made)."""
     queued = made = 0
+    if (pid, IDLE_MARKER) not in PRERENDER_SEEN:
+        PRERENDER_SEEN.add((pid, IDLE_MARKER))
+        PRERENDER.put((pid, IDLE_MARKER))
     for line in lines:
         for sentence in split_sentences(" ".join(str(line).split())[:MAX_SPEAK_CHARS]):
             if ACTIVE["id"] == pid and sentence in CACHE:
@@ -241,7 +278,11 @@ def prerender_worker():
         if pid is not None:
             try:
                 with PREP_LOCK:
-                    if ACTIVE["id"] == pid and sentence not in CACHE:
+                    if ACTIVE["id"] != pid:
+                        pass
+                    elif sentence == IDLE_MARKER:
+                        idle_clip()
+                    elif sentence not in CACHE:
                         t = time.perf_counter()
                         clip_for(sentence)
                         log_timing("made ahead of time", time.perf_counter() - t, sentence)
@@ -932,6 +973,19 @@ async def service_speak(request: Request):
             log_timing("whole spoken turn", time.perf_counter() - t0, f"{len(sentences)} sentence(s)")
 
     return StreamingResponse(ndjson(events()), media_type="application/x-ndjson")
+
+
+@app.get("/service/idle")
+async def service_idle(request: Request):
+    """The active professor's idle loop, made on demand if the background worker has not reached it."""
+    if not service_ok(request):
+        return bad("Unauthorized.", 401)
+    if not avatar_ready():
+        return bad("The avatar is not ready yet.", 503)
+    clip = await run_in_threadpool(idle_clip)
+    if not clip:
+        return bad("No idle clip.", 404)
+    return JSONResponse(clip)
 
 
 @app.post("/service/prerender")

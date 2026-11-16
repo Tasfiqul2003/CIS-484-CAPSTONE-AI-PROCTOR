@@ -1550,3 +1550,6 @@ header.simple-header.professor-topbar > .professor-topbar-logout { justify-self:
   .manage-exam-jump { display: grid; gap: 4px; font-size: 0.875rem; font-weight: 600; }
   .manage-exam-jump select { min-height: 44px; padding: 8px 10px; border: 1px solid var(--oe-border, #dedbe7); border-radius: 8px; font: inherit; }
 }
+
+/* The idle loop is real footage of the examiner waiting, so it needs no fake breathing. */
+.avatar-video-idle { animation: none !important; }

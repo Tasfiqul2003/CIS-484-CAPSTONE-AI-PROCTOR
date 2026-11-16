@@ -121,6 +121,20 @@ export async function streamProfessorPreview(onClip: (clip: AvatarClip) => void,
 }
 
 /** The examiner's still photo as an object URL ("" when there is none). The caller revokes it. */
+/** A short looping clip of the examiner waiting. Empty when the avatar has not made one. */
+export async function fetchExaminerIdle(sessionId: string, token: string, signal?: AbortSignal): Promise<string> {
+  try {
+    const response = await fetch(`/api/avatar/sessions/${encodeURIComponent(sessionId)}/idle`, {
+      headers: { Authorization: `Bearer ${token}` }, signal,
+    });
+    if (!response.ok) return "";
+    const data = await response.json() as { url?: string };
+    return data.url ?? "";
+  } catch {
+    return "";
+  }
+}
+
 export async function fetchExaminerPoster(sessionId: string, token: string, signal?: AbortSignal): Promise<string> {
   try {
     const response = await fetch(`/api/avatar/sessions/${encodeURIComponent(sessionId)}/poster`, {

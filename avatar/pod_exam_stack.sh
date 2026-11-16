@@ -128,7 +128,7 @@ start() {
 
   say "Ollama with $MODEL on 127.0.0.1:$OLLAMA_PORT"
   if ! listening "$OLLAMA_PORT"; then
-    OLLAMA_HOST="127.0.0.1:$OLLAMA_PORT" OLLAMA_MODELS="$AVATAR/ollama/models" OLLAMA_CONTEXT_LENGTH=4096 \
+    OLLAMA_HOST="127.0.0.1:$OLLAMA_PORT" OLLAMA_MODELS="$AVATAR/ollama/models" OLLAMA_CONTEXT_LENGTH=4096 OLLAMA_KEEP_ALIVE=30m \
       nohup "$AVATAR/ollama/bin/ollama" serve > "$LOGS/ollama.log" 2>&1 &
     wait_port "$OLLAMA_PORT" 30 || { echo "Ollama did not start; see $LOGS/ollama.log" >&2; exit 1; }
   fi
@@ -152,6 +152,7 @@ start() {
         AVATAR_SERVICE_URL="http://127.0.0.1:8103" AVATAR_SERVICE_TOKEN="$AVATAR_SERVICE_TOKEN" \
         FACE_DETECTOR_MODEL_PATH="$FACE_DETECTOR" FACE_RECOGNIZER_MODEL_PATH="$FACE_RECOGNIZER" \
         EXAM_VIDEO_DIR="$VIDEOS" EXAM_VIDEO_RETENTION_UNTIL="$VIDEO_RETENTION" \
+        TIMING_LOG="${TIMING_LOG:-$AVATAR/logs/timings.csv}" \
         nohup "$STATE/venv/bin/uvicorn" app.main:app --host 127.0.0.1 --port "$BACKEND_PORT" --reload \
         > "$LOGS/backend.log" 2>&1 & echo $! > "$STATE/backend.pid")
     wait_port "$BACKEND_PORT" 60 || { echo "Backend did not start:" >&2; tail -20 "$LOGS/backend.log" >&2; exit 1; }

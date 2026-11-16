@@ -156,3 +156,39 @@ def test_choosing_an_avatar_saves_it_and_loads_it_only_when_free(switching):
     assert not [c for c in switching if c[1].endswith("/activate")]
     assert run(avatar_bridge.professor_activate("mine-0001", account=ME, db=ExamDB())) == {"ok": True, "loaded": True}
     assert [c for c in switching if c[1].endswith("/activate")]
+
+
+class QuestionRows:
+    def __init__(self, rows):
+        self.rows = rows
+
+    def all(self):
+        return self.rows
+
+
+class ClipDB:
+    def execute(self, statement, params=None):
+        assert "FROM questions" in str(statement)
+        return QuestionRows([("What is a primary key?",), ("Explain normalization.",)])
+
+
+def test_exam_questions_are_sent_to_be_made_ahead_of_time_once_per_session(switching):
+    avatar_bridge._PREPARED.clear()
+    run(avatar_bridge._prepare_exam_clips(ClipDB(), "mine-0001", session_id="session-9"))
+    run(avatar_bridge._prepare_exam_clips(ClipDB(), "mine-0001", session_id="session-9"))
+    sent = [c for c in switching if c[1] == "/service/prerender"]
+    assert len(sent) == 1
+    body = sent[0][2]["json"]
+    assert body["profile"] == "mine-0001"
+    assert body["lines"][-2:] == ["What is a primary key?", "Explain normalization."]
+    assert set(avatar_bridge.REACTIONS) <= set(body["lines"])
+
+
+def test_a_failed_clip_request_never_breaks_the_exam_and_is_tried_again(monkeypatch):
+    avatar_bridge._PREPARED.clear()
+
+    async def down(*args, **kwargs):
+        raise HTTPException(503, "The avatar service is unreachable.")
+    monkeypatch.setattr(avatar_bridge, "_service", down)
+    run(avatar_bridge._prepare_exam_clips(ClipDB(), "mine-0001", session_id="session-9"))
+    assert "session-9" not in avatar_bridge._PREPARED

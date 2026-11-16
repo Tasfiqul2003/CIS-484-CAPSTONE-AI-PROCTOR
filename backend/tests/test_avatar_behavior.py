@@ -240,3 +240,25 @@ def test_start_token_covers_saved_mode_reading_pause_budget(monkeypatch, mode, e
     exam.start_exam(exam.StartRequest(student_id=STUDENT, exam_template_id=EXAM,
                                      student_token="synthetic"), db=StartDB())
     assert issued[0]["minutes"] == expected_token_minutes
+
+
+def test_no_follow_up_takes_the_next_bank_question_without_a_second_model_call(monkeypatch):
+    db = BehaviorDB(followups=2, current_followup=0)
+    prepare_turn(monkeypatch, db)
+    monkeypatch.setattr(exam, "ask_follow_up", lambda *a: (None, None))
+    monkeypatch.setattr(exam, "ask_model", lambda *a, **k: pytest.fail("One model call per turn."))
+    result = exam.submit_answer(answer_request(), authorization="synthetic", db=db)
+    assert db.inserted["qid"] == BANK and db.inserted["q"] == "First authored question"
+    # Moving to a new bank question comes with a short neutral line for the talking examiner.
+    from backend.app.avatar_lines import REACTIONS
+    assert result["done"] is False and result["reaction"] in REACTIONS
+
+
+def test_a_follow_up_has_no_reaction_line(monkeypatch):
+    db = BehaviorDB(followups=2, current_followup=0)
+    prepare_turn(monkeypatch, db)
+    monkeypatch.setattr(exam, "ask_follow_up", lambda *a: ("Why does that matter?", "Follow-up: synthetic"))
+    monkeypatch.setattr(exam, "ask_model", lambda *a, **k: pytest.fail("One model call per turn."))
+    result = exam.submit_answer(answer_request(), authorization="synthetic", db=db)
+    assert db.inserted["q"] == "Why does that matter?" and db.inserted["src"] == "generated"
+    assert "reaction" not in result

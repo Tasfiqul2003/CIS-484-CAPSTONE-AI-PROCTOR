@@ -21,6 +21,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from .auth import require_professor
+from .avatar_lines import FOLLOW_UP_FALLBACKS, REACTIONS
 from .db import get_db
 from .student_auth import read_student_token
 
@@ -61,12 +62,14 @@ def _active_session(db: Session, session_id: str, authorization: str | None) -> 
         raise HTTPException(409, "This attempt is no longer in progress.")
 
 
-async def _relay_speech(said: str) -> StreamingResponse:
-    """Stream the avatar service's clips for `said`, with clip URLs rewritten to this backend."""
+async def _relay_speech(said: str, lead: str = "") -> StreamingResponse:
+    """Stream the avatar service's clips for `said`, with clip URLs rewritten to this backend.
+    `lead` is a short stock line said first; it is sent as its own segment so its ready-made clip is used."""
     client = httpx.AsyncClient(timeout=httpx.Timeout(10, read=600))
     try:
         upstream = await client.send(
-            client.build_request("POST", f"{SERVICE_URL}/service/speak", headers=_headers(), json={"text": said}),
+            client.build_request("POST", f"{SERVICE_URL}/service/speak", headers=_headers(),
+                                 json={"segments": [lead, said]} if lead else {"text": said}),
             stream=True)
     except httpx.HTTPError:
         await client.aclose()
@@ -133,10 +136,15 @@ async def speak(session_id: UUID, request: Request, authorization: str | None = 
     if not said or len(said) > MAX_TEXT:
         raise HTTPException(422, f"Text must be 1-{MAX_TEXT} characters.")
 
+    # Only the stock reactions are accepted as a lead-in, so it always has a ready-made clip.
+    lead = " ".join(str(body.get("lead") or "").split())
+    lead = lead if lead in REACTIONS else ""
+
     target = await _exam_avatar(db, str(session_id))
     if target:
         await _wait_until_loaded(target)
-    return await _relay_speech(said)
+        await _prepare_exam_clips(db, target, session_id=str(session_id))
+    return await _relay_speech(said, lead)
 
 
 @router.get("/sessions/{session_id}/poster")
@@ -150,6 +158,7 @@ async def examiner_poster(session_id: UUID, authorization: str | None = Header(d
     pid = await _exam_avatar(db, str(session_id)) or ""
     if not PROFILE_ID.fullmatch(pid):
         raise HTTPException(404, "No examiner photo yet.")
+    await _prepare_exam_clips(db, pid, session_id=str(session_id))
     r = await _service("GET", f"/service/profiles/{pid}/photo")
     if r.status_code != 200:
         raise HTTPException(404, "No examiner photo yet.")
@@ -282,6 +291,40 @@ async def _exam_avatar(db: Session, session_id: str) -> str | None:
     return chosen if r.status_code == 200 else active
 
 
+_PREPARED: set[str] = set()   # sessions or professors whose question clips were already requested
+
+
+async def _prepare_exam_clips(db: Session, pid: str, *, session_id: str | None = None,
+                              professor_id: str | None = None) -> None:
+    """Ask the avatar service to make the clips for an exam's bank questions ahead of time, so the
+    examiner starts speaking right away. The service does it in the background, between live requests.
+    Called once per exam session, and when a professor chooses or loads their avatar."""
+    key = session_id or f"prof:{professor_id}:{pid}"
+    if key in _PREPARED:
+        return
+    if len(_PREPARED) > 5000:
+        _PREPARED.clear()
+    _PREPARED.add(key)
+    try:
+        if session_id:
+            rows = db.execute(text("""
+                SELECT q.question_text FROM questions AS q
+                JOIN exam_sessions AS s ON s.exam_template_id = q.exam_template_id
+                WHERE s.id = :id ORDER BY q.created_at LIMIT 150
+            """), {"id": session_id}).all()
+        else:
+            rows = db.execute(text("""
+                SELECT q.question_text FROM questions AS q
+                JOIN exam_templates AS t ON t.id = q.exam_template_id
+                WHERE CAST(t.professor_id AS text) = :prof AND t.status = 'published'
+                ORDER BY q.created_at LIMIT 150
+            """), {"prof": professor_id or ""}).all()
+        lines = REACTIONS + FOLLOW_UP_FALLBACKS + [str(row[0]) for row in rows if row[0]]
+        await _service("POST", "/service/prerender", json={"profile": pid, "lines": lines})
+    except Exception:
+        _PREPARED.discard(key)  # Clips made ahead are an optimisation; the exam works without them.
+
+
 async def _wait_until_loaded(pid: str) -> None:
     """Wait (the student sees "The examiner is getting ready") until `pid` is loaded and ready."""
     loop = asyncio.get_running_loop()
@@ -389,6 +432,8 @@ async def professor_activate(pid: str, account: dict = Depends(require_professor
     r = await _service("POST", f"/service/profiles/{pid}/activate")
     if r.status_code != 200:
         _service_error(r, "The avatar could not be started.")
+    # Make this professor's published exam questions ready before any student arrives.
+    await _prepare_exam_clips(db, pid, professor_id=me)
     return {"ok": True, "loaded": True}
 
 

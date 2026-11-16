@@ -52,6 +52,29 @@ LLM=qwen3:4b-instruct nohup bash start_avatar_chat.sh > app.log 2>&1 &
 Open the printed URL. Without a GPU, `AVATAR_MOCK=1 WORK=/tmp/avatar python3 avatar_app.py` runs the web flow with
 placeholder audio and video. `python test_followups.py qwen3:4b-instruct` checks follow-up quality.
 
+## Timing log
+
+Every step is written to `logs/timings.csv` in the avatar folder (`/workspace/avatar/logs/timings.csv` on the Pod;
+set `TIMING_LOG` to move it). The exam backend writes its model calls to the same file when its `TIMING_LOG` points
+there, which `pod_exam_stack.sh` does. Columns: time (UTC on the Pod), service, component, seconds, GPU memory used
+and total in MiB (whole GPU, from `nvidia-smi`), and a short note.
+
+| Component | What it measures |
+| --- | --- |
+| `speech-to-text (Whisper)` | Transcribing one spoken answer. The note has the word count only, never the words. |
+| `model: follow-up question` | The one model call after an answer. |
+| `voice (Chatterbox)` / `video (FlashHead)` | Making one sentence's audio and video. |
+| `clip made ahead of time` | A sentence that needed no work because its clip already existed. |
+| `wait until the examiner starts` | From the speak request to the first clip: what the student feels. |
+| `whole spoken turn` | From the speak request to the last clip. |
+| `made ahead of time` | A question or stock line rendered in the background before it was needed. |
+| `avatar loaded` | Switching to a professor's avatar. |
+| `model: AI assessment`, `model: clarify help` | The other model calls. |
+
+Exam questions and the stock lines are rendered ahead of time when a professor chooses their avatar and when a
+student starts an exam, one sentence at a time while no student is waiting on a live clip. Only follow-up questions,
+which depend on the student's answer, are rendered live.
+
 ## Licenses of the pieces
 
 - faster-whisper (MIT) and its Systran small model (MIT)

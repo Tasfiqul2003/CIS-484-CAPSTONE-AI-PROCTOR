@@ -106,6 +106,46 @@ MODELS_READY = threading.Event()
 PREP_LOCK = threading.Lock()
 CACHE = {}                        # sentence -> clip dict, for the fixed lines of the script
 TTS_LOCK = threading.Lock()
+CACHE_LOCK = threading.Lock()
+# Exam questions rendered ahead of time: (profile id, sentence) pairs, done one at a time between live requests.
+PRERENDER = queue.Queue()
+PRERENDER_SEEN = set()
+LIVE = {"speaking": 0}            # live speak requests in flight; advance rendering waits for these
+# One line per step (speech-to-text, voice, video, model call), with GPU memory in use. No student words are written.
+TIMING_LOG = os.environ.get("TIMING_LOG") or os.path.join(WORK, "logs", "timings.csv")
+TIMING_LOCK = threading.Lock()
+_GPU = {"at": 0.0, "value": ("", "")}
+
+
+def gpu_memory():
+    """(used MiB, total MiB) for the whole GPU from nvidia-smi, or blanks. Read at most once a second."""
+    if time.time() - _GPU["at"] > 1:
+        try:
+            out = subprocess.run(["nvidia-smi", "--query-gpu=memory.used,memory.total", "--format=csv,noheader,nounits"],
+                                 capture_output=True, text=True, timeout=3).stdout.strip().splitlines()[0]
+            used, total = [part.strip() for part in out.split(",")[:2]]
+            _GPU["value"] = (used, total)
+        except Exception:
+            _GPU["value"] = ("", "")
+        _GPU["at"] = time.time()
+    return _GPU["value"]
+
+
+def log_timing(component, seconds, detail=""):
+    """Append one row to the timing log: when, which step, how long, GPU memory in use, and a short note."""
+    try:
+        used, total = gpu_memory()
+        note = " ".join(str(detail).split())[:80].replace('"', "'")
+        row = f'{datetime.datetime.now().isoformat(timespec="seconds")},avatar,{component},{seconds:.2f},{used},{total},"{note}"\n'
+        with TIMING_LOCK:
+            os.makedirs(os.path.dirname(TIMING_LOG), exist_ok=True)
+            new = not os.path.exists(TIMING_LOG)
+            with open(TIMING_LOG, "a") as f:
+                if new:
+                    f.write("time,service,component,seconds,gpu_used_mib,gpu_total_mib,detail\n")
+                f.write(row)
+    except Exception as e:                      # the log must never break an exam
+        print(f"[timing] {type(e).__name__}: {e}", flush=True)
 SESSION = {"id": None, "stage": 0, "followups": 0, "asked": "", "exchange": [], "log": []}
 whisper = None
 tts = None
@@ -132,11 +172,13 @@ def synth(sentence):
         sf.write(path, (0.1 * np.sin(2 * np.pi * 220 * t)).astype("float32"), 16000)
         return path, 1.5
     import librosa
+    t = time.perf_counter()
     with TTS_LOCK:
         wav = tts.generate(sentence, audio_prompt_path=ACTIVE["ref"], exaggeration=0.4, cfg_weight=0.5)
     a = wav.squeeze().cpu().numpy()
     a16 = librosa.resample(a, orig_sr=tts.sr, target_sr=16000)
     sf.write(path, a16, 16000)
+    log_timing("voice (Chatterbox)", time.perf_counter() - t, f"{len(a16) / 16000:.1f} s of speech: {sentence}")
     return path, len(a16) / 16000
 
 
@@ -153,6 +195,7 @@ def render(sentence, wav_path, seconds, name=None):
         r = requests.post(f"{RENDER_URL}/render", json={"audio": wav_path, "out": out, "image": ACTIVE["image"]}, timeout=600)
         r.raise_for_status()
     os.remove(wav_path)
+    log_timing("video (FlashHead)", time.perf_counter() - t, f"{seconds:.1f} s of speech: {sentence}")
     return {"url": "/media/" + name, "text": sentence, "audio_s": round(seconds, 1),
             "render_s": round(time.perf_counter() - t, 2)}
 
@@ -161,10 +204,50 @@ def clip_for(sentence):
     """Pre-render one fixed line for the active professor; the clip and an index are kept on disk across restarts."""
     if sentence not in CACHE:
         name = f"pre_{ACTIVE['id']}_{hashlib.sha1(sentence.encode()).hexdigest()[:10]}.mp4"
-        CACHE[sentence] = render(sentence, *synth(sentence), name=name)
-        with open(os.path.join(pdir(ACTIVE["id"]), "lines.json"), "w") as f:
-            json.dump(CACHE, f)
+        clip = render(sentence, *synth(sentence), name=name)
+        with CACHE_LOCK:
+            CACHE[sentence] = clip
+            with open(os.path.join(pdir(ACTIVE["id"]), "lines.json"), "w") as f:
+                json.dump(CACHE, f)
     return CACHE[sentence]
+
+
+def queue_prerender(pid, lines):
+    """Queue sentences to render ahead of time for this profile. Returns (queued, already made)."""
+    queued = made = 0
+    for line in lines:
+        for sentence in split_sentences(" ".join(str(line).split())[:MAX_SPEAK_CHARS]):
+            if ACTIVE["id"] == pid and sentence in CACHE:
+                made += 1
+            elif (pid, sentence) not in PRERENDER_SEEN and len(PRERENDER_SEEN) < 2000:
+                PRERENDER_SEEN.add((pid, sentence))
+                PRERENDER.put((pid, sentence))
+                queued += 1
+    return queued, made
+
+
+def prerender_worker():
+    """Render queued sentences one at a time while no student is waiting on a live clip."""
+    while True:
+        pid, sentence = PRERENDER.get()
+        key, waited = (pid, sentence), 0.0
+        while not (STATE["ready"] and ACTIVE["id"] == pid and LIVE["speaking"] == 0):
+            loading = (STATE.get("profile") or {}).get("id") == pid and not STATE.get("build_error")
+            if (not loading and waited >= 10) or waited > 900:     # another avatar took over, or it never loaded
+                pid = None
+                break
+            time.sleep(0.5)
+            waited += 0.5
+        if pid is not None:
+            try:
+                with PREP_LOCK:
+                    if ACTIVE["id"] == pid and sentence not in CACHE:
+                        t = time.perf_counter()
+                        clip_for(sentence)
+                        log_timing("made ahead of time", time.perf_counter() - t, sentence)
+            except Exception as e:
+                print(f"[prerender] {type(e).__name__}: {e}", flush=True)
+        PRERENDER_SEEN.discard(key)
 
 
 def transcribe(data):
@@ -183,8 +266,11 @@ def transcribe(data):
         if r.returncode != 0:                      # bad or truncated recording: ask the student to repeat
             print(f"[transcribe] ffmpeg failed on {len(data)} bytes: {r.stderr.strip()[:300]}", flush=True)
             return ""
+        t = time.perf_counter()
         segs, _ = whisper.transcribe(wav, language="en", vad_filter=True)
-        return " ".join(s.text.strip() for s in segs).strip()
+        heard = " ".join(s.text.strip() for s in segs).strip()
+        log_timing("speech-to-text (Whisper)", time.perf_counter() - t, f"{len(heard.split())} words heard")
+        return heard
     finally:                                   # student audio is never kept
         for p in (src, wav):
             if os.path.exists(p):
@@ -426,6 +512,7 @@ def activate_profile(pid, lines=None):
     The exam app passes one short warm-up line: its questions come from the exam, not from this prototype's script."""
     with PREP_LOCK:
         MODELS_READY.wait()
+        started = time.perf_counter()
         try:
             meta, d = read_meta(pid), pdir(pid)
             STATE.update(ready=False, error=None, build_error=None, profile={"id": pid, "name": meta["name"]},
@@ -447,6 +534,7 @@ def activate_profile(pid, lines=None):
             with open(ACTIVE_FILE, "w") as f:
                 f.write(pid)
             STATE.update(ready=True, progress="Ready")
+            log_timing("avatar loaded", time.perf_counter() - started, f"{len(CACHE)} clips ready")
         except Exception as e:
             ACTIVE.update(id=None, name="", image=None, ref=None)
             CACHE.clear()
@@ -506,7 +594,9 @@ def startup():
         STATE["build_error"] = f"Could not load the saved profiles: {type(e).__name__}: {e}"
         pid = None
     if pid:
-        activate_profile(pid)
+        # An avatar made in the exam app speaks exam questions, not this prototype's script: warm up one line only.
+        from_exam_app = bool(read_meta(pid).get("owner"))
+        activate_profile(pid, split_sentences(SERVICE_WARMUP_LINE) if from_exam_app else None)
     else:
         STATE["progress"] = "Add a professor to begin"
 
@@ -540,6 +630,7 @@ def pipeline_events(sentences, t0, acc=None):
                     raise item
                 s, cached, wav = item
                 if cached is not None:
+                    log_timing("clip made ahead of time", 0, s)
                     q_out.put(cached)
                 else:
                     clip = render(s, *wav)
@@ -679,6 +770,7 @@ def ndjson(gen):
 @asynccontextmanager
 async def lifespan(_app):
     threading.Thread(target=startup, daemon=True).start()
+    threading.Thread(target=prerender_worker, daemon=True).start()
     yield
 
 
@@ -816,13 +908,46 @@ async def service_speak(request: Request):
         body = await request.json()
     except Exception:
         return bad("Bad request.")
-    text = " ".join(str(body.get("text") or "").split())[:MAX_SPEAK_CHARS]
-    if not text:
+    # "segments" are spoken in order but split separately, so a short reaction ("I see.") keeps its own clip.
+    segments = body.get("segments") if isinstance(body.get("segments"), list) else [body.get("text")]
+    sentences = []
+    for segment in segments[:6]:
+        sentences += split_sentences(" ".join(str(segment or "").split())[:MAX_SPEAK_CHARS])
+    if not sentences:
         return bad("Nothing to say.")
     if not avatar_ready():
         return bad("The avatar is not ready yet.", 503)
-    return StreamingResponse(ndjson(pipeline_events(split_sentences(text), time.perf_counter())),
-                             media_type="application/x-ndjson")
+
+    def events():
+        t0, first = time.perf_counter(), None
+        LIVE["speaking"] += 1
+        try:
+            for ev in pipeline_events(sentences, t0):
+                if ev.get("type") == "clip" and first is None:
+                    first = time.perf_counter() - t0
+                    log_timing("wait until the examiner starts", first, sentences[0])
+                yield ev
+        finally:
+            LIVE["speaking"] -= 1
+            log_timing("whole spoken turn", time.perf_counter() - t0, f"{len(sentences)} sentence(s)")
+
+    return StreamingResponse(ndjson(events()), media_type="application/x-ndjson")
+
+
+@app.post("/service/prerender")
+async def service_prerender(request: Request):
+    """Render these lines ahead of time for a profile ({"profile": pid, "lines": [...]}), in the background."""
+    if not service_ok(request):
+        return bad("Unauthorized.", 401)
+    try:
+        body = await request.json()
+        pid = str(body.get("profile") or "")
+        read_meta(pid)
+    except Exception:
+        return bad("Unknown profile.", 404)
+    lines = body.get("lines") if isinstance(body.get("lines"), list) else []
+    queued, made = queue_prerender(pid, lines[:300])
+    return JSONResponse({"queued": queued, "ready": made})
 
 
 SERVICE_WARMUP_LINE = "Hello. I will be your examiner today."
@@ -954,7 +1079,11 @@ async def service_transcribe(request: Request):
     data = await request.body()
     if not data or len(data) > MAX_UPLOAD:
         return bad("The recording is empty or larger than 25 MB.", 413 if data else 400)
-    text = await run_in_threadpool(transcribe, data)
+    LIVE["speaking"] += 1          # advance rendering waits while a student's answer is being transcribed
+    try:
+        text = await run_in_threadpool(transcribe, data)
+    finally:
+        LIVE["speaking"] -= 1
     return JSONResponse({"text": text})
 
 

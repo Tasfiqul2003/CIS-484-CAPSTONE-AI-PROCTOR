@@ -27,7 +27,7 @@ if (exec 3<>"/dev/tcp/127.0.0.1/$OLLAMA_PORT") 2>/dev/null; then
   OLLAMA_PID=""
 else
   echo "Starting Ollama on 127.0.0.1:$OLLAMA_PORT ..."
-  OLLAMA_HOST="127.0.0.1:$OLLAMA_PORT" OLLAMA_MODELS="$WORK/ollama/models" OLLAMA_CONTEXT_LENGTH=4096 \
+  OLLAMA_HOST="127.0.0.1:$OLLAMA_PORT" OLLAMA_MODELS="$WORK/ollama/models" OLLAMA_CONTEXT_LENGTH=4096 OLLAMA_KEEP_ALIVE=30m \
     nohup "$WORK/ollama/bin/ollama" serve > logs/ollama.log 2>&1 &
   OLLAMA_PID=$!
   sleep 6

@@ -19,11 +19,16 @@ type Props = {
   onVideoElement?: (element: HTMLVideoElement | null) => void;
   /** The examiner's still photo, shown while getting ready and between questions. */
   poster?: string;
+  /** A short line the examiner says before this question ("Thank you."), when the server sent one. */
+  lead?: string;
 };
 
 /** Plays the professor avatar's clips for the current question, sentence by sentence. */
 export default function AvatarVideoStage({ sessionId, token, text, sequence, hold = false, onFinished, announce = null,
-  onVideoElement, poster = "" }: Props) {
+  onVideoElement, poster = "", lead = "" }: Props) {
+  // Read when a new question is spoken; a later change alone never makes the examiner speak again.
+  const leadLine = useRef(lead);
+  leadLine.current = lead;
   const [queue, setQueue] = useState<AvatarClip[]>([]);
   const [status, setStatus] = useState<"idle" | "preparing" | "speaking" | "blocked" | "error">("idle");
   const [message, setMessage] = useState("");
@@ -43,7 +48,7 @@ export default function AvatarVideoStage({ sessionId, token, text, sequence, hol
     onFinishedRef.current?.();
   }, []);
 
-  const say = useCallback((words: string) => {
+  const say = useCallback((words: string, before = "") => {
     request.current?.abort();
     const controller = new AbortController();
     request.current = controller;
@@ -53,7 +58,7 @@ export default function AvatarVideoStage({ sessionId, token, text, sequence, hol
       if (controller.signal.aborted) return;
       pending.current += 1;
       setQueue(current => [...current, clip]);
-    }, controller.signal).then(() => {
+    }, controller.signal, before).then(() => {
       if (controller.signal.aborted) return;
       streamDone.current = true;
       if (pending.current === 0) { setStatus("idle"); finish(); }
@@ -68,7 +73,7 @@ export default function AvatarVideoStage({ sessionId, token, text, sequence, hol
 
   useEffect(() => {
     if (!sessionId || !token || !text) return;
-    say(text);
+    say(text, leadLine.current);
     return () => request.current?.abort();
   }, [sessionId, token, text, sequence, say]);
 

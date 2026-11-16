@@ -38,13 +38,14 @@ export function ndjsonLines(buffer: string): { events: unknown[]; rest: string }
   return { events, rest };
 }
 
-/** Asks the avatar to speak `text`; calls onClip for each sentence clip as soon as it is rendered. */
+/** Asks the avatar to speak `text`; calls onClip for each sentence clip as soon as it is rendered.
+ *  `lead` is a short stock line from the server ("Thank you.") said before the text. */
 export async function streamAvatarSpeech(sessionId: string, token: string, text: string,
-  onClip: (clip: AvatarClip) => void, signal?: AbortSignal): Promise<void> {
+  onClip: (clip: AvatarClip) => void, signal?: AbortSignal, lead = ""): Promise<void> {
   const response = await fetch(`/api/avatar/sessions/${encodeURIComponent(sessionId)}/speak`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ text }),
+    body: JSON.stringify(lead ? { text, lead } : { text }),
     signal,
   });
   if (!response.ok || !response.body) {

@@ -11,6 +11,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from .db import get_db, open_session
+from .timing_log import timed
 from .auth import require_professor
 from .student_auth import read_student_token
 
@@ -146,20 +147,21 @@ def assess_session(db: Session, sid: str, professor_id=None) -> dict:
     }
 
     try:
-        r = httpx.post(
-            f"{OLLAMA_URL}/api/chat",
-            json={
-                "model": OLLAMA_MODEL,
-                "stream": False,
-                "format": "json",
-                "options": {"temperature": 0.2},
-                "messages": [
-                    {"role": "system", "content": GRADING_PROMPT},
-                    {"role": "user", "content": json.dumps(payload, default=str)},
-                ],
-            },
-            timeout=300,
-        )
+        with timed("model: AI assessment", f"{OLLAMA_MODEL}, {len(answered)} answers"):
+            r = httpx.post(
+                f"{OLLAMA_URL}/api/chat",
+                json={
+                    "model": OLLAMA_MODEL,
+                    "stream": False,
+                    "format": "json",
+                    "options": {"temperature": 0.2},
+                    "messages": [
+                        {"role": "system", "content": GRADING_PROMPT},
+                        {"role": "user", "content": json.dumps(payload, default=str)},
+                    ],
+                },
+                timeout=300,
+            )
         r.raise_for_status()
         result = json.loads(r.json()["message"]["content"])
     except (httpx.HTTPError, json.JSONDecodeError, KeyError) as e:

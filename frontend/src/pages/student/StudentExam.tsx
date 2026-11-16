@@ -27,7 +27,7 @@ type StartResponse = ExamTiming & {
 };
 
 type AnswerResponse = { done: true; reason?: string }
-  | (ExamTiming & { done: false; sequence_num: number; question: string });
+  | (ExamTiming & { done: false; sequence_num: number; question: string; reaction?: string });
 
 type RecordingChunk = { index: number; blob: Blob };
 
@@ -59,6 +59,8 @@ export default function StudentExam() {
   const developerMinimal = demoAttempt && developer.enabled && developer.minimal === true;
   const [sessionId, setSessionId] = useState("");
   const [question, setQuestion] = useState("");
+  // A short line the talking examiner says before the next bank question ("Thank you.").
+  const [reaction, setReaction] = useState("");
   const [questionNumber, setQuestionNumber] = useState(1);
   const [completedQuestions, setCompletedQuestions] = useState(0);
   const [answer, setAnswer] = useState("");
@@ -490,6 +492,7 @@ export default function StudentExam() {
       }
 
       updateClock(result);
+      setReaction(result.reaction ?? "");
       setQuestion(result.question);
       setQuestionNumber(result.sequence_num);
       setAnswer("");
@@ -510,6 +513,7 @@ export default function StudentExam() {
         }
         updateClock(state);
         if (state.sequence_num !== questionNumber) {
+          setReaction("");
           setQuestion(state.question);
           setQuestionNumber(state.sequence_num);
           setAnswer("");
@@ -851,7 +855,7 @@ export default function StudentExam() {
       <LiveExamPresentation sessionId={sessionId}
         stage={avatarOn ? <AvatarVideoStage sessionId={sessionId} token={sessionToken.current} text={questionText}
           sequence={questionNumber} hold={recording || submitting} onFinished={examinerFinished}
-          announce={examinerSpeech} onVideoElement={examinerElement} poster={poster} /> : null}
+          announce={examinerSpeech} onVideoElement={examinerElement} poster={poster} lead={reaction} /> : null}
         examinerSpeaks={avatarOn ? examinerSays : undefined} assistRequest={assistRequest} token={sessionToken.current} question={question}
         developerDemo={demoAttempt} developerMinimal={developerMinimal} settingsTarget={settingsTarget}
         sequence={questionNumber} answer={answer} expired={expired && !assisting} submitting={submitting}

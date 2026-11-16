@@ -191,23 +191,38 @@ stop() {
 }
 
 roster() {
-  local exam="${1:-}" photo="${2:-}"
-  [ -n "$exam" ] && [ -f "$photo" ] || { echo "Usage: $0 roster EXAM_ID PHOTO.jpg|png" >&2; exit 1; }
+  local exam="${1:-}" photo="${2:-}" first="${3:-1}" count="${4:-3}"
+  [ -n "$exam" ] && [ -f "$photo" ] || {
+    echo "Usage: $0 roster EXAM_ID PHOTO.jpg|png [FIRST] [COUNT]" >&2
+    echo "  e.g. $0 roster \$EXAM /workspace/exam-stack/student.jpg 9 30   # adds jdemo09..jdemo38" >&2
+    exit 1; }
   local user pass jar zip
   read -rp "Professor username: " user; read -rsp "Password: " pass; echo
   jar="$(mktemp)"; zip="$(mktemp --suffix=.zip)"
   # Synthetic demo students; each uses PHOTO (yours, on this pod only) as the official roster photo.
-  python3 - "$zip" "$photo" <<'PY'
+  python3 - "$zip" "$photo" "$first" "$count" <<'PY'
 import sys, zipfile, pathlib
-out, photo = sys.argv[1], pathlib.Path(sys.argv[2])
+out, photo, first, count = sys.argv[1], pathlib.Path(sys.argv[2]), int(sys.argv[3]), int(sys.argv[4])
 ext = ".png" if photo.suffix.lower() == ".png" else ".jpg"
-rows = [("James Ratcliffe", "james.demo@example.com", "jdemo01"),
-        ("James Test Two", "james.two@example.com", "jdemo02"),
-        ("James Test Three", "james.three@example.com", "jdemo03")]
+# Invented people only. 1-8 keep the names the first demo roster used.
+NAMES = ["James Ratcliffe", "James Test Two", "James Test Three", "James Test Four", "James Test Five",
+         "James Test Six", "James Test Seven", "James Test Eight",
+         "Walter White", "Jesse Pinkman", "Skyler White", "Hank Schrader", "Marie Schrader",
+         "Walter White Jr", "Saul Goodman", "Gustavo Fring", "Mike Ehrmantraut", "Hector Salamanca",
+         "Tuco Salamanca", "Lydia Rodarte-Quayle", "Todd Alquist", "Jane Margolis", "Brandon Mayhew",
+         "Peter Gomez", "Christian Ortega", "Gale Boetticher", "Steven Gomez", "Huell Babineaux",
+         "Kim Wexler", "Howard Hamlin", "Chuck McGill", "Ignacio Varga", "Eduardo Salamanca",
+         "Rebecca Bois", "Ernesto Reyes", "Francesca Liddy", "Kaylee Ehrmantraut", "Werner Ziegler"]
+rows = []
+for n in range(first, first + count):
+    eid = f"jdemo{n:02d}"
+    name = NAMES[n - 1] if n <= len(NAMES) else f"Demo Student {n}"
+    rows.append((name, f"{eid}@example.com", eid))
 with zipfile.ZipFile(out, "w") as z:
     z.writestr("roster.csv", "name,email,eid\n" + "".join(f"{n},{e},{i}\n" for n, e, i in rows))
     for *_, eid in rows:
         z.write(photo, f"photos/{eid}{ext}")
+print(f"roster.zip ready: {len(rows)} students ({rows[0][2]}..{rows[-1][2]})", file=sys.stderr)
 PY
   python3 -c 'import json,sys; print(json.dumps({"username":sys.argv[1],"password":sys.argv[2]}))' "$user" "$pass" \
     | curl -sf -c "$jar" -X POST "http://127.0.0.1:$BACKEND_PORT/auth/login" -H 'Content-Type: application/json' -d @- >/dev/null \

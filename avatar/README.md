@@ -80,9 +80,15 @@ which depend on the student's answer, are rendered live.
 | Path | Holds | Kept for |
 | --- | --- | --- |
 | `profiles/<id>/photo.jpg`, `voice.wav` | The professor's photo and voice sample | Until the profile is deleted |
-| `avatar_media/pre_<id>_*.mp4`, `idle_<id>.mp4` | Lines and the idle loop made ahead of time | Until the profile is deleted |
+| `avatar_media/pre_<id>_*.mp4`, `idle_<id>_*.mp4` | Lines and the idle loop made ahead of time | Until the profile is deleted |
 | `avatar_media/*.mp4` (anything else) | One-off clips: follow-ups, assistance replies, previews | 60 minutes (`MEDIA_TTL_MINUTES`) |
 | Student audio | — | Never written; deleted as soon as Whisper has read it |
+
+The examiner loops a clip of the professor saying nothing between questions. It is rendered from silence, so
+anything the model does once comes round every loop: `IDLE_SECONDS` (default 14) sets how long it is, and
+`IDLE_TRIM_SECONDS` (default 1.5) drops the opening, where FlashHead is still settling. The length is in the
+file name, so changing either value makes a new clip and deletes the old one. Raise `IDLE_SECONDS` if a
+movement still reads as a tic.
 
 The raw voice upload (`voice_in.bin`) is deleted once ffmpeg has converted it, and the conversion drops any
 video track, so a professor who uploads an MP4 leaves only audio behind. One-off clips are swept every ten

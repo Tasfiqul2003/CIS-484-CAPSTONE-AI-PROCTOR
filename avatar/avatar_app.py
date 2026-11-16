@@ -243,7 +243,20 @@ def media_janitor():
             print(f"[sweep] {type(e).__name__}: {e}", flush=True)
 
 
-IDLE_SECONDS = 4.0          # a short loop; long enough not to feel repetitive, short enough to render once
+# A long loop, because anything the model does once (a small mouth movement) reads as a tic when it comes
+# round every few seconds. The first moment is dropped: FlashHead settles over the opening frames.
+IDLE_SECONDS = max(4.0, float(os.environ.get("IDLE_SECONDS", "14")))
+IDLE_TRIM_S = max(0.0, float(os.environ.get("IDLE_TRIM_SECONDS", "1.5")))
+
+
+def clip_seconds(path):
+    """Length of a video file, or 0.0 when ffprobe cannot read it."""
+    try:
+        out = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration",
+                              "-of", "default=nw=1:nk=1", path], capture_output=True, text=True, timeout=20)
+        return float(out.stdout.strip())
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return 0.0
 
 
 def idle_clip():
@@ -255,23 +268,42 @@ def idle_clip():
     pid = ACTIVE.get("id")
     if not pid:
         return None
-    name = f"idle_{pid}.mp4"
+    kept = round(IDLE_SECONDS - IDLE_TRIM_S, 1)
+    # The length is in the name, so changing it makes a new clip instead of reusing the old one.
+    name = f"idle_{pid}_{kept:g}s.mp4"
     out = os.path.join(MEDIA, name)
     if os.path.exists(out):
-        return {"url": "/media/" + name, "seconds": IDLE_SECONDS}
-    wav = os.path.join(MEDIA, f"idle_{pid}.wav")
+        return {"url": "/media/" + name, "seconds": kept}
+    wav = os.path.join(MEDIA, f"idlesrc_{pid}.wav")
+    raw = os.path.join(MEDIA, f"idlesrc_{pid}.mp4")
     t = time.perf_counter()
     try:
         sf.write(wav, np.zeros(int(16000 * IDLE_SECONDS), dtype="float32"), 16000)
-        render("(idle)", wav, IDLE_SECONDS, name=name)   # removes the wav
+        render("(idle)", wav, IDLE_SECONDS, name=os.path.basename(raw))   # removes the wav
+        # Drop the opening and the silent audio track; the browser plays this muted and on a loop.
+        r = subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-ss", f"{IDLE_TRIM_S}", "-i", raw,
+                            "-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+                            "-movflags", "+faststart", out], capture_output=True, text=True)
+        # A render shorter than the trim leaves nothing behind, so keep the whole clip instead.
+        if r.returncode != 0 or clip_seconds(out) < 1.0:
+            shutil.copyfile(raw, out)
+            if clip_seconds(out) < 0.2:
+                raise RuntimeError(r.stderr.strip()[:200] or "the idle clip could not be made")
     except Exception as e:
         print(f"[idle] {type(e).__name__}: {e}", flush=True)
-        for leftover in (wav, out):
+        for leftover in (wav, raw, out):
             if os.path.exists(leftover):
                 os.remove(leftover)
         return None
-    log_timing("idle loop made", time.perf_counter() - t, f"{IDLE_SECONDS:.0f} s loop")
-    return {"url": "/media/" + name, "seconds": IDLE_SECONDS}
+    finally:
+        if os.path.exists(raw):
+            os.remove(raw)
+    for old in os.listdir(MEDIA):                # only the current length is worth keeping
+        if old.startswith(f"idle_{pid}_") and old != name:
+            os.remove(os.path.join(MEDIA, old))
+    actual = round(clip_seconds(out), 1) or kept
+    log_timing("idle loop made", time.perf_counter() - t, f"{actual:g} s loop, {IDLE_TRIM_S:g} s trimmed")
+    return {"url": "/media/" + name, "seconds": actual}
 
 
 def clip_for(sentence):

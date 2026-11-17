@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { CameraOff } from "lucide-react";
 import OralExamMark from "../../components/brand/OralExamMark";
 
 type FaceCheckResult = {
@@ -85,6 +86,8 @@ export default function FaceVerification() {
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [result, setResult] = useState<FaceCheckResult | null>(null);
   const [error, setError] = useState("");
+  // The last camera frame stays on screen after recording instead of the box going black.
+  const [frozenFrame, setFrozenFrame] = useState("");
 
   const studentId = sessionStorage.getItem("oralexam_student_id");
   const studentName = sessionStorage.getItem("oralexam_student_name");
@@ -130,10 +133,11 @@ export default function FaceVerification() {
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
+        const detail = typeof data.detail === "string" ? data.detail : "";
         throw new Error(
-          typeof data.detail === "string"
-            ? data.detail
-            : `Photo check failed (${response.status}).`,
+          detail.includes("exactly one")
+            ? "Make sure only your face is in view, with no one else in the camera, and try again."
+            : detail || `Photo check failed (${response.status}).`,
         );
       }
 
@@ -154,6 +158,7 @@ export default function FaceVerification() {
   async function startRecording() {
     setError("");
     setResult(null);
+    setFrozenFrame("");
     if (cameraStartingRef.current) return;
 
     if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
@@ -198,6 +203,14 @@ export default function FaceVerification() {
         if (event.data.size > 0) chunksRef.current.push(event.data);
       };
       recorder.onstop = () => {
+        const preview = videoRef.current;
+        if (preview && preview.videoWidth > 0) {
+          const still = document.createElement("canvas");
+          still.width = preview.videoWidth;
+          still.height = preview.videoHeight;
+          still.getContext("2d")?.drawImage(preview, 0, 0);
+          setFrozenFrame(still.toDataURL("image/jpeg", 0.85));
+        }
         stream.getTracks().forEach((track) => track.stop());
         streamRef.current = null;
         recorderRef.current = null;
@@ -297,14 +310,28 @@ export default function FaceVerification() {
           </p>
           <p className="photo-check-hint">No need to hold your JACard.</p>
 
-          <video
-            ref={videoRef}
-            autoPlay
-            muted
-            playsInline
-            className="camera-live-preview"
-            aria-label="Live camera recording preview"
-          />
+          <div className="camera-frame">
+            <video
+              ref={videoRef}
+              autoPlay
+              muted
+              playsInline
+              className="camera-live-preview"
+              aria-label="Live camera recording preview"
+            />
+            {frozenFrame && !cameraActive && (
+              <img className="camera-frozen-frame" src={frozenFrame} alt="Last camera frame from your photo check" />
+            )}
+            {!frozenFrame && !cameraActive && (
+              <div className="camera-off-overlay" aria-hidden="true">
+                <CameraOff size={44} />
+                <span>{cameraStarting ? "Turning on your camera…" : "Camera is off"}</span>
+              </div>
+            )}
+          </div>
+          {!cameraActive && !cameraStarting && !processing && !result && !frozenFrame && (
+            <p className="camera-start-prompt">Select <strong>Start camera</strong> below. Look straight at the camera with only your face in view.</p>
+          )}
 
           {cameraActive && (
             <>
@@ -332,7 +359,7 @@ export default function FaceVerification() {
               className="continue-button"
               onClick={() => void startRecording()}
             >
-              Start Recording
+              {result || error ? "Try again" : "Start camera"}
             </button>
           )}
 
@@ -378,9 +405,9 @@ export default function FaceVerification() {
             </p>
           </details>
 
-          <a className="back-button student-home-link" href="/">
-            Home
-          </a>
+          <div className="verification-secondary-actions">
+            <a className="back-button student-home-link" href="/">Home</a>
+          </div>
         </div>
       </main>
     </div>

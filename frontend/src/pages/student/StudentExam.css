@@ -135,3 +135,22 @@
 .student-exam-page summary:focus-visible { outline: 3px solid var(--exam-ui-focus); outline-offset: 3px; }
 @media (max-width: 850px) { .exam-header-controls { width: 100%; justify-content: start; } .exam-settings-slot { flex: 1 1 180px; } .exam-settings-slot button { width: 100%; } .exam-timer-chip { flex: 1 1 130px; min-width: 0; } }
 @media (max-width: 480px) { .student-exam-page .student-exam-stage-content { padding-top: 20px; } .exam-settings-slot { flex-basis: 100%; } .student-exam-page .exam-timer-chip { padding: 8px; } .exam-timer-chip span { font-size: .875rem; } .exam-timer-chip strong { font-size: 1.25rem; } .developer-exam-heading { align-items: start; flex-direction: column; } .developer-exam-badge { max-width: 100%; } }
+
+/* Talking avatar (shown only when the server runs the avatar service) */
+.avatar-video-stage { display: grid; gap: 0.5rem; justify-items: center; margin: 0 auto; width: 100%; max-width: 420px; }
+.avatar-video { width: 100%; aspect-ratio: 1 / 1; border-radius: 16px; background: #1d2433; object-fit: cover; }
+.avatar-video-caption { min-height: 1.5em; margin: 0; text-align: center; }
+.avatar-video-controls { display: flex; gap: 0.5rem; }
+.avatar-video-message { margin: 0; font-size: 0.9em; }
+.answer-recorder { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; margin: 0.5rem 0; }
+.answer-recorder-button { padding: 0.5rem 1rem; border-radius: 999px; font-weight: 600; }
+.answer-recorder-button.is-recording { outline: 3px solid #c0392b; }
+.answer-recorder-status, .answer-recorder-note { font-size: 0.9em; }
+@media (prefers-reduced-motion: no-preference) {
+  .answer-recorder-button.is-recording { animation: answer-recorder-pulse 1.2s ease-in-out infinite; }
+}
+@keyframes answer-recorder-pulse { 50% { outline-color: transparent; } }
+.answer-recorder-meter { display: inline-block; width: 6rem; height: 0.5rem; border-radius: 999px; background: rgba(127, 127, 127, 0.25); overflow: hidden; }
+.answer-recorder-meter > span { display: block; height: 100%; background: #2e8b57; transform-origin: left center; transition: transform 80ms linear; }
+.hands-free-countdown { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; margin: 0.5rem 0; padding: 0.5rem 0.75rem; border-radius: 0.5rem; background: rgba(46, 139, 87, 0.12); }
+.hands-free-toggle { display: flex; align-items: center; gap: 0.5rem; margin: 0.5rem 0; font-size: 0.9em; }

@@ -26,6 +26,8 @@ from .live_video import router as live_video_router
 from .question_audio import router as question_audio_router
 from .media_timeline import router as media_timeline_router
 from .question_drafts import router as question_drafts_router
+from .avatar_bridge import router as avatar_bridge_router
+from .presence import router as presence_router
 
 app = FastAPI(title="AI Oral Exam Proctor")
 
@@ -66,6 +68,8 @@ app.include_router(live_video_router)
 app.include_router(question_audio_router)
 app.include_router(media_timeline_router)
 app.include_router(question_drafts_router)
+app.include_router(avatar_bridge_router)
+app.include_router(presence_router)
 
 
 @app.get("/")

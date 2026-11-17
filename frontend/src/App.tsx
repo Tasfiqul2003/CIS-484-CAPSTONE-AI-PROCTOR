@@ -21,6 +21,7 @@ import { examSettingsCategories } from "./pages/professor/examSettingsNavigation
 import ExamSubmissions from "./pages/professor/ExamSubmissions";
 import ExamSessionReview from "./pages/professor/ExamSessionReview";
 import ProfessorLiveVideo from "./pages/professor/ProfessorLiveVideo";
+import ProfessorAvatar from "./pages/professor/ProfessorAvatar";
 import ExamSubmitted from "./pages/student/ExamSubmitted";
 
 function AppRoutes() {
@@ -68,6 +69,10 @@ function AppRoutes() {
 
   if (path === "/professor/exams") {
     return <ProfessorExams />;
+  }
+
+  if (path === "/professor/avatar") {
+    return <ProfessorAvatar />;
   }
 
   if (path === "/professor/questions") {

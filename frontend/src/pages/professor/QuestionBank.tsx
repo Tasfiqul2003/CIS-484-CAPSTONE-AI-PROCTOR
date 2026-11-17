@@ -4,6 +4,7 @@ import QuestionDrafts from "../../components/exam/QuestionDrafts";
 import {useRequestScope} from "../../components/exam/useRequestScope";
 import type {RequestScope} from "../../components/exam/useRequestScope";
 import OralExamMark from "../../components/brand/OralExamMark";
+import ExamManagementLayout from "./ExamManagementLayout";
 
 type Question = {
   id: string;
@@ -144,47 +145,13 @@ export default function QuestionBank() {
   }
 
   return (
-    <div className="question-bank-page">
-      <header className="simple-header">
-        <div className="logo">
-          <span className="logo-icon" aria-hidden="true"><OralExamMark size={34} /></span>
-          <span>OralExam AI</span>
-        </div>
-        <button
-          type="button"
-          className="dashboard-logout"
-          onClick={async () => {
-            try {
-              await fetch("/api/auth/logout", {
-                method: "POST",
-                credentials: "include",
-              });
-            } finally {
-              window.location.href = "/professor/login";
-            }
-          }}
-        >
-          Log Out
-        </button>
-      </header>
+    <ExamManagementLayout examId={examId ?? ""} section="questions">{() => (
+      <div className="question-bank-content in-manage-layout">
 
-      <main className="question-bank-content">
-      <button
-        type="button"
-        className="back-to-exam-button"
-        onClick={() => {
-          window.location.href = examId
-            ? `/professor/exams/${examId}`
-            : "/professor/exams";
-        }}
-      >
-        ← Back to Exam
-      </button>
 
 
         <div className="question-bank-heading">
-          <p className="eyebrow">PROFESSOR PORTAL</p>
-          <h1>Question Bank</h1>
+                    <h1>Question Bank</h1>
           <p>
             Import questions for this examination, review them, and manage
             the questions your oral exam can use.
@@ -373,7 +340,7 @@ export default function QuestionBank() {
             </section>
           </div>
         )}
-      </main>
-    </div>
+      </div>
+    )}</ExamManagementLayout>
   );
 }

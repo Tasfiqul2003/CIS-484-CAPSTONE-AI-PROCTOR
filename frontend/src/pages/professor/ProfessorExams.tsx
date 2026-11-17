@@ -1,6 +1,7 @@
 
 import { useEffect, useState } from "react";
-import OralExamMark from "../../components/brand/OralExamMark";
+import ProfessorHeader from "../../components/professor/ProfessorHeader";
+import ExamRow from "../../components/professor/ExamRow";
 
 type Exam = {
   id: string;
@@ -12,6 +13,10 @@ type Exam = {
   status: "draft" | "published";
   question_count: number;
   submission_count: number;
+  in_progress_count: number;
+  flagged_count: number;
+  submitted_student_count?: number;
+  roster_count?: number;
 };
 
 function getErrorMessage(data: any, fallback: string): string {
@@ -107,40 +112,6 @@ export default function ProfessorExams() {
     initialize();
   }, []);
 
-  async function deleteExam(exam: Exam) {
-    const confirmed = window.confirm(
-      `Delete "${exam.title}"? This cannot be undone. Exams with student sessions cannot be deleted.`
-    );
-
-    if (!confirmed) return;
-
-    setSaving(true);
-    setError("");
-
-    try {
-      const response = await fetch(`/api/exam/templates/${exam.id}`, {
-        method: "DELETE",
-        credentials: "include",
-      });
-
-      const data = await response.json().catch(() => ({}));
-
-      if (!response.ok) {
-        throw new Error(
-          getErrorMessage(data, "Unable to delete this exam.")
-        );
-      }
-
-      await loadExams();
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Unable to delete this exam."
-      );
-    } finally {
-      setSaving(false);
-    }
-  }
-
   async function togglePublication(exam: Exam) {
     setSaving(true);
     setError("");
@@ -226,29 +197,7 @@ export default function ProfessorExams() {
 
   return (
     <div className="professor-exams-page">
-      <header className="simple-header">
-        <div className="logo">
-          <span className="logo-icon" aria-hidden="true"><OralExamMark size={34} /></span>
-          <span>OralExam AI</span>
-        </div>
-
-        <button
-          type="button"
-          className="dashboard-logout"
-          onClick={async () => {
-            try {
-              await fetch("/api/auth/logout", {
-                method: "POST",
-                credentials: "include",
-              });
-            } finally {
-              window.location.href = "/professor/login";
-            }
-          }}
-        >
-          Log Out
-        </button>
-      </header>
+      <ProfessorHeader title="My exams" current="exams" />
 
       <main className="professor-exams-content">
         <div className="professor-exams-heading">
@@ -361,79 +310,11 @@ export default function ProfessorExams() {
             <p>Create your first exam to get started.</p>
           </section>
         ) : (
-          <section className="exam-grid">
+          <ul className="exam-rows" aria-label="Your examinations">
             {exams.map((exam) => (
-              <div className="professor-exam-card" key={exam.id}>
-                <div className="exam-card-top">
-                  <span className="exam-course">{exam.course}</span>
-                  <span className="exam-status">
-                    {exam.status === "published" ? "Published" : "Draft"}
-                  </span>
-                </div>
-
-                <h2 className="exam-card-title">
-                  {exam.icon ? `${exam.icon} ` : ""}
-                  {exam.title}
-                </h2>
-
-                <p className="exam-description">
-                  {exam.description || "No description provided."}
-                </p>
-
-                <div className="exam-stats">
-                  <div>
-                    <strong>{exam.question_count}</strong>
-                    <span>Questions</span>
-                  </div>
-
-                  <div>
-                    <strong>{exam.submission_count}</strong>
-                    <span>Submissions</span>
-                  </div>
-                </div>
-
-                <div className="exam-card-actions">
-                  <a
-                    href={`/professor/exams/${exam.id}`}
-                    className="manage-exam-button"
-                  >
-                    📝 Manage Exam →
-                  </a>
-
-                  <a
-                    href={`/professor/exams/${exam.id}/submissions`}
-                    className="view-submissions-button"
-                  >
-                    📊 View Submissions →
-                  </a>
-
-                  <button
-                    type="button"
-                    className={`publication-button ${
-                      exam.status === "published" ? "is-published" : "is-draft"
-                    }`}
-                    onClick={() => togglePublication(exam)}
-                    disabled={saving}
-                  >
-                    {saving
-                      ? "Saving..."
-                      : exam.status === "published"
-                        ? "✓ Published · Make Draft"
-                        : "🚀 Publish Exam"}
-                  </button>
-
-                  <button
-                    type="button"
-                    className="delete-exam-button"
-                    onClick={() => deleteExam(exam)}
-                    disabled={saving}
-                  >
-                    🗑️ Delete Exam
-                  </button>
-                </div>
-              </div>
+              <ExamRow key={exam.id} exam={exam} busy={saving} onTogglePublication={() => togglePublication(exam)} />
             ))}
-          </section>
+          </ul>
         )}
       </main>
     </div>

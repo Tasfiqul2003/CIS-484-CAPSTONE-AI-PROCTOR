@@ -29,6 +29,22 @@ browser mic -> faster-whisper small (speech to text)
   `test_followups.py` (the rest fell back to stock lines). **Memory and timing for the 4B in a full exam are not yet measured.**
 - The default `qwen3:4b` tag is a thinking-only model and writes its reasoning aloud; do not use it here.
 
+## Blackwell (verified)
+
+The stack runs unchanged on Blackwell, so nothing needs rebuilding for a Blackwell box. Checked on a RunPod
+RTX 5090 (32 GB, driver 595.91.07) against the same `/workspace/avatar` folder the Ada pod uses:
+
+| Piece | Result |
+| --- | --- |
+| PyTorch in both conda envs | `2.7.1+cu128`, device capability `(12, 0)`, a matmul runs |
+| FlashHead render worker | Loads, and renders a clip |
+| Chatterbox | Synthesises speech |
+| faster-whisper (CTranslate2, its own CUDA kernels, not PyTorch's) | Transcribes |
+
+What this does **not** establish: the 5090 has 32 GB. On a 16 GB card the stack peaks around 13.8 GB with
+everything resident, so fitting beside another team's job is a separate question. Timings from a 5090 say
+nothing about a 70 W card either.
+
 ## Not done / known limits
 
 - No login or access control: anyone who can reach the page can add or delete a professor.
@@ -51,6 +67,48 @@ LLM=qwen3:4b-instruct nohup bash start_avatar_chat.sh > app.log 2>&1 &
 
 Open the printed URL. Without a GPU, `AVATAR_MOCK=1 WORK=/tmp/avatar python3 avatar_app.py` runs the web flow with
 placeholder audio and video. `python test_followups.py qwen3:4b-instruct` checks follow-up quality.
+
+## Timing log
+
+Every step is written to `logs/timings.csv` in the avatar folder (`/workspace/avatar/logs/timings.csv` on the Pod;
+set `TIMING_LOG` to move it). The exam backend writes its model calls to the same file when its `TIMING_LOG` points
+there, which `pod_exam_stack.sh` does. Columns: time (UTC on the Pod), service, component, seconds, GPU memory used
+and total in MiB (whole GPU, from `nvidia-smi`), and a short note.
+
+| Component | What it measures |
+| --- | --- |
+| `speech-to-text (Whisper)` | Transcribing one spoken answer. The note has the word count only, never the words. |
+| `model: follow-up question` | The one model call after an answer. |
+| `voice (Chatterbox)` / `video (FlashHead)` | Making one sentence's audio and video. |
+| `clip made ahead of time` | A sentence that needed no work because its clip already existed. |
+| `wait until the examiner starts` | From the speak request to the first clip: what the student feels. |
+| `whole spoken turn` | From the speak request to the last clip. |
+| `made ahead of time` | A question or stock line rendered in the background before it was needed. |
+| `avatar loaded` | Switching to a professor's avatar. |
+| `model: AI assessment`, `model: clarify help` | The other model calls. |
+
+Exam questions and the stock lines are rendered ahead of time when a professor chooses their avatar and when a
+student starts an exam, one sentence at a time while no student is waiting on a live clip. Only follow-up questions,
+which depend on the student's answer, are rendered live.
+
+## What is kept on disk
+
+| Path | Holds | Kept for |
+| --- | --- | --- |
+| `profiles/<id>/photo.jpg`, `voice.wav` | The professor's photo and voice sample | Until the profile is deleted |
+| `avatar_media/pre_<id>_*.mp4`, `idle_<id>_*.mp4` | Lines and the idle loop made ahead of time | Until the profile is deleted |
+| `avatar_media/*.mp4` (anything else) | One-off clips: follow-ups, assistance replies, previews | 60 minutes (`MEDIA_TTL_MINUTES`) |
+| Student audio | — | Never written; deleted as soon as Whisper has read it |
+
+The examiner loops a clip of the professor saying nothing between questions. It is rendered from silence, so
+anything the model does once comes round every loop: `IDLE_SECONDS` (default 14) sets how long it is, and
+`IDLE_TRIM_SECONDS` (default 1.5) drops the opening, where FlashHead is still settling. The length is in the
+file name, so changing either value makes a new clip and deletes the old one. Raise `IDLE_SECONDS` if a
+movement still reads as a tic.
+
+The raw voice upload (`voice_in.bin`) is deleted once ffmpeg has converted it, and the conversion drops any
+video track, so a professor who uploads an MP4 leaves only audio behind. One-off clips are swept every ten
+minutes and at startup; the lines made ahead of time are reused every exam, so they stay.
 
 ## Licenses of the pieces
 

@@ -45,4 +45,5 @@ echo "First time: the page asks for a name, a photo and a voice sample. Building
 echo
 
 conda activate chatterbox
+export HOST="${HOST:-0.0.0.0}"   # the RunPod proxy reaches the app from outside the container
 python /workspace/avatar_app.py

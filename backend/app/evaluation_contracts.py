@@ -43,7 +43,7 @@ def validate_evaluation(result, criteria):
     expected = {item['name'].strip().lower(): item['max_score'] for item in criteria}
     if len(expected) != len(criteria) or any(not math.isfinite(v) or v <= 0 for v in expected.values()):
         raise HTTPException(422, "The professor rubric needs unique criteria and finite positive score bounds.")
-    if not isinstance(result, dict) or set(result) != {'scores'} or not isinstance(result['scores'], list):
+    if not isinstance(result, dict) or not {'scores'} <= set(result) <= {'scores', 'questions'} or not isinstance(result['scores'], list):
         invalid()
     scores = {}
     for item in result['scores']:

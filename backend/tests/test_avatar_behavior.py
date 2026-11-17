@@ -260,3 +260,44 @@ def test_start_token_covers_saved_mode_reading_pause_budget(monkeypatch, mode, e
     exam.start_exam(exam.StartRequest(student_id=STUDENT, exam_template_id=EXAM,
                                      student_token="synthetic"), db=StartDB())
     assert issued[0]["minutes"] == expected_token_minutes
+
+
+def test_no_follow_up_takes_the_next_bank_question_without_a_second_model_call(monkeypatch):
+    db = BehaviorDB(followups=2, current_followup=0)
+    prepare_turn(monkeypatch, db)
+    monkeypatch.setattr(exam, "ask_follow_up", lambda *a: (None, None))
+    monkeypatch.setattr(exam, "ask_model", lambda *a, **k: pytest.fail("One model call per turn."))
+    result = exam.submit_answer(answer_request(), authorization="synthetic", db=db)
+    assert db.inserted["qid"] == BANK and db.inserted["q"] == "First authored question"
+    # Moving to a new bank question comes with a short neutral line for the talking examiner.
+    from backend.app.avatar_lines import REACTIONS
+    assert result["done"] is False and result["reaction"] in REACTIONS
+
+
+def test_the_first_question_is_greeted_and_the_greeting_never_changes_on_reload():
+    from backend.app.avatar_lines import GREETINGS, greeting_for
+    first = greeting_for("70000000-0000-4000-8000-000000000001")
+    assert first in GREETINGS
+    assert first == greeting_for("70000000-0000-4000-8000-000000000001")
+    # Different sessions do not all get the same one.
+    assert len({greeting_for(f"session-{n}") for n in range(40)}) > 1
+
+
+def test_a_follow_up_is_led_by_a_ready_made_line_so_there_is_no_silence(monkeypatch):
+    db = BehaviorDB(followups=2, current_followup=0)
+    prepare_turn(monkeypatch, db)
+    monkeypatch.setattr(exam, "ask_follow_up", lambda *a: ("Why does that matter?", "Follow-up: synthetic"))
+    result = exam.submit_answer(answer_request(), authorization="synthetic", db=db)
+    from backend.app.avatar_lines import FOLLOW_UP_LEADS, LEAD_LINES
+    assert result["reaction"] in FOLLOW_UP_LEADS
+    # Every lead-in must be a stock line, or the avatar would have to render it live.
+    assert result["reaction"] in LEAD_LINES
+
+
+def test_the_greeting_reaches_the_student_from_both_start_and_resume():
+    """Starting an exam and reloading it must both carry the greeting, or the examiner opens cold."""
+    import inspect
+    source = inspect.getsource(exam.start_exam)
+    assert '"reaction": greeting_for(session_id)' in source
+    state_source = inspect.getsource(exam.read_session_state)
+    assert "greeting_for(session_id)" in state_source

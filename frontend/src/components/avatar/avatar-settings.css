@@ -668,3 +668,103 @@
   animation: none !important;
   transition: none !important;
 }
+
+/* Section tabs: one part of the settings at a time. */
+.avatar-tabs {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 0 0 16px;
+  padding: 6px;
+  border: 1px solid var(--oe-border, #dedbe7);
+  border-radius: 12px;
+  background: var(--oe-surface, #fff);
+}
+.avatar-tabs button {
+  padding: 8px 14px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--oe-text-muted, #625d70);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.avatar-tabs button:hover { background: var(--oe-accent-soft, #eee8f7); color: var(--oe-accent, #5b3a91); }
+.avatar-tabs button[aria-pressed="true"] { background: var(--oe-accent, #5b3a91); color: #fff; }
+.avatar-tabs button:focus-visible { outline: 3px solid var(--oe-focus, #8f6bd1); outline-offset: 2px; }
+.avatar-section[hidden], .avatar-notice[hidden] { display: none !important; }
+
+.talking-avatar-body {
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  gap: 16px;
+  align-items: start;
+}
+.talking-avatar-body img { width: 120px; height: 120px; border-radius: 12px; object-fit: cover; background: var(--oe-accent-soft, #eee8f7); }
+.talking-avatar-body button { display: inline-flex; align-items: center; gap: 6px; }
+.talking-avatar-name { margin: 0 0 4px; font-size: 1.0625rem; font-weight: 700; }
+.talking-avatar-ready { display: flex; align-items: center; gap: 6px; color: #17643a; }
+.talking-avatar-video { grid-column: 1 / -1; width: min(100%, 420px); border-radius: 12px; background: #111; }
+/* The talking avatar tab has nothing to save in the exam policy. */
+.is-talking-tab .avatar-settings-actions { display: none; }
+
+/* Save bar: one primary action. */
+.avatar-save-bar { align-items: center; }
+.avatar-settings-actions button.avatar-primary,
+.avatar-save-options button.avatar-primary {
+  border-color: var(--oe-accent, #5b3a91);
+  background: var(--oe-accent, #5b3a91);
+  color: #fff;
+}
+.avatar-settings-actions button.avatar-primary:disabled { opacity: 0.55; }
+
+/* Saving and sharing: three plainly explained options. */
+.avatar-save-options {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 12px;
+}
+.avatar-save-options article {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px;
+  border: 1px solid var(--oe-border, #dedbe7);
+  border-radius: 12px;
+  background: var(--oe-surface, #fff);
+}
+.avatar-save-options article:first-child { border-color: var(--oe-accent, #5b3a91); box-shadow: inset 0 0 0 1px var(--oe-accent, #5b3a91); }
+.avatar-save-options h4 { margin: 0; font-size: 1rem; }
+.avatar-save-options p { margin: 0; }
+.avatar-save-options .avatar-settings-actions { margin: 4px 0 0; }
+@media (max-width: 900px) { .avatar-save-options { grid-template-columns: 1fr; } }
+
+/* Student preview tab. */
+.avatar-preview-simple-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+.avatar-preview-simple-head h3 { margin: 0 0 4px; }
+.avatar-preview-simple-body {
+  display: grid;
+  grid-template-columns: minmax(220px, 300px) minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+.avatar-preview-talking { margin: 0; }
+.avatar-preview-talking img { display: block; width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 14px; background: #111; }
+.avatar-preview-talking figcaption { margin-top: 6px; color: var(--oe-text-muted, #625d70); font-size: 0.875rem; text-align: center; }
+.avatar-preview-simple-body .avatar-stage { min-height: 240px; border-radius: 14px; }
+.avatar-preview-simple-question .avatar-question { margin: 4px 0 14px; font-size: 1.125rem; font-weight: 650; }
+.avatar-preview-simple-help { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+.avatar-preview-simple-help button span { margin-left: 6px; color: var(--oe-text-muted, #625d70); font-weight: 500; font-size: 0.8125rem; }
+@media (max-width: 760px) { .avatar-preview-simple-body { grid-template-columns: 1fr; } }
+.avatar-save-bar button[type="submit"],
+.avatar-save-bar button[type="button"]:not(.avatar-primary) {
+  border: 1px solid var(--oe-accent-border, #c9b8e2);
+  background: var(--oe-surface, #fff);
+  color: var(--oe-accent, #5b3a91);
+}
+.avatar-tabs button { padding: 7px 11px; font-size: 0.9375rem; }

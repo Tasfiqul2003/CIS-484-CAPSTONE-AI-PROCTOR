@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import OralExamMark from "../../components/brand/OralExamMark";
+import ProfessorHeader from "../../components/professor/ProfessorHeader";
+import ExamRow from "../../components/professor/ExamRow";
 import "./recording-notifications.css";
 
 type Professor = {
@@ -21,11 +22,13 @@ type Exam = {
   awaiting_grading_count: number;
   completed_count: number;
   flagged_count: number;
+  submitted_student_count?: number;
+  roster_count?: number;
 };
 
 type RecordingNotification = {
   id: string;
-  event_type: "recording_declined";
+  event_type: "recording_declined" | "recording_failed";
   exam_id: string;
   exam_title: string;
   course: string | null;
@@ -101,6 +104,8 @@ export default function ProfessorDashboard() {
       setNotificationsLoading(false);
     }
   }, []);
+  // Clicking an overview card shows just those exams.
+  const [filter, setFilter] = useState<"all" | "published" | "draft" | "awaiting">("all");
 
   const loadExams = useCallback(async () => {
     const response = await fetch("/api/auth/professor/exams", {
@@ -161,16 +166,6 @@ export default function ProfessorDashboard() {
     initialize();
   }, [loadExams, loadRecordingNotifications]);
 
-  async function handleLogout() {
-    try {
-      await fetch("/api/auth/logout", {
-        method: "POST",
-        credentials: "include",
-      });
-    } finally {
-      window.location.href = "/";
-    }
-  }
 
   async function togglePublication(exam: Exam) {
     const action =
@@ -202,45 +197,6 @@ export default function ProfessorDashboard() {
         err instanceof Error
           ? err.message
           : "Unable to update exam status."
-      );
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function deleteExam(exam: Exam) {
-    const confirmed = window.confirm(
-      `Delete "${exam.title}"? This cannot be undone. Exams with student sessions cannot be deleted.`
-    );
-
-    if (!confirmed) return;
-
-    setSaving(true);
-    setError("");
-
-    try {
-      const response = await fetch(
-        `/api/exam/templates/${exam.id}`,
-        {
-          method: "DELETE",
-          credentials: "include",
-        }
-      );
-
-      const data = await response.json().catch(() => ({}));
-
-      if (!response.ok) {
-        throw new Error(
-          getErrorMessage(data, "Unable to delete this exam.")
-        );
-      }
-
-      await loadExams();
-    } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Unable to delete this exam."
       );
     } finally {
       setSaving(false);
@@ -279,6 +235,9 @@ export default function ProfessorDashboard() {
       .pop()
       ?.replace(/^./, (letter) => letter.toUpperCase()) || "Professor";
 
+  const visibleExams = exams.filter(exam => filter === "all" ? true
+    : filter === "awaiting" ? exam.awaiting_grading_count > 0 : exam.status === filter);
+
   const publishedCount = exams.filter(
     (exam) => exam.status === "published"
   ).length;
@@ -296,35 +255,10 @@ export default function ProfessorDashboard() {
 
   return (
     <div className="professor-dashboard-page">
-      <header className="simple-header">
-        <a className="logo dashboard-brand" href="/professor/dashboard">
-          <span className="logo-icon" aria-hidden="true">
-            <OralExamMark size={34} />
-          </span>
-          <span className="dashboard-brand-copy">
-            <strong>OralExam <span>AI</span></strong>
-            <small>PROFESSOR WORKSPACE</small>
-          </span>
-        </a>
-
-        <div className="dashboard-header-right">
-          <span className="dashboard-role-label">
-            <span className="dashboard-role-dot" />
-            Professor Workspace
-          </span>
-          <button
-            type="button"
-            className="dashboard-logout"
-            onClick={handleLogout}
-          >
-            <span>Log out</span>
-          </button>
-        </div>
-      </header>
+      <ProfessorHeader title="Professor portal" current="dashboard" />
 
       <main className="professor-dashboard-content">
         <section className="dashboard-welcome">
-          <p className="eyebrow">PROFESSOR PORTAL</p>
           <h1>Welcome back, {professorName}.</h1>
         </section>
 
@@ -333,58 +267,6 @@ export default function ProfessorDashboard() {
             {error}
           </p>
         )}
-
-        <section className="dashboard-overview" aria-label="Exam overview">
-          <div className="dashboard-overview-heading">
-            <div>
-              <p className="eyebrow">AT A GLANCE</p>
-              <h2>Your overview</h2>
-            </div>
-            <span className="dashboard-overview-context">
-              Based on your examinations
-            </span>
-          </div>
-
-          <div className="dashboard-overview-grid">
-            <article className="dashboard-overview-card">
-              <span className="dashboard-overview-icon overview-icon-purple" aria-hidden="true">
-                <span>▤</span>
-              </span>
-              <div className="dashboard-overview-label">Total examinations</div>
-              <strong>{exams.length}</strong>
-              <span className="dashboard-overview-detail">Created in your workspace</span>
-            </article>
-
-            <article className="dashboard-overview-card">
-              <span className="dashboard-overview-icon overview-icon-green" aria-hidden="true">
-                <span>✓</span>
-              </span>
-              <div className="dashboard-overview-label">Published</div>
-              <strong>{publishedCount}</strong>
-              <span className="dashboard-overview-detail">Available to students</span>
-            </article>
-
-            <article className="dashboard-overview-card">
-              <span className="dashboard-overview-icon overview-icon-amber" aria-hidden="true">
-                <span>◷</span>
-              </span>
-              <div className="dashboard-overview-label">Drafts</div>
-              <strong>{draftCount}</strong>
-              <span className="dashboard-overview-detail">Still being prepared</span>
-            </article>
-
-            <article className="dashboard-overview-card">
-              <span className="dashboard-overview-icon overview-icon-blue" aria-hidden="true">
-                <span>▥</span>
-              </span>
-              <div className="dashboard-overview-label">Awaiting grading</div>
-              <strong>{awaitingGradingCount}</strong>
-              <span className="dashboard-overview-detail">
-                Submitted exams not yet graded · {submissionCount} total submission{submissionCount === 1 ? "" : "s"}
-              </span>
-            </article>
-          </div>
-        </section>
 
         <section
           className="recording-notifications"
@@ -397,7 +279,7 @@ export default function ProfessorDashboard() {
                 Recording notifications
               </h2>
               <p>
-                Students who decline examination recording appear here.
+                  Recording consent declines and capture failures appear here.
               </p>
             </div>
 
@@ -431,7 +313,8 @@ export default function ProfessorDashboard() {
                   </div>
 
                   <div className="recording-notification-details">
-                    <strong>Student declined recording</strong>
+                      <strong>{notification.event_type === 'recording_declined'
+                        ? 'Student declined recording' : 'Examination recording failed or was interrupted'}</strong>
                     <p>
                       {notification.student_name} · {notification.student_eid}
                     </p>
@@ -458,7 +341,8 @@ export default function ProfessorDashboard() {
           )}
         </section>
 
-        <section className="dashboard-actions">
+        <section className="dashboard-actions" aria-labelledby="dashboard-actions-heading">
+          <h2 id="dashboard-actions-heading" className="dashboard-section-title">Create and set up</h2>
           <a
             href="/professor/exams/new"
             className="dashboard-action primary"
@@ -473,136 +357,103 @@ export default function ProfessorDashboard() {
             </div>
             <span className="dashboard-action-arrow" aria-hidden="true">→</span>
           </a>
+          <a href="/professor/avatar" className="dashboard-action primary dashboard-action-avatar">
+            <span className="dashboard-action-icon" aria-hidden="true">◉</span>
+            <div>
+              <strong>Set up your exam avatar</strong>
+              <p>Upload a photo and a short voice sample so the examiner looks and sounds like you.</p>
+            </div>
+            <span className="dashboard-action-arrow" aria-hidden="true">→</span>
+          </a>
         </section>
 
+        <section className="dashboard-overview" aria-label="Exam overview">
+          <div className="dashboard-overview-heading">
+            <div>
+              <h2 className="dashboard-section-title">Your overview</h2>
+            </div>
+            <span className="dashboard-overview-context">
+              Select a box to see those exams
+            </span>
+          </div>
+
+          <div className="dashboard-overview-grid">
+            <button type="button" className="dashboard-overview-card" aria-pressed={filter === "all"}
+              onClick={() => { setFilter("all"); document.getElementById("dashboard-exams")?.scrollIntoView({ behavior: "smooth", block: "start" }); }}>
+              <span className="dashboard-overview-icon overview-icon-purple" aria-hidden="true">
+                <span>▤</span>
+              </span>
+              <div className="dashboard-overview-label">Total examinations</div>
+              <strong>{exams.length}</strong>
+              <span className="dashboard-overview-detail">Created in your workspace</span>
+            </button>
+
+            <button type="button" className="dashboard-overview-card" aria-pressed={filter === "published"}
+              onClick={() => { setFilter("published"); document.getElementById("dashboard-exams")?.scrollIntoView({ behavior: "smooth", block: "start" }); }}>
+              <span className="dashboard-overview-icon overview-icon-green" aria-hidden="true">
+                <span>✓</span>
+              </span>
+              <div className="dashboard-overview-label">Published</div>
+              <strong>{publishedCount}</strong>
+              <span className="dashboard-overview-detail">Available to students</span>
+            </button>
+
+            <button type="button" className="dashboard-overview-card" aria-pressed={filter === "draft"}
+              onClick={() => { setFilter("draft"); document.getElementById("dashboard-exams")?.scrollIntoView({ behavior: "smooth", block: "start" }); }}>
+              <span className="dashboard-overview-icon overview-icon-amber" aria-hidden="true">
+                <span>◷</span>
+              </span>
+              <div className="dashboard-overview-label">Drafts</div>
+              <strong>{draftCount}</strong>
+              <span className="dashboard-overview-detail">Still being prepared</span>
+            </button>
+
+            <button type="button" className="dashboard-overview-card" aria-pressed={filter === "awaiting"}
+              onClick={() => { setFilter("awaiting"); document.getElementById("dashboard-exams")?.scrollIntoView({ behavior: "smooth", block: "start" }); }}>
+              <span className="dashboard-overview-icon overview-icon-blue" aria-hidden="true">
+                <span>▥</span>
+              </span>
+              <div className="dashboard-overview-label">Awaiting grading</div>
+              <strong>{awaitingGradingCount}</strong>
+              <span className="dashboard-overview-detail">
+                {submissionCount} total submission{submissionCount === 1 ? "" : "s"}
+              </span>
+            </button>
+          </div>
+        </section>
+
+
+
         <div className="dashboard-section-heading">
-          <div>
-            <p className="eyebrow">EXAM MANAGEMENT</p>
-            <h2>Your examinations</h2>
-            <p className="dashboard-section-description">
-              Select an exam to manage its questions, review submissions,
-              or update its publication status.
-            </p>
+          <div className="dashboard-section-heading-main">
+            <h2 id="dashboard-exams" className="dashboard-section-title">
+              {filter === "all" ? "Your examinations" : filter === "published" ? "Published exams"
+                : filter === "draft" ? "Draft exams" : "Exams awaiting grading"}
+            </h2>
+            {filter !== "all" && <button type="button" className="dashboard-filter-clear" onClick={() => setFilter("all")}>Show all exams</button>}
           </div>
           <span>
-            {exams.length} exam{exams.length === 1 ? "" : "s"}
+            {filter === "all" ? exams.length : `${visibleExams.length} of ${exams.length}`} exam{exams.length === 1 ? "" : "s"}
           </span>
         </div>
 
         <section className="professor-exams-content">
-          {exams.length === 0 ? (
+          {visibleExams.length === 0 ? (
             <div className="dashboard-empty">
-              <h3>No exams yet</h3>
-              <p>Create your first exam to get started.</p>
+              {exams.length === 0 ? <>
+                <h3>No exams yet</h3>
+                <p>Create your first exam to get started.</p>
+              </> : <>
+                <h3>No exams in this group</h3>
+                <p>Select another box above, or show all exams.</p>
+              </>}
             </div>
           ) : (
-            <div className="exam-grid">
-              {exams.map((exam) => (
-                <article
-                  className="professor-exam-card"
-                  key={exam.id}
-                >
-                  <div className="exam-card-title">
-                    <div className="professor-exam-icon">
-                      {exam.icon || "🎙️"}
-                    </div>
-
-                    <div>
-                      <div className="exam-course">
-                        {exam.course || "ORAL EXAM"}
-                      </div>
-                      <h2>{exam.title}</h2>
-                    </div>
-
-                    <span
-                      className={`exam-status-badge ${
-                        exam.status === "published"
-                          ? "published"
-                          : "draft"
-                      }`}
-                    >
-                      {exam.status === "published"
-                        ? "Published"
-                        : "Draft"}
-                    </span>
-                  </div>
-
-                  <p className="exam-description">
-                    {exam.description ||
-                      "Manage questions, course materials, and exam settings."}
-                  </p>
-
-                  <div className="exam-stats exam-stats-detailed">
-                    <div className="exam-stat">
-                      <span className="exam-stat-label">Questions</span>
-                      <strong>{exam.question_count}</strong>
-                    </div>
-
-                    <div className="exam-stat">
-                      <span className="exam-stat-label">Submissions</span>
-                      <strong>{exam.submission_count}</strong>
-                    </div>
-
-                    <div className="exam-stat">
-                      <span className="exam-stat-label">Completed</span>
-                      <strong>{exam.completed_count}</strong>
-                    </div>
-
-                    <div className="exam-stat">
-                      <span className="exam-stat-label">In Progress</span>
-                      <strong>{exam.in_progress_count}</strong>
-                    </div>
-
-                    <div className="exam-stat">
-                      <span className="exam-stat-label">Awaiting Grading</span>
-                      <strong>{exam.awaiting_grading_count}</strong>
-                    </div>
-
-                    <div className="exam-stat">
-                      <span className="exam-stat-label">Flagged</span>
-                      <strong>{exam.flagged_count}</strong>
-                    </div>
-                  </div>
-
-                  <div className="exam-card-actions">
-                    <a href={`/professor/exams/${exam.id}`} className="primary">
-                      Manage Exam
-                    </a>
-
-                    <a
-                      className="view-submissions-button"
-                      href={`/professor/exams/${exam.id}/submissions`}
-                    >
-                      View Submissions
-                    </a>
-
-                    <button
-                      type="button"
-                      className={`publication-button ${
-                        exam.status === "published"
-                          ? "is-published"
-                          : "is-draft"
-                      }`}
-                      disabled={saving}
-                      onClick={() => togglePublication(exam)}
-                    >
-                      {exam.status === "published"
-                        ? "Make Draft"
-                        : "Publish Exam"}
-                    </button>
-
-                    <button
-                      type="button"
-                      className="delete-exam-button danger"
-                      disabled={saving}
-                      onClick={() => deleteExam(exam)}
-                    >
-                      Delete Exam
-                    </button>
-                  </div>
-                </article>
+            <ul className="exam-rows" aria-label="Your examinations">
+              {visibleExams.map((exam) => (
+                <ExamRow key={exam.id} exam={exam} busy={saving} onTogglePublication={() => togglePublication(exam)} />
               ))}
-            </div>
+            </ul>
           )}
         </section>
       </main>

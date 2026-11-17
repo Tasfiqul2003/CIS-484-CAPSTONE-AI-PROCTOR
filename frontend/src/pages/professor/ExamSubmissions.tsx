@@ -8,7 +8,9 @@ import {
   RefreshCw,
   Users,
 } from "lucide-react";
-import OralExamMark from "../../components/brand/OralExamMark";
+import ProfessorHeader from "../../components/professor/ProfessorHeader";
+import { recordingLabels } from '../student/examRecording';
+import type { RecordingStatus } from '../student/examRecording';
 
 type StudentProgress = {
   student_id: string;
@@ -24,6 +26,12 @@ type StudentProgress = {
   remaining_seconds: number | null;
   server_now: string | null;
   developer_demo?: boolean;
+  identity_check_completed?: boolean;
+  identity_review_required?: boolean;
+  identity_verification_attempts?: number;
+  face_check_attempt_count?: number;
+  face_check_help_required?: boolean;
+  video_recording_status?: RecordingStatus | null;
 };
 
 function formatDate(value: string | null) {
@@ -177,6 +185,22 @@ export default function ExamSubmissions() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  // The summary boxes filter the table.
+  const [filter, setFilter] = useState<"all" | "not_started" | "in_progress" | "awaiting" | "photo">("all");
+  // Which exam this is, for the page heading.
+  const [exam, setExam] = useState<{ title: string; course: string | null } | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/auth/professor/exams", { credentials: "include" })
+      .then(response => response.ok ? response.json() : [])
+      .then((list: Array<{ id: string; title: string; course?: string | null }>) => {
+        const found = Array.isArray(list) ? list.find(item => item.id === examId) : undefined;
+        if (alive && found) setExam({ title: found.title, course: found.course ?? null });
+      })
+      .catch(() => undefined);
+    return () => { alive = false; };
+  }, [examId]);
 
   const loadProgress = useCallback(async (manual = false) => {
     if (!examId) {
@@ -241,6 +265,14 @@ export default function ExamSubmissions() {
     void loadProgress();
   }, [loadProgress]);
 
+  const visible = students.filter(student => (statusFilter === "all"
+    || (statusFilter === "not_started" ? !student.session_id || !student.status : student.status === statusFilter)))
+    .filter(student => filter === "all" ? true
+    : filter === "not_started" ? !student.session_id || !student.status
+    : filter === "in_progress" ? student.status === "in_progress"
+    : filter === "awaiting" ? student.status === "pending_grading" && !student.developer_demo
+    : student.identity_review_required === true || student.face_check_help_required === true);
+
   const counts = {
     demos: students.filter(student => student.developer_demo === true).length,
     total: students.length,
@@ -259,6 +291,10 @@ export default function ExamSubmissions() {
     flagged: students.filter(
       (student) => student.status === "flagged",
     ).length,
+    identityReview: students.filter(
+      student => student.identity_review_required === true
+        || student.face_check_help_required === true,
+    ).length,
   };
 
   const filteredStudents = students.filter((student) => {
@@ -273,32 +309,19 @@ export default function ExamSubmissions() {
   });
 
   return (
-    <div className="professor-dashboard">
-      <header className="dashboard-header">
-        <a
-          href="/professor/dashboard"
-          className="dashboard-brand"
-          aria-label="Return to professor dashboard"
-        >
-          <OralExamMark />
-          <span>OralExam AI</span>
-        </a>
-
-        <a href="/professor/dashboard" className="progress-back-link">
-          <ArrowLeft size={16} aria-hidden="true" />
-          Dashboard
-        </a>
-      </header>
+    <div className="professor-dashboard professor-progress-page">
+      <ProfessorHeader title="Student progress" />
 
       <main className="dashboard-main">
-        <section className="dashboard-welcome">
+        <a href="/professor/exams" className="back-to-exam-button progress-back-row">
+          <ArrowLeft size={16} aria-hidden="true" />
+          Back to My Exams
+        </a>
+        <section className="dashboard-welcome progress-heading">
           <div>
-            <p className="eyebrow">EXAM MANAGEMENT</p>
-            <h1>Student Progress</h1>
-            <p>
-              Monitor roster participation and review each student&apos;s
-              latest examination status.
-            </p>
+            {exam?.course && <p className="progress-heading-course">{exam.course}</p>}
+            <h1>{exam?.title || "Student Progress"}</h1>
+            <p>Who has taken this exam, who is still working, and which attempts are ready for you to review.</p>
           </div>
 
           <button
@@ -337,40 +360,51 @@ export default function ExamSubmissions() {
         </aside>}
 
         <section className="progress-summary" aria-label="Exam progress summary">
-          <article className="progress-summary-card">
+          <button type="button" className="progress-summary-card" aria-pressed={filter === "all"}
+            onClick={() => setFilter("all")}>
             <Users size={20} aria-hidden="true" />
-            <span>Rostered students</span>
+            <span>All students</span>
             <strong>{loading ? "—" : counts.total}</strong>
-          </article>
+          </button>
 
-          <article className="progress-summary-card">
+          <button type="button" className="progress-summary-card" aria-pressed={filter === "not_started"}
+            onClick={() => setFilter("not_started")}>
             <Clock3 size={20} aria-hidden="true" />
             <span>Not started</span>
             <strong>{loading ? "—" : counts.notStarted}</strong>
-          </article>
+          </button>
 
-          <article className="progress-summary-card">
+          <button type="button" className="progress-summary-card" aria-pressed={filter === "in_progress"}
+            onClick={() => setFilter("in_progress")}>
             <LoaderCircle size={20} aria-hidden="true" />
             <span>In progress</span>
             <strong>{loading ? "—" : counts.inProgress}</strong>
-          </article>
+          </button>
 
-          <article className="progress-summary-card">
+          <button type="button" className="progress-summary-card" aria-pressed={filter === "awaiting"}
+            onClick={() => setFilter("awaiting")}>
             <GraduationCap size={20} aria-hidden="true" />
             <span>Awaiting review</span>
             <strong>{loading ? "—" : counts.awaitingReview}</strong>
-          </article>
+          </button>
+          <button type="button" className="progress-summary-card" aria-pressed={filter === "photo"}
+            onClick={() => setFilter("photo")}>
+            <AlertCircle size={20} aria-hidden="true" />
+            <span>Photo check exceptions</span>
+            <strong>{loading ? "—" : counts.identityReview}</strong>
+          </button>
         </section>
 
         <section className="progress-table-section">
           <div className="dashboard-section-heading">
             <div>
-              <p className="eyebrow">ROSTER</p>
-              <h2>Student examination status</h2>
+              <h2>{{ all: "All students", not_started: "Not started", in_progress: "In progress",
+                awaiting: "Awaiting review", photo: "Photo check exceptions" }[filter]}</h2>
             </div>
             {!loading && (
               <span className="progress-count">
-                {filteredStudents.length} of {students.length} student{students.length === 1 ? "" : "s"}
+                {visible.length} of {students.length} student{students.length === 1 ? "" : "s"}
+                {filter !== "all" && <button type="button" className="progress-filter-clear" onClick={() => setFilter("all")}>Show all</button>}
               </span>
             )}
           </div>
@@ -405,7 +439,7 @@ export default function ExamSubmissions() {
               <h3>No students on this roster</h3>
               <p>Upload a student roster for this exam to see participation here.</p>
             </div>
-          ) : !error && filteredStudents.length === 0 ? (
+          ) : !error && visible.length === 0 ? (
             <div className="progress-empty-state">
               <Users size={28} aria-hidden="true" />
               <h3>No students match this filter</h3>
@@ -419,6 +453,8 @@ export default function ExamSubmissions() {
                     <th scope="col">Student</th>
                     <th scope="col">EID</th>
                     <th scope="col">Status</th>
+                    <th scope="col">Photo comparison</th>
+                    <th scope="col">Recording</th>
                     <th scope="col">Started</th>
                     <th scope="col">Elapsed</th>
                     <th scope="col">Completed</th>
@@ -427,16 +463,10 @@ export default function ExamSubmissions() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredStudents.map((student) => (
+                  {visible.map((student) => (
                     <tr key={student.student_id}>
                       <td>
                         <div className="progress-student-name">
-                          <span className="progress-student-avatar">
-                            {(student.student_name || "?")
-                              .trim()
-                              .charAt(0)
-                              .toUpperCase()}
-                          </span>
                           <div>
                             <strong>{student.student_name || "Unnamed student"}</strong>
                             <span>{student.email}</span>
@@ -449,6 +479,20 @@ export default function ExamSubmissions() {
                           {student.developer_demo ? "Demo · no grading" : getStatus(student)}
                         </span>
                       </td>
+                      <td>
+                        {!student.session_id
+                          ? student.face_check_help_required
+                            ? `Blocked · ${student.face_check_attempt_count ?? 3} failed matches; professor help required`
+                            : (student.face_check_attempt_count ?? 0) > 0
+                              ? `${student.face_check_attempt_count} attempt${student.face_check_attempt_count === 1 ? "" : "s"} · not verified`
+                              : "Not checked"
+                          : student.identity_review_required
+                            ? `Review required · ${student.identity_verification_attempts ?? 3} failed matches`
+                            : student.identity_check_completed
+                              ? "No exception flagged"
+                              : "No photo-check record"}
+                      </td>
+                      <td>{student.video_recording_status ? recordingLabels[student.video_recording_status] : '-'}</td>
                       <td>{formatDate(student.started_at)}</td>
                       <td>{formatDuration(student.elapsed_seconds)}</td>
                       <td>{formatDate(student.ended_at)}</td>
@@ -482,14 +526,14 @@ export default function ExamSubmissions() {
                             >
                               Download recommended grade
                             </button>
-                            <button
-                              type="button"
-                              className="student-review-roster-action"
-                              disabled
-                              title="Secure video retrieval is not available yet."
-                            >
-                              Video unavailable
-                            </button>
+                            <a className="student-review-roster-link"
+                              href={`/professor/exams/${encodeURIComponent(examId || '')}/submissions/${encodeURIComponent(student.session_id)}`}>
+                              Recording details
+                            </a>
+                            <a className="student-review-roster-link"
+                              href={`/professor/exam-sessions/${encodeURIComponent(student.session_id)}/review`}>
+                              Detailed assessment
+                            </a>
                           </div>
                         ) : "—"}
                       </td>

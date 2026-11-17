@@ -1,0 +1,83 @@
+[33m02c2421[m[33m ([m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m Merge pull request #29 from Tasfiqul2003/paulo
+[33m084273c[m[33m ([m[1;31morigin/paulo[m[33m, [m[1;31morigin/developer-mode[m[33m)[m Make developer startup minimal and refresh exam presentation
+[33mc6bbf55[m Add labeled developer demo substitutes for missing services and exam content
+[33mdb667f8[m Apply responsive frontend standards to exam settings and avatar views
+[33m350edc6[m Connect avatar, exam timing, and EID accommodations end to end
+[33m94bbd2b[m Preserve atomic developer migrations with legacy SQL wrappers
+[33m81458ec[m Merge remote-tracking branch 'origin/main' into paulo
+[33ma0fb8f5[m Merge pull request #27 from Tasfiqul2003/IanBranch
+[33mba6fd9d[m[33m ([m[1;31morigin/IanBranch[m[33m)[m Merge branch 'main' into IanBranch
+[33mcf705f0[m Merge pull request #28 from Tasfiqul2003/kay
+[33m518360c[m[33m ([m[1;31morigin/kay[m[33m)[m Add professor exam progress tracking
+[33mb9ce415[m Add student ID and exam roster table (FOR TESTING?)
+[33m6e1a46a[m Connect time settings to backend & add countdown
+[33mba1f7b0[m Show ODS Extended time preview in time settings
+[33m73c0bee[m Validate Exam time limits before saving
+[33m1d69d08[m Merge remote-tracking branch 'origin/main' into paulo
+[33m5297b53[m Add laptop developer mode launcher and setup guide
+[33m392dc89[m Merge pull request #26 from Tasfiqul2003/security
+[33m383ff87[m Harden JWT secret configuration
+[33m2fba3a9[m Merge pull request #24 from Tasfiqul2003/feature/local-avatar-prototype
+[33ma1a24fd[m Merge pull request #25 from Tasfiqul2003/security
+[33mf1ca24d[m Add login rate limiting and security tests
+[33m805f610[m Add SQL injection login regression tests
+[33m37feaa6[m Add student session authorization and ownership checks
+[33mfc1d4ed[m[33m ([m[1;31morigin/feature/local-avatar-prototype[m[33m)[m Correct license notes for FlashHead Lite
+[33m0110c49[m Merge branch 'main' into feature/local-avatar-prototype
+[33m5752977[m Merge pull request #23 from Tasfiqul2003/Paulo
+[33m4275e2a[m Merge branch 'main' into Paulo
+[33m44765f6[m Refactor Manage Exam settings into dedicated pages
+[33m7277c1c[m Merge pull request #22 from Tasfiqul2003/kay
+[33m7db9144[m Style edits
+[33m7709d72[m Standardize OralExam AI branding and dashboard layout
+[33mb322a76[m Changed color scheme
+[33m1d6ca58[m Fix Ollama Docker port conflict
+[33m32f9220[m Merge branch 'main' of https://github.com/Tasfiqul2003/CIS-484-CAPSTONE-AI-PROCTOR
+[33m6e52199[m Add local avatar oral-exam prototype in its own folder
+[33m9203a8a[m Add CYBROS V2 Qwen3 14B model and Docker configuration
+[33mb069b3d[m Add student roster authorization regression tests
+[33mece7bd5[m Secure professor grading and review routes
+[33mb631d3e[m Merge pull request #21 from Tasfiqul2003/pipeline
+[33me3da51f[m[33m ([m[1;31morigin/security[m[33m, [m[1;31morigin/pipeline[m[33m)[m Merge branch 'main' into pipeline
+[33md51b77e[m Implement student exam verification and feedback flow
+[33maf3c1e7[m Delete added. Saved roster when refresh
+[33m8be57b0[m Styling and formatting the roster, can now see preview
+[33m6bf43d7[m Class Roster added
+[33m0d4ad0b[m Can now use material for exams
+[33mc81360e[m Merge pull request #20 from Tasfiqul2003/Paulo
+[33m5f774de[m Document settings permissions and preview behavior
+[33m110c3ad[m Add instructor avatar policies and student settings preview
+[33mc67eca9[m Merge pull request #19 from Tasfiqul2003/pipeline
+[33m8e32682[m Exam cards now have statistics
+[33mc437390[m Fix PostgreSQL database connection configuration
+[33m4bf5bd4[m Added delete and publish fuctionality
+[33m3f2aa5d[m Merge pull request #18 from Tasfiqul2003/pipeline
+[33m0d0b006[m Added better navigation
+[33maf442f0[m Materials and Questions stylized Professors may now upload material for their exams
+[33m3ddf58b[m Merge pull request #17 from Tasfiqul2003/pipeline
+[33m8bd18da[m Fixed formatting error
+[33mec06019[m Can now create professor login and dashboard
+[33mc77f968[m Merge pull request #16 from Tasfiqul2003/pipeline
+[33m214ebd5[m Admin Login Created. Delete cookies when done for any further testing
+[33mbe5e1ce[m Merge pull request #15 from Tasfiqul2003/pipeline
+[33m63c810e[m Merge branch 'main' into pipeline
+[33mba274e8[m Frontend is now connected to backend for exams. Still need to work on logins and creating them. Students can take an exam and have the answers saved
+[33md5085b8[m Backend working with docker from other branches
+[33mf8573ec[m Merge pull request #14 from Tasfiqul2003/pipeline
+[33m75c523e[m finished front end
+[33me98f1bf[m Merge pull request #13 from Tasfiqul2003/frontend
+[33m696e54a[m[33m ([m[1;31morigin/frontend[m[33m)[m Added Exam management and updated question bank and course materials
+[33m9292553[m Created Student Submissions page
+[33m8cd3e6a[m added professor login and exam management
+[33m3c2dbcd[m Merge pull request #12 from Tasfiqul2003/docs/ollama-v3-v4
+[33mc2c9dfc[m[33m ([m[1;31morigin/docs/ollama-v3-v4[m[33m)[m docs: preserve UTF-8 punctuation in existing documentation
+[33m0aeab32[m docs: preserve and document Ollama v3 and v4 development models
+[33m0e7ba6b[m Merge pull request #11 from Tasfiqul2003/frontend
+[33m2e636f2[m Merge pull request #10 from Tasfiqul2003/feat/gui-avatar-v1
+[33m9c8d47b[m[33m ([m[1;31morigin/feat/gui-avatar-v1[m[33m)[m feat: add integrated GUI avatar and Windows launchers
+[33m9dbc120[m Added more pages to UI
+[33m0dc89db[m Merge pull request #9 from Tasfiqul2003/feat/voice-foundation-v1
+[33meb1ed1c[m[33m ([m[1;31morigin/feat/voice-foundation-v1[m[33m)[m feat: add AI Oral Examiner voice interaction foundation v1
+[33m759f72c[m Merge pull request #8 from Tasfiqul2003/frontend
+[33m1293b12[m working home and student page
+[33m868f8f5[m Created Homepage

@@ -1,5 +1,6 @@
 
 from uuid import UUID
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
@@ -24,6 +25,18 @@ class RecordingConsentRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     consent: bool = Field(strict=True)
+
+
+def consent_timing(session, started_at=None):
+    """Return trusted deadlines with the saved choice, even if a follow-up GET fails."""
+    started_at = started_at or session.get('started_at')
+    from .exam import effective_exam_minutes, effective_question_seconds
+    def deadline(seconds):
+        return (started_at + timedelta(seconds=seconds)).isoformat() if started_at and seconds is not None else None
+    exam_minutes = effective_exam_minutes(session)
+    return {'server_now': datetime.now(timezone.utc).isoformat(),
+            'deadline': deadline(exam_minutes * 60 if exam_minutes is not None else None),
+            'question_deadline': deadline(effective_question_seconds(session))}
 
 
 def owned_exam(db: Session, exam_id: UUID, account: dict):
@@ -122,7 +135,9 @@ def submit_recording_consent(
         text("""
             SELECT id, student_id, exam_template_id, status,
                    record_examination, recording_consent_status,
-                   recording_consent_decided_at, developer_demo
+                   recording_consent_decided_at, developer_demo, started_at,
+                   time_limit_minutes, question_time_limit_minutes, extended_time_multiplier,
+                   avatar_policy_snapshot, avatar_policy_revision, avatar_exam_mode
             FROM exam_sessions
             WHERE id = CAST(:session_id AS uuid)
             FOR UPDATE
@@ -157,6 +172,7 @@ def submit_recording_consent(
         return {
             "recording_consent_status": current_status,
             "recording_enabled": current_status == "consented",
+            **consent_timing(session),
             "decided_at": (
                 session["recording_consent_decided_at"].isoformat()
                 if session["recording_consent_decided_at"] else None
@@ -238,6 +254,7 @@ def submit_recording_consent(
     return {
         "recording_consent_status": new_status,
         "recording_enabled": request.consent,
+        **consent_timing(session, updated['started_at']),
         "decided_at": updated["recording_consent_decided_at"].isoformat(),
     }
 

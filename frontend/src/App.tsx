@@ -1,5 +1,6 @@
 import Home from "./pages/Home";
 import "./styles/exam-ui-tokens.css";
+import "./pages/student/student-accessibility.css";
 import { DeveloperDemoProvider } from "./components/developer-demo/DemoWorkspace";
 
 import StudentVerification from "./pages/student/StudentVerification";
@@ -19,6 +20,8 @@ import ExamSettingsPage, { LegacyAvatarSettingsRedirect } from "./pages/professo
 import { examSettingsCategories } from "./pages/professor/examSettingsNavigation";
 import ExamSubmissions from "./pages/professor/ExamSubmissions";
 import StudentReview from "./pages/professor/StudentReview";
+import ExamSessionReview from "./pages/professor/ExamSessionReview";
+import ProfessorAvatar from "./pages/professor/ProfessorAvatar";
 import ExamSubmitted from "./pages/student/ExamSubmitted";
 
 function AppRoutes() {
@@ -66,6 +69,10 @@ function AppRoutes() {
 
   if (path === "/professor/exams") {
     return <ProfessorExams />;
+  }
+
+  if (path === "/professor/avatar") {
+    return <ProfessorAvatar />;
   }
 
   if (path === "/professor/questions") {
@@ -127,8 +134,15 @@ if (
   }
 
   if (
-    path.startsWith("/professor/exams/") &&
-    path.endsWith("/submissions")
+    path.startsWith("/professor/exam-sessions/") &&
+    path.endsWith("/review")
+  ) {
+    return <ExamSessionReview />;
+  }
+
+  if (
+  path.startsWith("/professor/exams/") &&
+  path.endsWith("/submissions")
   ) {
     return <ExamSubmissions />;
   }

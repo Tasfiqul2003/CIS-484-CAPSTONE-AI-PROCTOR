@@ -1,0 +1,96 @@
+name: oralexam-airgap-update
+
+services:
+  ollama:
+    image: ${OLLAMA_IMAGE:-ollama/ollama:latest}
+    pull_policy: never
+    entrypoint: ["ollama"]
+    command: ["serve"]
+    restart: unless-stopped
+    environment:
+      OLLAMA_KEEP_ALIVE: 30m
+      OLLAMA_NUM_PARALLEL: 1
+    volumes:
+      - ollama_models:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    networks:
+      application:
+        aliases:
+          - ollama
+
+  backend:
+    image: ${BACKEND_IMAGE:-oralexam-backend:airgap}
+    pull_policy: never
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL for the existing database}
+      OLLAMA_URL: http://ollama:11434
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.1}
+      AUTH_SECRET_KEY: ${AUTH_SECRET_KEY:?Set AUTH_SECRET_KEY}
+      ADMIN_BOOTSTRAP_TOKEN: ${ADMIN_BOOTSTRAP_TOKEN:?Set ADMIN_BOOTSTRAP_TOKEN}
+      AUTH_COOKIE_SECURE: "true"
+      DEVELOPER_DEMO_MODE: "0"
+      EXAM_VIDEO_DIR: /var/lib/oral-exam/recordings
+      EXAM_VIDEO_RETENTION_UNTIL: ${EXAM_VIDEO_RETENTION_UNTIL:?Set the approved retention deadline}
+      FACE_DETECTOR_MODEL_PATH: /models/face_detection_yunet_2023mar.onnx
+      FACE_RECOGNIZER_MODEL_PATH: /models/face_recognition_sface_2021dec.onnx
+    depends_on:
+      ollama:
+        condition: service_healthy
+    expose:
+      - "8000"
+    volumes:
+      - exam_videos:/var/lib/oral-exam/recordings
+      - ${FACE_MODELS_DIR:?Set FACE_MODELS_DIR}:/models:ro
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/db', timeout=5)",
+        ]
+      interval: 10s
+      timeout: 7s
+      retries: 12
+    networks:
+      - application
+
+  frontend:
+    image: ${FRONTEND_IMAGE:-oralexam-frontend:airgap}
+    pull_policy: never
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+    volumes:
+      - ${TLS_CERT_DIR:?Set TLS_CERT_DIR}:/etc/nginx/certs:ro
+    networks:
+      - application
+
+volumes:
+  exam_videos:
+    external: true
+    name: ${EXAM_VIDEO_VOLUME:?Set the existing exam recording volume name}
+  ollama_models:
+    external: true
+    name: ${OLLAMA_MODELS_VOLUME:?Set the existing Ollama volume name}
+
+networks:
+  application:
+    external: true
+    name: ${APP_DOCKER_NETWORK:?Set the existing application Docker network}

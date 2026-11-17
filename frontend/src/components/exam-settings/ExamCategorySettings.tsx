@@ -308,7 +308,7 @@ export default function ExamCategorySettings({ examId, category }: {
         {category === "time-scheduling"
           ? "Saved time limits apply to new attempts. Existing attempts keep their starting limits. The exam ends when its total time runs out, even if time remains for a question."
           : category === "recording-transcript"
-            ? "These preferences are saved to the server and copied to each new exam session. Students must consent before recording is enabled. Declining does not prevent them from taking the exam. Actual audio/video capture is not yet connected."
+            ? "These preferences are saved to the server and copied to each new exam session. Students must consent before camera and microphone recording. Declines or recording failures do not prevent the exam. Speech transcription requires a separately configured local engine and is currently unavailable."
             : <>These settings remain separate from Avatar &amp; Interaction drafts, shared previews, and saved exam policies. Saving this category does not change live exam behavior.</>}
       </p>
 
@@ -544,7 +544,7 @@ export default function ExamCategorySettings({ examId, category }: {
                   <div>
                     <strong>Generate Transcript</strong>
                     <small>
-                      Enable the separate examination transcript artifact. This does not control the AI's internal answer processing.
+                      Request a separate speech transcript from a completed recording. Speech transcription is currently unavailable until a local engine and model are configured. Typed answers and AI assessment remain available.
                     </small>
                   </div>
                   <input

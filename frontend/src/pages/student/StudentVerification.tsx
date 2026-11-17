@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { CheckCircle2 } from "lucide-react";
 import JACardScanner from "../../components/JACardScanner";
 import OralExamMark from "../../components/brand/OralExamMark";
 
@@ -17,6 +18,11 @@ export default function StudentVerification() {
   const [student, setStudent] = useState<Student | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const headingRef = useRef<HTMLHeadingElement>(null);
+
+  useEffect(() => {
+    if (student) headingRef.current?.focus();
+  }, [student]);
 
   async function handleCardSwipe(eid: string) {
     setBusy(true);
@@ -68,64 +74,51 @@ export default function StudentVerification() {
 
   return (
     <div className="verification-page">
+      <a className="student-skip-link" href="#main-content">Skip to content</a>
       <header className="simple-header">
-        <div className="logo"><span className="logo-icon" aria-hidden="true"><OralExamMark size={34} /></span><span>OralExam AI</span></div>
+        <a className="logo" href="/" aria-label="OralExam AI home">
+          <span className="logo-icon" aria-hidden="true"><OralExamMark size={34} /></span>
+          <span>OralExam AI</span>
+        </a>
       </header>
 
-      <main className="verification-content">
+      <main id="main-content" className="verification-content" aria-labelledby="verification-heading">
         <div className="verification-card">
-          <div className="verification-icon">💳</div>
-          <p className="eyebrow">STUDENT VERIFICATION</p>
-          <h1>Verify your identity</h1>
+          <p className="eyebrow">STEP 1 OF 3</p>
+          <h1 id="verification-heading" ref={headingRef} tabIndex={-1}>
+            {student ? "Confirm your record" : "Check your JACard"}
+          </h1>
 
           {!student ? (
             <>
-              <p className="verification-description">
-                Swipe your JACard to look up your student record.
-              </p>
+              <p className="verification-description">Swipe your card or enter your JMU EID.</p>
               <JACardScanner onSwipe={handleCardSwipe} busy={busy} />
             </>
           ) : (
             <>
-              <p className="verification-description">
-                We found the following student record. Confirm that this information is yours.
-              </p>
+              <p className="verification-description">Is this you?</p>
               <div className="student-identity">
-                <div className="student-avatar">👤</div>
                 <div className="student-details">
-                  <p className="student-label">STUDENT</p>
                   <h2>{student.name}</h2>
-                  <p>JMU EID: {student.eid}</p>
+                  <p>JMU EID · {student.eid}</p>
                 </div>
-                <div className="verified-badge">✓ EID Matched</div>
-              </div>
-
-              <div className="verification-warning">
-                <strong>Next: video check</strong>
-                <p>
-                  The next screen is a prototype placeholder. It does not
-                  perform actual facial recognition yet.
-                </p>
+                <span className="verified-badge record-found-badge"><CheckCircle2 size={18} aria-hidden="true" />Record found</span>
               </div>
 
               <button type="button" className="continue-button" onClick={continueToFaceCheck}>
-                Confirm Identity & Continue →
-              </button>
-              <button type="button" className="back-button" onClick={restart}>
-                This isn't me / Scan another card
+                Continue to photo check
               </button>
             </>
           )}
 
           {error && <p role="alert" className="exam-error">{error}</p>}
 
-          <button
-            type="button"
-            className="back-button"
-            onClick={() => { window.location.href = "/"; }}
-          >
-            ← Return Home
-          </button>
+          <div className="verification-secondary-actions">
+            {student && <button type="button" className="back-button" onClick={restart}>
+              Not you? Scan another card
+            </button>}
+            <a className="back-button student-home-link" href="/">Home</a>
+          </div>
         </div>
       </main>
     </div>

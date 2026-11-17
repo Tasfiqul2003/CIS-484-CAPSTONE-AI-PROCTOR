@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -124,4 +125,57 @@ def confirm_grades(
         "total": total,
         "max_total": max_total,
         "grades": final,
+    }
+
+
+@router.get("/sessions/{session_id}/review")
+def get_submission_review(
+    session_id: UUID,
+    account: dict = Depends(require_professor),
+    db: Session = Depends(get_db),
+):
+    professor_id = account.get("professor_id")
+    if not professor_id:
+        raise HTTPException(403, "Professor account required.")
+
+    session = db.execute(
+        text("""SELECT s.status, s.developer_demo, s.exam_template_id, st.name AS student_name,
+                       st.eid, t.title AS exam_title, t.course, t.professor_id,
+                       v.status AS video_status, v.expires_at
+                FROM exam_sessions AS s
+                JOIN students AS st ON st.id = s.student_id
+                JOIN exam_templates AS t ON t.id = s.exam_template_id
+                LEFT JOIN exam_session_videos AS v ON v.session_id = s.id
+                WHERE s.id = CAST(:sid AS uuid)"""),
+        {"sid": str(session_id)},
+    ).mappings().first()
+    if not session or str(session["professor_id"]) != str(professor_id):
+        raise HTTPException(404, "Session not found.")
+    if session.get("developer_demo", False):
+        raise HTTPException(404, "Session not found.")
+    if session["status"] not in ("pending_grading", "flagged", "graded"):
+        raise HTTPException(409, "Exam review is available only after submission.")
+    video_available = (session.get("video_status") == "completed"
+        and session.get("expires_at") is not None
+        and session["expires_at"] > datetime.now(timezone.utc))
+
+    answers = db.execute(
+        text("""SELECT sequence_num, question_text AS question,
+                       student_answer_transcript AS answer
+                FROM interactions
+                WHERE session_id = CAST(:sid AS uuid)
+                ORDER BY sequence_num"""),
+        {"sid": str(session_id)},
+    ).mappings().all()
+    return {
+        "session_id": str(session_id),
+        "student_name": session["student_name"],
+        "student_eid": session["eid"],
+        "exam_title": session["exam_title"],
+        "course": session["course"],
+        "status": session["status"],
+        "exam_template_id": str(session["exam_template_id"]) if session.get("exam_template_id") else None,
+        "video_url": f"/api/exam/sessions/{session_id}/video" if video_available else None,
+        "video_recording_status": session.get("video_status"),
+        "answers": [dict(answer) for answer in answers],
     }

@@ -63,7 +63,14 @@ media/
 *.webm
 *.sqlite*
 *.db
+oralexam-airgap-images.tar
 
 # New raw results are local until reviewed as synthetic; preserve known evidence
 /tests/results/*
 !/tests/results/20260917T192156856386Z/
+# Sensitive local media and recording assembly output
+recordings/
+*.webm
+*.chunk
+*.assembling
+frontend/tests/*.generated.mjs

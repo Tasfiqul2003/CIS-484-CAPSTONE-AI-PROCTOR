@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import RecordingReview from './RecordingReview';
 import { ArrowLeft, CheckCircle2, LoaderCircle, RefreshCw, Sparkles } from "lucide-react";
 
 type Interaction = {
@@ -229,9 +230,10 @@ export default function StudentReview({
             <div><span>Completed</span><strong>{dateLabel(report.session.ended_at)}</strong></div>
           </section>
 
+          <RecordingReview key={`${sessionId}:${report.session.status}`} sessionId={sessionId} />
           <section className="student-review-section">
             <div className="student-review-section-heading">
-              <div><p className="eyebrow">EXAM EVIDENCE</p><h2>Questions and student answers</h2></div>
+              <div><p className="eyebrow">TYPED ANSWER TRANSCRIPT</p><h2>Questions and student answers</h2></div>
               <span>{report.interactions.length} responses</span>
             </div>
             {report.interactions.length === 0

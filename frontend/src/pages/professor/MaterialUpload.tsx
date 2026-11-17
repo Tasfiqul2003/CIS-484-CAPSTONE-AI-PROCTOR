@@ -1,6 +1,6 @@
 
 import { useEffect, useState } from "react";
-import OralExamMark from "../../components/brand/OralExamMark";
+import ExamManagementLayout from "./ExamManagementLayout";
 import { withTransientSummary } from "../../components/developer-demo/developerDemo";
 
 type Material = {
@@ -214,45 +214,11 @@ export default function MaterialUpload() {
   }
 
   return (
-    <div className="material-upload-page">
-      <header className="simple-header">
-        <div className="logo">
-          <span className="logo-icon" aria-hidden="true"><OralExamMark size={34} /></span>
-          <span>OralExam AI</span>
-        </div>
-        <button
-          type="button"
-          className="dashboard-logout"
-          onClick={async () => {
-            try {
-              await fetch("/api/auth/logout", {
-                method: "POST",
-                credentials: "include",
-              });
-            } finally {
-              window.location.href = "/";
-            }
-          }}
-        >
-          Log Out
-        </button>
-      </header>
-
-      <main className="material-upload-content">
+    <ExamManagementLayout examId={examId ?? ""} section="materials">{() => (
+      <div className="material-upload-content in-manage-layout">
         <div className="material-heading">
-          <button
-            type="button"
-            className="back-to-exam-button"
-            onClick={() => {
-              window.location.href = examId
-                ? `/professor/exams/${examId}`
-                : "/professor/exams";
-            }}
-          >
-            ← Back to Exam
-          </button>
-          <p className="eyebrow">PROFESSOR PORTAL</p>
-          <h1>Course Materials</h1>
+          
+                    <h1>Course Materials</h1>
           <p>
             Upload textbooks, lecture notes, slides, study guides,
             and other course materials.
@@ -420,8 +386,8 @@ export default function MaterialUpload() {
             </section>
           </div>
         )}
-      </main>
-    </div>
+      </div>
+    )}</ExamManagementLayout>
   );
 }
 

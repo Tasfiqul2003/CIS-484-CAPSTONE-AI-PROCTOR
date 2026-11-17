@@ -50,9 +50,32 @@ function useBrowserReducedMotion() {
   return reduced;
 }
 
-export default function StudentAvatarPreview({ settings, onClose }: { settings: Settings; onClose: () => void }) {
+/** `simple` is the Student preview tab: only what a student sees (examiner, a sample question, help buttons). */
+/** The professor's chosen talking avatar (photo and name), when the talking avatar service is running. */
+function useTalkingAvatar(enabled: boolean) {
+  const [avatar, setAvatar] = useState<{ name: string; photo: string } | null>(null);
+  useEffect(() => {
+    if (!enabled) return;
+    let alive = true;
+    fetch("/api/avatar/professor/avatars", { credentials: "include" })
+      .then(response => response.ok ? response.json() : null)
+      .then((data: { enabled?: boolean; selected?: { id: string; name: string } | null } | null) => {
+        if (alive && data?.enabled && data.selected) {
+          setAvatar({ name: data.selected.name, photo: `/api/avatar/professor/avatars/${encodeURIComponent(data.selected.id)}/photo` });
+        }
+      })
+      .catch(() => undefined);
+    return () => { alive = false; };
+  }, [enabled]);
+  return avatar;
+}
+
+export default function StudentAvatarPreview({ settings, onClose, simple = false, mode: examMode }: {
+  settings: Settings; onClose: () => void; simple?: boolean; mode?: Mode;
+}) {
   const heading = useRef<HTMLHeadingElement>(null);
-  const [mode, setMode] = useState<Mode>("practice");
+  const [mode, setMode] = useState<Mode>(examMode ?? "practice");
+  const talking = useTalkingAvatar(simple);
   const [state, setState] = useState<AvatarState>("Idle");
   const [volume, setVolume] = useState(70);
   const [textSize, setTextSize] = useState(16);
@@ -70,7 +93,7 @@ export default function StudentAvatarPreview({ settings, onClose }: { settings: 
   const avatarChoices = [...AVATARS, ...(customAvatar ? [{ id: "custom", label: "Uploaded avatar photo" }] : [])];
   const backgroundChoices = [...BACKGROUNDS, ...(customBackground ? [{ id: "custom", label: "Uploaded background photo" }] : [])];
 
-  useEffect(() => { heading.current?.focus(); }, []);
+  useEffect(() => { if (!simple) heading.current?.focus(); }, [simple]);
 
   // Preferences are local to this mounted preview. They never change the instructor's draft.
   const shownAvatar = settings.student.avatar && settings.student.avatars.includes(avatar) ? avatar : settings.presentation.avatar;
@@ -100,6 +123,48 @@ export default function StudentAvatarPreview({ settings, onClose }: { settings: 
     setCounts({ ...EMPTY_COUNTS });
     setResponse(null);
     setState("Idle");
+  }
+
+  if (simple) {
+    return <div className="avatar-preview-simple">
+      <div className="avatar-preview-simple-head">
+        <div>
+          <h3 id="avatar-student-preview-heading">Student preview</h3>
+          <p className="avatar-help">What a student sees in {mode === "practice" ? "a practice" : "an assessed"} exam with your current settings. Sample question; nothing is recorded.</p>
+        </div>
+        <button type="button" onClick={restartAttempt}>Start over</button>
+      </div>
+      <div className="avatar-preview-simple-body">
+        {talking ? <figure className="avatar-preview-talking">
+          <img src={talking.photo} alt={`${talking.name}, your talking avatar`} />
+          <figcaption>{talking.name}</figcaption>
+        </figure> : <div className={`avatar-stage avatar-background-${shownBackground}`} data-state={state.toLowerCase()}
+          style={shownBackground === "custom" && customBackground ? { backgroundImage: `url("${customBackground}")` } : undefined}>
+          <AIAvatar compact avatar={shownAvatar} customAvatar={customAvatar} background={shownBackground}
+            customBackground={customBackground} state={state} animation={settings.presentation.animation} reducedMotion={reducedMotion} />
+        </div>}
+        <div className="avatar-preview-simple-question">
+          <p className="avatar-kicker">Question 1</p>
+          <p className="avatar-question">{QUESTION}</p>
+          <div className="avatar-preview-simple-help" role="group" aria-label="Help a student can ask for">
+            {ACTIONS.map(action => {
+              const policy = settings.assistance[action.id];
+              const allowed = isAvailable(policy, mode);
+              const remaining = Math.max(0, policy.limit - counts[action.id]);
+              if (!policy.enabled || !allowed) return null;
+              return <button type="button" key={action.id} disabled={remaining === 0} onClick={() => requestAssistance(action.id)}>
+                {action.label} <span>{remaining} left</span>
+              </button>;
+            })}
+          </div>
+          {ACTIONS.every(action => !settings.assistance[action.id].enabled || !isAvailable(settings.assistance[action.id], mode))
+            && <p className="avatar-help">No help options are turned on for this mode.</p>}
+          <div className="avatar-response" role="status" aria-live="polite" aria-atomic="true">
+            {response ? <><strong>{response.label}</strong><p>{response.text}</p></> : <p>Students can also say “repeat the question” or “can you clarify that”.</p>}
+          </div>
+        </div>
+      </div>
+    </div>;
   }
 
   return (

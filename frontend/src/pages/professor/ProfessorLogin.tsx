@@ -63,15 +63,16 @@ export default function ProfessorLogin() {
   return (
     <div className="professor-login-page">
       <header className="simple-header">
-        <div className="logo">
-          <span className="logo-icon" aria-hidden="true"><OralExamMark size={48} /></span>
+        <a className="logo" href="/" aria-label="OralExam AI home">
+          <span className="logo-icon" aria-hidden="true"><OralExamMark size={34} /></span>
           <span>OralExam AI</span>
-        </div>
+        </a>
       </header>
 
       <main className="professor-login-content">
+        <div className="professor-login-split">
         <div className="professor-login-card">
-          <div className="login-icon">◉</div>
+          <div className="login-icon" aria-hidden="true"><OralExamMark size={56} /></div>
 
           <p className="eyebrow">PROFESSOR PORTAL</p>
 
@@ -122,6 +123,18 @@ export default function ProfessorLogin() {
           <a href="/" className="back-home">
             ← Back to Home
           </a>
+        </div>
+        <aside className="professor-login-art" aria-hidden="true">
+          <img className="professor-login-mascot" src="/brand/duke-dog.png" alt="" width="411" height="480" />
+          <p className="professor-login-art-title">Oral exams, made clearer.</p>
+          <p>Build question banks, run AI-assisted oral exams, and review every recording and transcript in one place.</p>
+          <svg className="professor-login-wave" viewBox="0 0 320 80" role="presentation">
+            {Array.from({ length: 32 }, (_, i) => {
+              const h = 12 + Math.round(52 * Math.abs(Math.sin(i * 0.55) * Math.cos(i * 0.21)));
+              return <rect key={i} x={i * 10 + 2} y={40 - h / 2} width="6" height={h} rx="3" />;
+            })}
+          </svg>
+        </aside>
         </div>
       </main>
 

@@ -55,6 +55,11 @@ class FakeDB:
             "record_examination": True,
             "recording_consent_status": "pending",
             "developer_demo": False,
+            "time_limit_minutes": 30,
+            "question_time_limit_minutes": 3,
+            "extended_time_multiplier": 1,
+            "avatar_policy_snapshot": None,
+            "avatar_policy_revision": 0,
         }
         self.student = {
             "name": "Synthetic Student",
@@ -225,6 +230,28 @@ def test_load_and_save_recording_settings(api):
     assert db.template["record_examination"] is False
     assert db.template["generate_transcript"] is True
     assert db.commits == 1
+
+
+def test_template_setting_changes_preserve_existing_session_snapshot(api):
+    client, _, db = api
+    response = client.put(SETTINGS_URL, json={
+        'record_examination': False, 'generate_transcript': False,
+    })
+    assert response.status_code == 200
+    assert db.session['record_examination'] is True
+    assert db.session['recording_consent_status'] == 'pending'
+
+
+def test_consent_deadlines_use_saved_exam_extension_and_question_window():
+    started = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    timing = recording_settings.consent_timing({
+        'started_at': started, 'time_limit_minutes': 30,
+        'extended_time_multiplier': 2, 'question_time_limit_minutes': 3,
+        'avatar_policy_snapshot': None, 'avatar_policy_revision': 0,
+    })
+    assert timing['deadline'] == '2026-01-01T01:00:00+00:00'
+    assert timing['question_deadline'] == '2026-01-01T00:03:00+00:00'
+    assert timing['server_now']
 
 
 @pytest.mark.parametrize("value", [0, 1, "true", None, 1.5])

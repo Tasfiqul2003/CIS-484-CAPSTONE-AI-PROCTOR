@@ -29,6 +29,22 @@ browser mic -> faster-whisper small (speech to text)
   `test_followups.py` (the rest fell back to stock lines). **Memory and timing for the 4B in a full exam are not yet measured.**
 - The default `qwen3:4b` tag is a thinking-only model and writes its reasoning aloud; do not use it here.
 
+## Blackwell (verified)
+
+The stack runs unchanged on Blackwell, so nothing needs rebuilding for a Blackwell box. Checked on a RunPod
+RTX 5090 (32 GB, driver 595.91.07) against the same `/workspace/avatar` folder the Ada pod uses:
+
+| Piece | Result |
+| --- | --- |
+| PyTorch in both conda envs | `2.7.1+cu128`, device capability `(12, 0)`, a matmul runs |
+| FlashHead render worker | Loads, and renders a clip |
+| Chatterbox | Synthesises speech |
+| faster-whisper (CTranslate2, its own CUDA kernels, not PyTorch's) | Transcribes |
+
+What this does **not** establish: the 5090 has 32 GB. On a 16 GB card the stack peaks around 13.8 GB with
+everything resident, so fitting beside another team's job is a separate question. Timings from a 5090 say
+nothing about a 70 W card either.
+
 ## Not done / known limits
 
 - No login or access control: anyone who can reach the page can add or delete a professor.

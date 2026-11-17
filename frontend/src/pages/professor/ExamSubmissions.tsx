@@ -8,7 +8,7 @@ import {
   RefreshCw,
   Users,
 } from "lucide-react";
-import OralExamMark from "../../components/brand/OralExamMark";
+import ProfessorHeader from "../../components/professor/ProfessorHeader";
 
 type StudentProgress = {
   student_id: string;
@@ -82,6 +82,22 @@ export default function ExamSubmissions() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
+  // The summary boxes filter the table.
+  const [filter, setFilter] = useState<"all" | "not_started" | "in_progress" | "awaiting" | "photo">("all");
+  // Which exam this is, for the page heading.
+  const [exam, setExam] = useState<{ title: string; course: string | null } | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/auth/professor/exams", { credentials: "include" })
+      .then(response => response.ok ? response.json() : [])
+      .then((list: Array<{ id: string; title: string; course?: string | null }>) => {
+        const found = Array.isArray(list) ? list.find(item => item.id === examId) : undefined;
+        if (alive && found) setExam({ title: found.title, course: found.course ?? null });
+      })
+      .catch(() => undefined);
+    return () => { alive = false; };
+  }, [examId]);
 
   const loadProgress = useCallback(async (manual = false) => {
     if (!examId) {
@@ -142,6 +158,12 @@ export default function ExamSubmissions() {
     void loadProgress();
   }, [loadProgress]);
 
+  const visible = students.filter(student => filter === "all" ? true
+    : filter === "not_started" ? !student.session_id || !student.status
+    : filter === "in_progress" ? student.status === "in_progress"
+    : filter === "awaiting" ? student.status === "pending_grading" && !student.developer_demo
+    : student.identity_review_required === true || student.face_check_help_required === true);
+
   const counts = {
     demos: students.filter(student => student.developer_demo === true).length,
     total: students.length,
@@ -167,32 +189,19 @@ export default function ExamSubmissions() {
   };
 
   return (
-    <div className="professor-dashboard">
-      <header className="dashboard-header">
-        <a
-          href="/professor/dashboard"
-          className="dashboard-brand"
-          aria-label="Return to professor dashboard"
-        >
-          <OralExamMark />
-          <span>OralExam AI</span>
-        </a>
-
-        <a href="/professor/dashboard" className="progress-back-link">
-          <ArrowLeft size={16} aria-hidden="true" />
-          Dashboard
-        </a>
-      </header>
+    <div className="professor-dashboard professor-progress-page">
+      <ProfessorHeader title="Student progress" />
 
       <main className="dashboard-main">
-        <section className="dashboard-welcome">
+        <a href="/professor/exams" className="back-to-exam-button progress-back-row">
+          <ArrowLeft size={16} aria-hidden="true" />
+          Back to My Exams
+        </a>
+        <section className="dashboard-welcome progress-heading">
           <div>
-            <p className="eyebrow">EXAM MANAGEMENT</p>
-            <h1>Student Progress</h1>
-            <p>
-              Monitor roster participation and review each student&apos;s
-              latest examination status.
-            </p>
+            {exam?.course && <p className="progress-heading-course">{exam.course}</p>}
+            <h1>{exam?.title || "Student Progress"}</h1>
+            <p>Who has taken this exam, who is still working, and which attempts are ready for you to review.</p>
           </div>
 
           <button
@@ -231,45 +240,51 @@ export default function ExamSubmissions() {
         </aside>}
 
         <section className="progress-summary" aria-label="Exam progress summary">
-          <article className="progress-summary-card">
+          <button type="button" className="progress-summary-card" aria-pressed={filter === "all"}
+            onClick={() => setFilter("all")}>
             <Users size={20} aria-hidden="true" />
-            <span>Rostered students</span>
+            <span>All students</span>
             <strong>{loading ? "—" : counts.total}</strong>
-          </article>
+          </button>
 
-          <article className="progress-summary-card">
+          <button type="button" className="progress-summary-card" aria-pressed={filter === "not_started"}
+            onClick={() => setFilter("not_started")}>
             <Clock3 size={20} aria-hidden="true" />
             <span>Not started</span>
             <strong>{loading ? "—" : counts.notStarted}</strong>
-          </article>
+          </button>
 
-          <article className="progress-summary-card">
+          <button type="button" className="progress-summary-card" aria-pressed={filter === "in_progress"}
+            onClick={() => setFilter("in_progress")}>
             <LoaderCircle size={20} aria-hidden="true" />
             <span>In progress</span>
             <strong>{loading ? "—" : counts.inProgress}</strong>
-          </article>
+          </button>
 
-          <article className="progress-summary-card">
+          <button type="button" className="progress-summary-card" aria-pressed={filter === "awaiting"}
+            onClick={() => setFilter("awaiting")}>
             <GraduationCap size={20} aria-hidden="true" />
             <span>Awaiting review</span>
             <strong>{loading ? "—" : counts.awaitingReview}</strong>
-          </article>
-          <article className="progress-summary-card">
+          </button>
+          <button type="button" className="progress-summary-card" aria-pressed={filter === "photo"}
+            onClick={() => setFilter("photo")}>
             <AlertCircle size={20} aria-hidden="true" />
             <span>Photo check exceptions</span>
             <strong>{loading ? "—" : counts.identityReview}</strong>
-          </article>
+          </button>
         </section>
 
         <section className="progress-table-section">
           <div className="dashboard-section-heading">
             <div>
-              <p className="eyebrow">ROSTER</p>
-              <h2>Student examination status</h2>
+              <h2>{{ all: "All students", not_started: "Not started", in_progress: "In progress",
+                awaiting: "Awaiting review", photo: "Photo check exceptions" }[filter]}</h2>
             </div>
             {!loading && (
               <span className="progress-count">
-                {students.length} student{students.length === 1 ? "" : "s"}
+                {visible.length} of {students.length} student{students.length === 1 ? "" : "s"}
+                {filter !== "all" && <button type="button" className="progress-filter-clear" onClick={() => setFilter("all")}>Show all</button>}
               </span>
             )}
           </div>
@@ -300,16 +315,11 @@ export default function ExamSubmissions() {
                   </tr>
                 </thead>
                 <tbody>
-                  {students.map((student) => (
+                  {visible.length === 0 && <tr><td colSpan={7} className="progress-table-empty">No students in this group.</td></tr>}
+                  {visible.map((student) => (
                     <tr key={student.student_id}>
                       <td>
                         <div className="progress-student-name">
-                          <span className="progress-student-avatar">
-                            {(student.student_name || "?")
-                              .trim()
-                              .charAt(0)
-                              .toUpperCase()}
-                          </span>
                           <div>
                             <strong>{student.student_name || "Unnamed student"}</strong>
                             <span>{student.email}</span>

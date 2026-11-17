@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { CheckCircle2, Clock, ListChecks, LogOut, Timer } from "lucide-react";
 import OralExamMark from "../../components/brand/OralExamMark";
 
 type Student = {
@@ -15,7 +16,16 @@ type AssignedExam = {
   icon: string | null;
   time_limit_minutes: number | null;
   status: string;
+  question_count?: number;
+  extended_time_multiplier?: number;
+  completed_at?: string | null;
 };
+
+function formatCompleted(value: string) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value
+    : date.toLocaleString(undefined, { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" });
+}
 
 type LookupResponse = {
   student: Student;
@@ -111,7 +121,7 @@ export default function StudentExams() {
     }
   }
 
-  function changeStudent() {
+  function logOut() {
     for (const key of [
       "oralexam_student_eid",
       "oralexam_student_id",
@@ -121,8 +131,11 @@ export default function StudentExams() {
       "oralexam_exam_session_token",
       "oralexam_developer_demo",
     ]) sessionStorage.removeItem(key);
-    window.location.href = "/student/verification";
+    window.location.href = "/";
   }
+
+  const openExams = exams.filter(exam => !exam.completed_at);
+  const completedExams = exams.filter(exam => exam.completed_at);
 
   return (
     <div className="student-exams-page">
@@ -147,64 +160,77 @@ export default function StudentExams() {
         ) : error && !student ? (
           <section className="exam-card">
             <p className="exam-error" role="alert">{error}</p>
-            <button type="button" className="back-button" onClick={changeStudent}>Restart Verification</button>
+            <button type="button" className="back-button" onClick={logOut}>Start over</button>
           </section>
         ) : (
           <>
-            {student && (
-              <section className="exam-card">
-                <p className="eyebrow">STUDENT RECORD MATCHED</p>
-                <h2>Welcome, {student.name}</h2>
-                <p>EID · {student.eid}</p>
-                <button type="button" className="back-button" onClick={changeStudent}>
-                  Switch student
+            <section className="student-exams-panel" aria-label="Your assigned exams">
+              {student && <header className="student-exams-panel-header">
+                <div>
+                  <p className="eyebrow">Signed in</p>
+                  <h2>Welcome, {student.name}</h2>
+                  <p>EID · {student.eid}</p>
+                </div>
+                <button type="button" className="student-logout-button" onClick={logOut}>
+                  <LogOut size={18} aria-hidden="true" />Log out
                 </button>
-              </section>
-            )}
+              </header>}
 
-            {error && <p className="exam-error" role="alert">{error}</p>}
-            {error === "Complete the student photo check before starting this exam." && (
-              <button
-                type="button"
-                className="continue-button"
-                onClick={() => { window.location.href = "/student/face-verification"; }}
-              >
-                Repeat Photo Check
-              </button>
-            )}
+              {error && <p className="exam-error" role="alert">{error}</p>}
+              {error === "Complete the student photo check before starting this exam." && (
+                <button
+                  type="button"
+                  className="continue-button"
+                  onClick={() => { window.location.href = "/student/face-verification"; }}
+                >
+                  Repeat Photo Check
+                </button>
+              )}
 
-            <div className="exam-list" aria-label="Available exams">
-              {exams.length === 0 ? (
-                <section className="exam-card">
-                  <h2>No exams yet</h2>
-                  <p>Ask your instructor if you expected one.</p>
-                </section>
-              ) : exams.map((exam) => (
-                <article className="exam-card" key={exam.id}>
-                  <div className="exam-card-top">
-                    <div className="exam-icon">{exam.icon || "🎓"}</div>
-                    <div>
-                      <span className="exam-status">Available</span>
-                      <h2>{exam.title}</h2>
+              <div className="exam-list" aria-label="Available exams">
+                {openExams.length === 0 ? (
+                  <div className="student-exams-empty">
+                    <h3>No exams available</h3>
+                    <p>{completedExams.length ? "You have completed every exam assigned to you." : "Ask your instructor if you expected one."}</p>
+                  </div>
+                ) : openExams.map((exam) => (
+                  <article className="student-exam-item" key={exam.id}>
+                    <div className="student-exam-item-main">
+                      <div className="exam-icon" aria-hidden="true">{exam.icon || "🎓"}</div>
+                      <div>
+                        {exam.course && <p className="student-exam-item-course">{exam.course}</p>}
+                        <h3>{exam.title}</h3>
+                        {exam.description && <p className="student-exam-item-description">{exam.description}</p>}
+                        <ul className="student-exam-item-facts">
+                          {exam.question_count != null && exam.question_count > 0 && <li><ListChecks size={16} aria-hidden="true" />{exam.question_count} question{exam.question_count === 1 ? "" : "s"} (plus follow-ups)</li>}
+                          <li><Clock size={16} aria-hidden="true" />{exam.time_limit_minutes != null ? `${Math.round(exam.time_limit_minutes)} minutes` : "No time limit"}</li>
+                          {exam.extended_time_multiplier != null && exam.extended_time_multiplier > 1 && <li><Timer size={16} aria-hidden="true" />Extended time ({exam.extended_time_multiplier}×) applied</li>}
+                        </ul>
+                      </div>
                     </div>
-                  </div>
-                  <div className="exam-details">
-                    {exam.course && <span>{exam.course}</span>}
-                    {exam.course && exam.time_limit_minutes != null && <span aria-hidden="true">·</span>}
-                    {exam.time_limit_minutes != null && <span>{exam.time_limit_minutes} minutes</span>}
-                  </div>
-                  {exam.description && <p>{exam.description}</p>}
-                  <button
-                    type="button"
-                    className="exam-start-button"
-                    disabled={!!startingExam}
-                    onClick={() => void startExam(exam)}
-                  >
-                    {startingExam === exam.id ? "Checking authorization..." : "Start Exam →"}
-                  </button>
-                </article>
-              ))}
-            </div>
+                    <button
+                      type="button"
+                      className="exam-start-button"
+                      disabled={!!startingExam}
+                      onClick={() => void startExam(exam)}
+                    >
+                      {startingExam === exam.id ? "Checking authorization..." : "Start Exam →"}
+                    </button>
+                  </article>
+                ))}
+              </div>
+
+              {completedExams.length > 0 && <div className="student-exams-completed">
+                <h3>Completed</h3>
+                <ul>
+                  {completedExams.map(exam => <li key={exam.id}>
+                    <CheckCircle2 size={18} aria-hidden="true" />
+                    <span><strong>{exam.title}</strong>{exam.course ? ` · ${exam.course}` : ""}</span>
+                    <span className="student-exams-completed-time">Completed {formatCompleted(exam.completed_at!)}</span>
+                  </li>)}
+                </ul>
+              </div>}
+            </section>
           </>
         )}
       </main>

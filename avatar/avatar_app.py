@@ -11,6 +11,7 @@ and timings go to /workspace/sessions/.
 """
 import datetime
 import hashlib
+import hmac
 import io
 import json
 import os
@@ -46,6 +47,7 @@ MEDIA = os.path.join(WORK, "avatar_media")
 SESSIONS = os.path.join(WORK, "sessions")
 PROFILES = os.path.join(WORK, "profiles")       # one folder per professor: photo.jpg, voice.wav, profile.json, lines.json
 ACTIVE_FILE = os.path.join(PROFILES, "active.txt")
+SELECTIONS_FILE = os.path.join(PROFILES, "selections.json")   # exam-app professor id -> the avatar their exams use
 os.makedirs(MEDIA, exist_ok=True)
 os.makedirs(PROFILES, exist_ok=True)
 os.makedirs(SESSIONS, exist_ok=True)
@@ -104,6 +106,46 @@ MODELS_READY = threading.Event()
 PREP_LOCK = threading.Lock()
 CACHE = {}                        # sentence -> clip dict, for the fixed lines of the script
 TTS_LOCK = threading.Lock()
+CACHE_LOCK = threading.Lock()
+# Exam questions rendered ahead of time: (profile id, sentence) pairs, done one at a time between live requests.
+PRERENDER = queue.Queue()
+PRERENDER_SEEN = set()
+LIVE = {"speaking": 0}            # live speak requests in flight; advance rendering waits for these
+# One line per step (speech-to-text, voice, video, model call), with GPU memory in use. No student words are written.
+TIMING_LOG = os.environ.get("TIMING_LOG") or os.path.join(WORK, "logs", "timings.csv")
+TIMING_LOCK = threading.Lock()
+_GPU = {"at": 0.0, "value": ("", "")}
+
+
+def gpu_memory():
+    """(used MiB, total MiB) for the whole GPU from nvidia-smi, or blanks. Read at most once a second."""
+    if time.time() - _GPU["at"] > 1:
+        try:
+            out = subprocess.run(["nvidia-smi", "--query-gpu=memory.used,memory.total", "--format=csv,noheader,nounits"],
+                                 capture_output=True, text=True, timeout=3).stdout.strip().splitlines()[0]
+            used, total = [part.strip() for part in out.split(",")[:2]]
+            _GPU["value"] = (used, total)
+        except Exception:
+            _GPU["value"] = ("", "")
+        _GPU["at"] = time.time()
+    return _GPU["value"]
+
+
+def log_timing(component, seconds, detail=""):
+    """Append one row to the timing log: when, which step, how long, GPU memory in use, and a short note."""
+    try:
+        used, total = gpu_memory()
+        note = " ".join(str(detail).split())[:80].replace('"', "'")
+        row = f'{datetime.datetime.now().isoformat(timespec="seconds")},avatar,{component},{seconds:.2f},{used},{total},"{note}"\n'
+        with TIMING_LOCK:
+            os.makedirs(os.path.dirname(TIMING_LOG), exist_ok=True)
+            new = not os.path.exists(TIMING_LOG)
+            with open(TIMING_LOG, "a") as f:
+                if new:
+                    f.write("time,service,component,seconds,gpu_used_mib,gpu_total_mib,detail\n")
+                f.write(row)
+    except Exception as e:                      # the log must never break an exam
+        print(f"[timing] {type(e).__name__}: {e}", flush=True)
 SESSION = {"id": None, "stage": 0, "followups": 0, "asked": "", "exchange": [], "log": []}
 whisper = None
 tts = None
@@ -130,11 +172,13 @@ def synth(sentence):
         sf.write(path, (0.1 * np.sin(2 * np.pi * 220 * t)).astype("float32"), 16000)
         return path, 1.5
     import librosa
+    t = time.perf_counter()
     with TTS_LOCK:
         wav = tts.generate(sentence, audio_prompt_path=ACTIVE["ref"], exaggeration=0.4, cfg_weight=0.5)
     a = wav.squeeze().cpu().numpy()
     a16 = librosa.resample(a, orig_sr=tts.sr, target_sr=16000)
     sf.write(path, a16, 16000)
+    log_timing("voice (Chatterbox)", time.perf_counter() - t, f"{len(a16) / 16000:.1f} s of speech: {sentence}")
     return path, len(a16) / 16000
 
 
@@ -151,18 +195,175 @@ def render(sentence, wav_path, seconds, name=None):
         r = requests.post(f"{RENDER_URL}/render", json={"audio": wav_path, "out": out, "image": ACTIVE["image"]}, timeout=600)
         r.raise_for_status()
     os.remove(wav_path)
+    log_timing("video (FlashHead)", time.perf_counter() - t, f"{seconds:.1f} s of speech: {sentence}")
     return {"url": "/media/" + name, "text": sentence, "audio_s": round(seconds, 1),
             "render_s": round(time.perf_counter() - t, 2)}
+
+
+# Clips worth keeping: the lines made ahead of time and the idle loop are reused every exam.
+KEEP_PREFIXES = ("pre_", "idle_")
+# Everything else (a follow-up, an assistance reply, a preview) is played once. It is the professor's
+# face and voice, so it is not kept on disk any longer than a running exam could still ask for it.
+MEDIA_TTL_S = max(5.0, float(os.environ.get("MEDIA_TTL_MINUTES", "60"))) * 60
+SWEEP_EVERY_S = 600
+
+
+def sweep_media():
+    """Delete one-off clips and any stray working files. Returns (files removed, bytes freed)."""
+    cutoff = time.time() - MEDIA_TTL_S
+    keep = {str(c.get("url", "")).rsplit("/", 1)[-1] for c in CACHE.values()}
+    removed = freed = 0
+    try:
+        names = os.listdir(MEDIA)
+    except OSError:
+        return 0, 0
+    for name in names:
+        if name in keep or name.startswith(KEEP_PREFIXES):
+            continue
+        path = os.path.join(MEDIA, name)
+        try:
+            info = os.stat(path)
+            if info.st_mtime < cutoff:
+                os.remove(path)
+                removed += 1
+                freed += info.st_size
+        except OSError:
+            pass                                 # a clip being written, or already gone
+    if removed:
+        log_timing("old clips removed", 0, f"{removed} files, {freed / 1e6:.1f} MB")
+    return removed, freed
+
+
+def media_janitor():
+    while True:
+        time.sleep(SWEEP_EVERY_S)
+        try:
+            sweep_media()
+        except Exception as e:
+            print(f"[sweep] {type(e).__name__}: {e}", flush=True)
+
+
+# A long loop, because anything the model does once (a small mouth movement) reads as a tic when it comes
+# round every few seconds. The first moment is dropped: FlashHead settles over the opening frames.
+IDLE_SECONDS = max(4.0, float(os.environ.get("IDLE_SECONDS", "14")))
+IDLE_TRIM_S = max(0.0, float(os.environ.get("IDLE_TRIM_SECONDS", "1.5")))
+
+
+def clip_seconds(path):
+    """Length of a video file, or 0.0 when ffprobe cannot read it."""
+    try:
+        out = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration",
+                              "-of", "default=nw=1:nk=1", path], capture_output=True, text=True, timeout=20)
+        return float(out.stdout.strip())
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return 0.0
+
+
+def idle_clip():
+    """A short clip of the active professor saying nothing, looped while the examiner waits.
+
+    FlashHead is driven by audio, so silence gives a closed mouth with the model's own small head and
+    eye movement. Rendered once per profile and kept on disk beside the spoken lines.
+    """
+    pid = ACTIVE.get("id")
+    if not pid:
+        return None
+    kept = round(IDLE_SECONDS - IDLE_TRIM_S, 1)
+    # The length is in the name, so changing it makes a new clip instead of reusing the old one.
+    name = f"idle_{pid}_{kept:g}s.mp4"
+    out = os.path.join(MEDIA, name)
+    if os.path.exists(out):
+        return {"url": "/media/" + name, "seconds": kept}
+    wav = os.path.join(MEDIA, f"idlesrc_{pid}.wav")
+    raw = os.path.join(MEDIA, f"idlesrc_{pid}.mp4")
+    t = time.perf_counter()
+    try:
+        sf.write(wav, np.zeros(int(16000 * IDLE_SECONDS), dtype="float32"), 16000)
+        render("(idle)", wav, IDLE_SECONDS, name=os.path.basename(raw))   # removes the wav
+        # Drop the opening and the silent audio track; the browser plays this muted and on a loop.
+        r = subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-ss", f"{IDLE_TRIM_S}", "-i", raw,
+                            "-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+                            "-movflags", "+faststart", out], capture_output=True, text=True)
+        # A render shorter than the trim leaves nothing behind, so keep the whole clip instead.
+        if r.returncode != 0 or clip_seconds(out) < 1.0:
+            shutil.copyfile(raw, out)
+            if clip_seconds(out) < 0.2:
+                raise RuntimeError(r.stderr.strip()[:200] or "the idle clip could not be made")
+    except Exception as e:
+        print(f"[idle] {type(e).__name__}: {e}", flush=True)
+        for leftover in (wav, raw, out):
+            if os.path.exists(leftover):
+                os.remove(leftover)
+        return None
+    finally:
+        if os.path.exists(raw):
+            os.remove(raw)
+    for old in os.listdir(MEDIA):                # only the current length is worth keeping
+        if old.startswith(f"idle_{pid}_") and old != name:
+            os.remove(os.path.join(MEDIA, old))
+    actual = round(clip_seconds(out), 1) or kept
+    log_timing("idle loop made", time.perf_counter() - t, f"{actual:g} s loop, {IDLE_TRIM_S:g} s trimmed")
+    return {"url": "/media/" + name, "seconds": actual}
 
 
 def clip_for(sentence):
     """Pre-render one fixed line for the active professor; the clip and an index are kept on disk across restarts."""
     if sentence not in CACHE:
         name = f"pre_{ACTIVE['id']}_{hashlib.sha1(sentence.encode()).hexdigest()[:10]}.mp4"
-        CACHE[sentence] = render(sentence, *synth(sentence), name=name)
-        with open(os.path.join(pdir(ACTIVE["id"]), "lines.json"), "w") as f:
-            json.dump(CACHE, f)
+        clip = render(sentence, *synth(sentence), name=name)
+        with CACHE_LOCK:
+            CACHE[sentence] = clip
+            with open(os.path.join(pdir(ACTIVE["id"]), "lines.json"), "w") as f:
+                json.dump(CACHE, f)
     return CACHE[sentence]
+
+
+IDLE_MARKER = "\x00idle"   # not a sentence: tells the background worker to make the idle loop
+
+
+def queue_prerender(pid, lines):
+    """Queue sentences to render ahead of time for this profile. Returns (queued, already made)."""
+    queued = made = 0
+    if (pid, IDLE_MARKER) not in PRERENDER_SEEN:
+        PRERENDER_SEEN.add((pid, IDLE_MARKER))
+        PRERENDER.put((pid, IDLE_MARKER))
+    for line in lines:
+        for sentence in split_sentences(" ".join(str(line).split())[:MAX_SPEAK_CHARS]):
+            if ACTIVE["id"] == pid and sentence in CACHE:
+                made += 1
+            elif (pid, sentence) not in PRERENDER_SEEN and len(PRERENDER_SEEN) < 2000:
+                PRERENDER_SEEN.add((pid, sentence))
+                PRERENDER.put((pid, sentence))
+                queued += 1
+    return queued, made
+
+
+def prerender_worker():
+    """Render queued sentences one at a time while no student is waiting on a live clip."""
+    while True:
+        pid, sentence = PRERENDER.get()
+        key, waited = (pid, sentence), 0.0
+        while not (STATE["ready"] and ACTIVE["id"] == pid and LIVE["speaking"] == 0):
+            loading = (STATE.get("profile") or {}).get("id") == pid and not STATE.get("build_error")
+            if (not loading and waited >= 10) or waited > 900:     # another avatar took over, or it never loaded
+                pid = None
+                break
+            time.sleep(0.5)
+            waited += 0.5
+        if pid is not None:
+            try:
+                with PREP_LOCK:
+                    if ACTIVE["id"] != pid:
+                        pass
+                    elif sentence == IDLE_MARKER:
+                        idle_clip()
+                    elif sentence not in CACHE:
+                        t = time.perf_counter()
+                        clip_for(sentence)
+                        log_timing("made ahead of time", time.perf_counter() - t, sentence)
+            except Exception as e:
+                print(f"[prerender] {type(e).__name__}: {e}", flush=True)
+        PRERENDER_SEEN.discard(key)
 
 
 def transcribe(data):
@@ -181,8 +382,11 @@ def transcribe(data):
         if r.returncode != 0:                      # bad or truncated recording: ask the student to repeat
             print(f"[transcribe] ffmpeg failed on {len(data)} bytes: {r.stderr.strip()[:300]}", flush=True)
             return ""
+        t = time.perf_counter()
         segs, _ = whisper.transcribe(wav, language="en", vad_filter=True)
-        return " ".join(s.text.strip() for s in segs).strip()
+        heard = " ".join(s.text.strip() for s in segs).strip()
+        log_timing("speech-to-text (Whisper)", time.perf_counter() - t, f"{len(heard.split())} words heard")
+        return heard
     finally:                                   # student audio is never kept
         for p in (src, wav):
             if os.path.exists(p):
@@ -316,15 +520,18 @@ def list_profiles():
     return sorted(out, key=lambda p: p["name"].lower())
 
 
-def create_profile(name):
+def create_profile(name, owner=None):
     name = " ".join(str(name or "").split())[:60]
     if not name:
         raise ValueError("Enter the professor's name.")
     pid = (re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")[:24] or "professor") + "-" + uuid.uuid4().hex[:4]
     os.makedirs(pdir(pid))
     now = datetime.datetime.now().isoformat(timespec="seconds")
-    write_meta(pid, {"id": pid, "name": name, "created": now,
-                     "consent": {"given": True, "at": now, "statement": CONSENT_TEXT}})
+    meta = {"id": pid, "name": name, "created": now,
+            "consent": {"given": True, "at": now, "statement": CONSENT_TEXT}}
+    if owner:
+        meta["owner"] = str(owner)[:64]   # the exam app's professor id; the exam backend checks it
+    write_meta(pid, meta)
     return pid
 
 
@@ -376,8 +583,27 @@ def process_voice(pid, data):
             os.remove(src)
 
 
+def read_selections():
+    try:
+        with open(SELECTIONS_FILE) as f:
+            data = json.load(f)
+        return {str(k): str(v) for k, v in data.items() if ID_RE.fullmatch(str(v))} if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def write_selections(selections):
+    tmp = SELECTIONS_FILE + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(selections, f, indent=2)
+    os.replace(tmp, SELECTIONS_FILE)
+
+
 def delete_profile(pid):
     d = pdir(pid)
+    selections = read_selections()
+    if pid in selections.values():
+        write_selections({k: v for k, v in selections.items() if v != pid})
     shutil.rmtree(d, ignore_errors=True)
     for name in os.listdir(MEDIA):
         if name.startswith(f"pre_{pid}_"):
@@ -397,10 +623,12 @@ def fixed_lines():
     return list(dict.fromkeys(fixed))
 
 
-def activate_profile(pid):
-    """Make this professor the one the exam uses and pre-render the fixed lines (clips saved from earlier runs are reused)."""
+def activate_profile(pid, lines=None):
+    """Make this professor the one the exam uses and pre-render the fixed lines (clips saved from earlier runs are reused).
+    The exam app passes one short warm-up line: its questions come from the exam, not from this prototype's script."""
     with PREP_LOCK:
         MODELS_READY.wait()
+        started = time.perf_counter()
         try:
             meta, d = read_meta(pid), pdir(pid)
             STATE.update(ready=False, error=None, build_error=None, profile={"id": pid, "name": meta["name"]},
@@ -415,13 +643,14 @@ def activate_profile(pid):
             for sent, clip in saved.items():
                 if os.path.exists(os.path.join(MEDIA, clip["url"].split("/")[-1])):
                     CACHE[sent] = clip
-            fixed = fixed_lines()
+            fixed = fixed_lines() if lines is None else lines
             for i, sent in enumerate(fixed, 1):
                 STATE["progress"] = f"Preparing the avatar's lines ({i}/{len(fixed)})"
                 clip_for(sent)
             with open(ACTIVE_FILE, "w") as f:
                 f.write(pid)
             STATE.update(ready=True, progress="Ready")
+            log_timing("avatar loaded", time.perf_counter() - started, f"{len(CACHE)} clips ready")
         except Exception as e:
             ACTIVE.update(id=None, name="", image=None, ref=None)
             CACHE.clear()
@@ -451,7 +680,8 @@ def load_models():
             from faster_whisper import WhisperModel
             from chatterbox.tts import ChatterboxTTS
             STATE["progress"] = "Loading speech recognition"
-            whisper = WhisperModel("small", device="cuda", compute_type="float16")
+            dev = os.environ.get("WHISPER_DEVICE", "cuda")   # "cpu" frees about 1 GB of GPU memory on a 16 GB card
+            whisper = WhisperModel("small", device=dev, compute_type="float16" if dev == "cuda" else "int8")
             STATE["progress"] = "Loading the voice"
             tts = ChatterboxTTS.from_pretrained(device="cuda")
             STATE["progress"] = "Loading the language model"
@@ -480,7 +710,9 @@ def startup():
         STATE["build_error"] = f"Could not load the saved profiles: {type(e).__name__}: {e}"
         pid = None
     if pid:
-        activate_profile(pid)
+        # An avatar made in the exam app speaks exam questions, not this prototype's script: warm up one line only.
+        from_exam_app = bool(read_meta(pid).get("owner"))
+        activate_profile(pid, split_sentences(SERVICE_WARMUP_LINE) if from_exam_app else None)
     else:
         STATE["progress"] = "Add a professor to begin"
 
@@ -514,6 +746,7 @@ def pipeline_events(sentences, t0, acc=None):
                     raise item
                 s, cached, wav = item
                 if cached is not None:
+                    log_timing("clip made ahead of time", 0, s)
                     q_out.put(cached)
                 else:
                     clip = render(s, *wav)
@@ -575,7 +808,7 @@ def start_events():
         SESSION.pop(k, None)
     keep = {c["url"].split("/")[-1] for c in CACHE.values()}
     for name in os.listdir(MEDIA):               # drop clips from earlier sessions
-        if name.endswith(".mp4") and name not in keep and not name.startswith("pre_"):
+        if name.endswith(".mp4") and name not in keep and not name.startswith(KEEP_PREFIXES):
             os.remove(os.path.join(MEDIA, name))
     t0 = time.perf_counter()
     yield from pipeline_events(split_sentences(GREETING) + split_sentences(QUESTIONS[0][1]), t0)
@@ -653,6 +886,9 @@ def ndjson(gen):
 @asynccontextmanager
 async def lifespan(_app):
     threading.Thread(target=startup, daemon=True).start()
+    threading.Thread(target=prerender_worker, daemon=True).start()
+    threading.Thread(target=media_janitor, daemon=True).start()
+    sweep_media()                                # clear whatever an earlier run left behind
     yield
 
 
@@ -755,6 +991,231 @@ def media(name: str):
     if not re.fullmatch(r"[A-Za-z0-9_.-]+\.mp4", name) or not os.path.exists(path):
         return JSONResponse({"error": "not found"}, status_code=404)
     return FileResponse(path, media_type="video/mp4")
+
+
+# ---------------- service API for the exam backend ----------------
+# The exam app's backend calls these on behalf of a signed-in student; browsers never call them directly.
+SERVICE_TOKEN = os.environ.get("AVATAR_SERVICE_TOKEN", "")
+MAX_SPEAK_CHARS = 1500
+
+
+def service_ok(request):
+    sent = request.headers.get("x-avatar-token", "")
+    return bool(SERVICE_TOKEN) and hmac.compare_digest(sent.encode(), SERVICE_TOKEN.encode())
+
+
+def avatar_ready():
+    return MODELS_READY.is_set() and bool(STATE.get("ready")) and bool(ACTIVE.get("image"))
+
+
+@app.get("/service/status")
+def service_status(request: Request):
+    if not service_ok(request):
+        return bad("Unauthorized.", 401)
+    return JSONResponse({"ready": avatar_ready(), "models_loaded": MODELS_READY.is_set(),
+                         "progress": STATE.get("progress"), "error": STATE.get("error"),
+                         "build_error": STATE.get("build_error"), "profile": STATE.get("profile")})
+
+
+@app.post("/service/speak")
+async def service_speak(request: Request):
+    """Text -> NDJSON stream of clip events, one per sentence, in the active professor's voice and face."""
+    if not service_ok(request):
+        return bad("Unauthorized.", 401)
+    try:
+        body = await request.json()
+    except Exception:
+        return bad("Bad request.")
+    # "segments" are spoken in order but split separately, so a short reaction ("I see.") keeps its own clip.
+    segments = body.get("segments") if isinstance(body.get("segments"), list) else [body.get("text")]
+    sentences = []
+    for segment in segments[:6]:
+        sentences += split_sentences(" ".join(str(segment or "").split())[:MAX_SPEAK_CHARS])
+    if not sentences:
+        return bad("Nothing to say.")
+    if not avatar_ready():
+        return bad("The avatar is not ready yet.", 503)
+
+    def events():
+        t0, first = time.perf_counter(), None
+        LIVE["speaking"] += 1
+        try:
+            for ev in pipeline_events(sentences, t0):
+                if ev.get("type") == "clip" and first is None:
+                    first = time.perf_counter() - t0
+                    log_timing("wait until the examiner starts", first, sentences[0])
+                yield ev
+        finally:
+            LIVE["speaking"] -= 1
+            log_timing("whole spoken turn", time.perf_counter() - t0, f"{len(sentences)} sentence(s)")
+
+    return StreamingResponse(ndjson(events()), media_type="application/x-ndjson")
+
+
+@app.get("/service/idle")
+async def service_idle(request: Request):
+    """The active professor's idle loop, made on demand if the background worker has not reached it."""
+    if not service_ok(request):
+        return bad("Unauthorized.", 401)
+    if not avatar_ready():
+        return bad("The avatar is not ready yet.", 503)
+    clip = await run_in_threadpool(idle_clip)
+    if not clip:
+        return bad("No idle clip.", 404)
+    return JSONResponse(clip)
+
+
+@app.post("/service/prerender")
+async def service_prerender(request: Request):
+    """Render these lines ahead of time for a profile ({"profile": pid, "lines": [...]}), in the background."""
+    if not service_ok(request):
+        return bad("Unauthorized.", 401)
+    try:
+        body = await request.json()
+        pid = str(body.get("profile") or "")
+        read_meta(pid)
+    except Exception:
+        return bad("Unknown profile.", 404)
+    lines = body.get("lines") if isinstance(body.get("lines"), list) else []
+    queued, made = queue_prerender(pid, lines[:300])
+    return JSONResponse({"queued": queued, "ready": made})
+
+
+SERVICE_WARMUP_LINE = "Hello. I will be your examiner today."
+
+
+def service_profile(pid):
+    meta = read_meta(pid)
+    return {"id": pid, "name": meta.get("name", pid), "owner": meta.get("owner"),
+            "created": meta.get("created"), "complete": is_complete(pid),
+            "consent_recorded": bool((meta.get("consent") or {}).get("given")),
+            "active": ACTIVE.get("id") == pid}
+
+
+@app.get("/service/profiles")
+def service_profiles(request: Request):
+    if not service_ok(request):
+        return bad("Unauthorized.", 401)
+    return JSONResponse({"profiles": [service_profile(p["id"]) for p in list_profiles()],
+                         "active": ACTIVE.get("id"), "consent_text": CONSENT_TEXT,
+                         "selections": read_selections()})
+
+
+@app.post("/service/selections")
+async def service_select(request: Request):
+    """Record which avatar a professor's exams use ({"owner": ..., "id": pid or null}). Loading it is separate."""
+    if not service_ok(request):
+        return bad("Unauthorized.", 401)
+    try:
+        body = await request.json()
+    except Exception:
+        return bad("Bad request.")
+    owner = str(body.get("owner") or "")[:64]
+    pid = body.get("id")
+    if not owner:
+        return bad("Missing owner.")
+    selections = read_selections()
+    if pid is None:
+        selections.pop(owner, None)
+    else:
+        try:
+            if not is_complete(str(pid)):
+                return bad("This avatar needs both a photo and a voice sample.")
+        except ValueError:
+            return bad("Unknown profile.", 404)
+        selections[owner] = str(pid)
+    write_selections(selections)
+    return JSONResponse({"ok": True})
+
+
+@app.post("/service/profiles")
+async def service_new_profile(request: Request):
+    if not service_ok(request):
+        return bad("Unauthorized.", 401)
+    try:
+        body = await request.json()
+    except Exception:
+        return bad("Bad request.")
+    if body.get("consent") is not True:
+        return bad("Consent is required.")
+    try:
+        return JSONResponse({"id": create_profile(body.get("name"), owner=body.get("owner"))})
+    except ValueError as e:
+        return bad(str(e))
+
+
+@app.put("/service/profiles/{pid}/photo")
+async def service_put_photo(pid: str, request: Request):
+    if not service_ok(request):
+        return bad("Unauthorized.", 401)
+    return await upload(request, pid, process_photo)
+
+
+@app.put("/service/profiles/{pid}/voice")
+async def service_put_voice(pid: str, request: Request):
+    if not service_ok(request):
+        return bad("Unauthorized.", 401)
+    return await upload(request, pid, process_voice)
+
+
+@app.get("/service/profiles/{pid}/photo")
+def service_photo(pid: str, request: Request):
+    if not service_ok(request):
+        return bad("Unauthorized.", 401)
+    try:
+        path = os.path.join(pdir(pid), "photo.jpg")
+    except ValueError:
+        return bad("Unknown profile.", 404)
+    if not os.path.exists(path):
+        return bad("No photo yet.", 404)
+    return FileResponse(path, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
+
+
+@app.post("/service/profiles/{pid}/activate")
+def service_activate(pid: str, request: Request):
+    if not service_ok(request):
+        return bad("Unauthorized.", 401)
+    try:
+        if not is_complete(pid):
+            return bad("This avatar needs both a photo and a voice sample.")
+        name = read_meta(pid)["name"]
+    except (ValueError, OSError):
+        return bad("Unknown profile.", 404)
+    # Already loaded or loading: several students starting the same professor's exam start it once.
+    if (STATE.get("profile") or {}).get("id") == pid and not STATE.get("build_error"):
+        return JSONResponse({"ok": True, "already": True})
+    STATE.update(ready=False, build_error=None, profile={"id": pid, "name": name}, progress="Starting")
+    threading.Thread(target=activate_profile, args=(pid, split_sentences(SERVICE_WARMUP_LINE)), daemon=True).start()
+    return JSONResponse({"ok": True})
+
+
+@app.post("/service/profiles/{pid}/delete")
+def service_delete(pid: str, request: Request):
+    if not service_ok(request):
+        return bad("Unauthorized.", 401)
+    try:
+        delete_profile(pid)
+    except ValueError:
+        return bad("Unknown profile.", 404)
+    return JSONResponse({"ok": True})
+
+
+@app.post("/service/transcribe")
+async def service_transcribe(request: Request):
+    """Recorded answer (webm/ogg/wav) -> {"text": ...}. The audio is deleted after transcription."""
+    if not service_ok(request):
+        return bad("Unauthorized.", 401)
+    if not MODELS_READY.is_set():
+        return bad("Speech recognition is still loading.", 503)
+    data = await request.body()
+    if not data or len(data) > MAX_UPLOAD:
+        return bad("The recording is empty or larger than 25 MB.", 413 if data else 400)
+    LIVE["speaking"] += 1          # advance rendering waits while a student's answer is being transcribed
+    try:
+        text = await run_in_threadpool(transcribe, data)
+    finally:
+        LIVE["speaking"] -= 1
+    return JSONResponse({"text": text})
 
 
 @app.post("/start")
@@ -1026,4 +1487,6 @@ cropDraw();poll();
 """
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=PORT, log_level="warning")
+    # The page has no login, so it listens on this machine only unless HOST says otherwise.
+    # start_avatar_chat.sh sets HOST=0.0.0.0 on a RunPod Pod, where the RunPod proxy needs it.
+    uvicorn.run(app, host=os.environ.get("HOST", "127.0.0.1"), port=PORT, log_level="warning")

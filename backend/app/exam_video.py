@@ -353,6 +353,9 @@ def complete_video_recording(
         {"sid": str(session_id), "file_name": final_path.name},
     )
     db.commit()
+    # The AI assessment is ready by the time the professor opens the review.
+    from .grading import start_auto_assessment
+    start_auto_assessment(str(session_id))
     return {"status": "completed", "bytes": int(video["total_bytes"])}
 
 

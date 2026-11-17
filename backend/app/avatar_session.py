@@ -49,7 +49,7 @@ class StudentPreferences(StrictModel):
     textSize: Annotated[int, Field(strict=True)]
     reducedMotion: StrictBool
     avatar: Literal["guide", "geometric", "custom"]
-    background: Literal["neutral", "library", "custom"]
+    background: Literal["neutral", "library", "classroom", "office", "nature", "custom"]
     speed: Annotated[float, Field(strict=True, ge=0.5, le=2)]
 
     @field_validator("textSize")
@@ -111,7 +111,9 @@ def student_policy(settings: AvatarSettings) -> dict:
     avatars = controls.avatars if controls.avatar else [presentation.avatar]
     backgrounds = controls.backgrounds if controls.background else [presentation.background]
     avatar_labels = {"guide": "Examiner", "geometric": "Geometric avatar", "custom": "Instructor-uploaded avatar"}
-    background_labels = {"neutral": "Neutral background", "library": "Library background", "custom": "Instructor-uploaded background"}
+    background_labels = {"neutral": "Neutral background", "library": "Library background",
+                         "classroom": "Classroom background", "office": "Office background",
+                         "nature": "Nature background", "custom": "Instructor-uploaded background"}
     return {
         "defaults": {
             "avatar": presentation.avatar, "background": presentation.background,

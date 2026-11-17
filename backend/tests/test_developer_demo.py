@@ -295,6 +295,9 @@ def test_demo_start_still_requires_real_roster_eligibility(monkeypatch, flag):
 
 
 class EmptyBankStartDB(StartDB):
+    def rollback(self):
+        self.rolled_back = True
+
     def execute(self, statement, params=None):
         if "FROM questions" in str(statement):
             return Result()
@@ -318,18 +321,19 @@ def test_demo_start_without_bank_or_optional_model_persists_labeled_sample(monke
     assert db.insert_params["developer_demo"] is True and db.committed
 
 
-def test_default_off_start_without_bank_propagates_real_provider_failure(monkeypatch):
+def test_assessed_start_without_approved_question_rejects_before_model(monkeypatch):
     set_flag(monkeypatch, None)
     prepare_start(monkeypatch)
 
     def real_failure(*args, **kwargs):
-        raise HTTPException(502, "Synthetic real provider unavailable")
+        pytest.fail("Unapproved generated opening questions must not enter assessed attempts")
 
     monkeypatch.setattr(exam, "ask_model", real_failure)
     db = EmptyBankStartDB()
     with pytest.raises(HTTPException) as error:
         start_attempt(db)
-    assert error.value.status_code == 502
+    assert error.value.status_code == 409
+    assert db.rolled_back
     assert db.insert_params["developer_demo"] is False
     assert db.question_params is None and not db.committed
 
@@ -475,16 +479,18 @@ def test_existing_real_attempt_never_uses_new_global_demo_substitutes(monkeypatc
     prepare_behavior(monkeypatch, db)
 
     def real_failure(*args, **kwargs):
-        raise HTTPException(502, "Synthetic real provider unavailable")
+        pytest.fail('An assessed attempt must not synthesize unapproved follow-up questions')
 
     monkeypatch.setattr(exam, "ask_model", real_failure)
     monkeypatch.setattr(stream, "decide", real_failure)
     for module in (exam, stream):
         monkeypatch.setattr(module, "ai_available", lambda *a, **k: pytest.fail("Legacy real attempt must not probe demo capabilities"))
-    with pytest.raises(HTTPException) as error:
-        run_answer(db, streaming)
-    assert error.value.status_code == 502
-    assert db.inserted is None and not db.ended
+    result, _ = run_answer(db, streaming)
+    assert result.get('kind', 'done') == 'done'
+    if not streaming:
+        assert result['done'] is True
+    assert result.get('developer_demo') is False
+    assert db.inserted is None and db.ended
 
 
 def test_uncommitted_stream_sample_is_not_exposed_after_answer_race(monkeypatch):

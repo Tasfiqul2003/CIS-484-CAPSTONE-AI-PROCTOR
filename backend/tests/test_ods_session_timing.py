@@ -68,7 +68,7 @@ def test_answer_routes_enforce_extended_total_boundary(monkeypatch, streaming, e
 def test_extended_exam_time_does_not_extend_question_timeout(monkeypatch, streaming):
     db = AccommodatedTurnDB(question_limit=1, question_elapsed=1, exam_elapsed=1)
     prepare_turn(monkeypatch, db)
-    req = exam.AnswerRequest(session_id=SESSION, answer_transcript="Late synthetic answer")
+    req = exam.AnswerRequest(session_id=SESSION, answer_transcript="Late synthetic answer", question_sequence_num=1)
     if streaming:
         plan = stream.plan_turn(req, CLAIMS)
         assert plan["kind"] == "bank"

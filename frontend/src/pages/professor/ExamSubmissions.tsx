@@ -338,6 +338,10 @@ export default function ExamSubmissions() {
                       <td>{formatDate(student.started_at)}</td>
                       <td>{formatDate(student.ended_at)}</td>
                       <td>
+                        {student.session_id && student.status === "in_progress" && !student.developer_demo
+                          && student.video_recording_status === "recording" && (
+                            <a href={`/professor/exam-sessions/${encodeURIComponent(student.session_id)}/live`}>View live video</a>
+                          )}
                         {student.session_id
                           && ["pending_grading", "flagged", "graded"].includes(student.status || "")
                           && !student.developer_demo
@@ -353,7 +357,8 @@ export default function ExamSubmissions() {
                             ? student.video_recording_status === "expired"
                               ? "Recording expired"
                               : "Recording incomplete"
-                          : "—"}
+                          : student.session_id && student.status === "in_progress" && !student.developer_demo
+                              && student.video_recording_status === "recording" ? null : "—"}
                       </td>
                     </tr>
                   ))}

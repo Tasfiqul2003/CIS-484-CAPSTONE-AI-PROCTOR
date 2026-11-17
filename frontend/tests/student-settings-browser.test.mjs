@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { offlineBrowserApp } from './offline-browser-app.mjs';
 
 // Step 1 only: isolated student presentation preview, synthetic data, no backend.
 const require = createRequire(process.env.AVATAR_NODE_MODULES_PATH
@@ -18,6 +19,7 @@ const executablePath = process.env.AVATAR_CHROME_PATH || (process.platform === '
 const keepOpen = process.argv.includes('--keep-open');
 const browser = await chromium.launch({ executablePath, headless: !keepOpen });
 const context = await browser.newContext({ viewport: { width: 1365, height: 900 } });
+const offline = await offlineBrowserApp(context, baseUrl, { previewOnly: true });
 const page = await context.newPage();
 page.setDefaultTimeout(7000);
 const results = [];
@@ -78,7 +80,7 @@ await context.route('**/*', async (route) => {
     return route.fulfill({ status: 403, contentType: 'application/json', body: JSON.stringify({ detail: 'Step 1 student preview test blocks all API access.' }) });
   }
   if (request.resourceType() === 'script') servedModuleUrls.set(url.pathname, url.href);
-  return route.continue();
+  return route.fallback();
 });
 
 const button = (name) => page.getByRole('button', { name, exact: true });
@@ -289,32 +291,21 @@ await check('Assistance limits survive preference edits, reset, and dialog reope
 await check('Locked presentation and forced motion choices leave no fields or unavailable placeholders', async () => {
   await visitPreview();
   // Mount the actual component with isolated synthetic policies in this test page.
-  // Reuse Vite's served module URLs so React and ReactDOM use the app's runtime.
+  // The offline bundle exposes its own actual module instances, keeping one React runtime.
   // This harness does not add an application route, change the real demo policy,
   // read instructor state, or save any preferences.
-  const moduleUrls = Object.fromEntries(['react.js', 'react-dom_client.js', 'StudentSettingsPanel.tsx', 'studentSettings.ts'].map((name) => {
-    const url = [...servedModuleUrls].find(([pathname]) => pathname.endsWith(`/${name}`))?.[1];
-    assert(url, `Expected the preview to load ${name}`);
-    return [name, url];
-  }));
-  await page.evaluate(async (urls) => {
-    const [reactModule, reactDomModule, { default: Panel }, settings] = await Promise.all([
-      import(urls['react.js']), import(urls['react-dom_client.js']),
-      import(urls['StudentSettingsPanel.tsx']), import(urls['studentSettings.ts']),
-    ]);
-    // Vite may expose optimized CommonJS packages through their default export.
-    const React = reactModule.default ?? reactModule;
-    const ReactDOM = reactDomModule.default ?? reactDomModule;
+  await page.evaluate(() => {
+    const { React, createRoot, Panel, getDemoPolicy, defaultPreferences } = window.__studentSettingsTestModules;
     const host = document.createElement('div');
     host.id = 'synthetic-student-settings-test-harness';
     document.body.appendChild(host);
-    const root = ReactDOM.createRoot(host);
+    const root = createRoot(host);
     window.__studentSettingsPolicyHarness = {
       render(overrides) {
-        const base = settings.getDemoPolicy();
+        const base = getDemoPolicy();
         const policy = { ...base, ...overrides, defaults: { ...base.defaults, ...overrides.defaults } };
         root.render(React.createElement(Panel, {
-          open: true, policy, preferences: settings.defaultPreferences(policy),
+          open: true, policy, preferences: defaultPreferences(policy),
           onChange() {}, onClose() {}, onSave() {}, onReset() {},
           dirty: false, status: '', error: '', browserReducedMotion: false,
         }));
@@ -322,7 +313,7 @@ await check('Locked presentation and forced motion choices leave no fields or un
       dispose() { root.unmount(); host.remove(); },
     };
     window.__studentSettingsPolicyHarness.render({ allowAvatar: false, allowBackground: false, allowSpeed: false, defaults: { reducedMotion: true } });
-  }, moduleUrls);
+  });
   try {
     await dialog().waitFor();
     for (const label of ['Avatar', 'Background', 'Speaking speed', 'Reduce motion']) {
@@ -434,6 +425,7 @@ await check('390px and 360px layouts remain within the screen with 24px text', a
 });
 
 await check('No API, live exam, media, external request, or instructor draft access occurred', async () => {
+  assert.deepEqual(offline.mediaCalls, []);
   assert.deepEqual(apiRequests, []);
   assert.deepEqual(externalRequests, []);
   assert.deepEqual(mediaCalls, []);

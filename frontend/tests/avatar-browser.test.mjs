@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { offlineBrowserApp, clickInView } from './offline-browser-app.mjs';
 
 // Local synthetic browser exercise. All API requests are intercepted; no backend is used.
 const require = createRequire(process.env.AVATAR_NODE_MODULES_PATH
@@ -21,6 +22,7 @@ const browser = await chromium.launch({
   headless: !keepOpen,
 });
 const context = await browser.newContext({ viewport: { width: 1365, height: 900 } });
+const offline = await offlineBrowserApp(context, baseUrl);
 const page = await context.newPage();
 page.setDefaultTimeout(7000);
 let instructor = 'synthetic-instructor-a';
@@ -56,9 +58,10 @@ await context.route('**/*', async (route) => {
   const request = route.request();
   const url = new URL(request.url());
   if (url.origin !== new URL(baseUrl).origin) return route.abort('blockedbyclient');
-  if (!url.pathname.startsWith('/api/')) return route.continue();
+  if (!url.pathname.startsWith('/api/')) return route.fallback();
   requests.push({ method: request.method(), path: url.pathname });
   const respond = (json, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(json) });
+  if (url.pathname === '/api/developer/capabilities') return respond({ enabled: false });
   if (request.method() !== 'GET') {
     blockedMutations.push({ method: request.method(), path: url.pathname });
     return respond({ detail: 'Synthetic test blocks backend mutations.' }, 405);
@@ -76,6 +79,13 @@ await context.route('**/*', async (route) => {
   }
   if (/^\/api\/exam\/templates\/synthetic-exam-[ab]\/questions$/.test(url.pathname)) {
     return respond([{ id: 'synthetic-question', question_text: 'Describe a synthetic topic.', topic: 'Synthetic topic', difficulty: 2, created_at: '2026-10-15T12:00:00Z' }]);
+  }
+  if (/^\/api\/exam\/templates\/synthetic-exam-[ab]\/question-drafts$/.test(url.pathname)) {
+    return respond({ drafts: [], topics: ['Synthetic topic'], can_edit: true });
+  }
+  if (/^\/api\/exam\/templates\/synthetic-exam-[ab]\/question-drafts\/context$/.test(url.pathname)) {
+    return respond({ topic_coverage_required: ['Synthetic topic'], context_hash: '0'.repeat(64), can_edit: true,
+      rubric: { criteria: [{ name: 'Synthetic criterion', description: 'Synthetic reference only.', max_score: 10 }] } });
   }
   if (/^\/api\/exam\/templates\/synthetic-exam-[ab]\/materials$/.test(url.pathname)) return respond([]);
   if (/^\/api\/exam\/templates\/synthetic-exam-[ab]\/roster$/.test(url.pathname)) return respond([]);
@@ -119,7 +129,7 @@ async function currentDraft(exam = 'a', instructorId = instructor) {
   }, { examId: `synthetic-exam-${exam}`, instructorId });
 }
 async function saveAndReload() {
-  await button('Save Local Draft').click();
+  await clickInView(button('Save Local Draft'));
   await page.reload();
   await ensureAvatarEditor();
 }
@@ -209,7 +219,7 @@ await check('Invalid ranges and limits do not save', async () => {
   await field('Allow students to choose speaking speed').check();
   await field('Minimum speaking speed').fill('1.5');
   await field('Maximum speaking speed').fill('1');
-  await button('Save Local Draft').click();
+  await clickInView(button('Save Local Draft'));
   assert.deepEqual(await settingsStorage(), before);
   assert(await page.locator('[role="alert"]').count() > 0, 'Expected announced validation error');
   await field('Minimum speaking speed').fill('0.75');
@@ -217,34 +227,34 @@ await check('Invalid ranges and limits do not save', async () => {
   // The native number validity and adapter validator must reject fractional assistance limits.
   const repeatLimit = field('Exact question repeats limit per question');
   await repeatLimit.fill('-1');
-  await button('Save Local Draft').click();
+  await clickInView(button('Save Local Draft'));
   assert.deepEqual(await settingsStorage(), before);
   await repeatLimit.fill('2');
   await field('Clarification limit per question').fill('1.5');
-  await button('Save Local Draft').click();
+  await clickInView(button('Save Local Draft'));
   assert.deepEqual(await settingsStorage(), before);
   await field('Clarification limit per question').fill('1');
   await field('Follow-up limit per question').fill('6');
-  await button('Save Local Draft').click();
+  await clickInView(button('Save Local Draft'));
   assert.deepEqual(await settingsStorage(), before);
 });
 
 await check('Save/reload and scoped exam and instructor drafts', async () => {
   await openSettings();
   await field('Default speaking speed').fill('1.2');
-  await button('Save Local Draft').click();
+  await clickInView(button('Save Local Draft'));
   await page.reload();
   await ensureAvatarEditor();
   assert.equal(await field('Default speaking speed').inputValue(), '1.2');
   await openSettings('b');
   assert.equal(await field('Default speaking speed').inputValue(), '1');
   await field('Default speaking speed').fill('0.9');
-  await button('Save Local Draft').click();
+  await clickInView(button('Save Local Draft'));
   instructor = 'synthetic-instructor-b';
   await openSettings('a');
   assert.equal(await field('Default speaking speed').inputValue(), '1');
   await field('Default speaking speed').fill('1.1');
-  await button('Save Local Draft').click();
+  await clickInView(button('Save Local Draft'));
   instructor = 'synthetic-instructor-a';
   await openSettings('a');
   assert.equal(await field('Default speaking speed').inputValue(), '1.2');
@@ -255,7 +265,7 @@ await check('Reset to defaults and reload', async () => {
   await openSettings();
   await button('Reset to Defaults').click();
   assert.equal(await field('Default speaking speed').inputValue(), '1');
-  await button('Save Local Draft').click();
+  await clickInView(button('Save Local Draft'));
   await page.reload();
   await ensureAvatarEditor();
   assert.equal(await field('Default speaking speed').inputValue(), '1');
@@ -306,7 +316,7 @@ await check('Response window units preserve canonical seconds through save and r
   const before = await settingsStorage();
   for (const invalidMinutes of ['', '-1', '10.5']) {
     await field('Response window').fill(invalidMinutes);
-    await button('Save Local Draft').click();
+    await clickInView(button('Save Local Draft'));
     assert.deepEqual(await settingsStorage(), before);
     assert(await page.locator('#avatar-settings-editor [role="alert"]').count() > 0);
   }
@@ -329,7 +339,7 @@ await check('Local photos save, reload, scope, preview, remove, and reset', asyn
   assert.match(draft.settings.presentation.customAvatar, /^data:image\/png;base64,/);
   assert.match(draft.settings.presentation.customBackground, /^data:image\/png;base64,/);
   const preview = await openPreview();
-  const image = preview.getByAltText('Uploaded avatar photo', { exact: true });
+  const image = preview.getByAltText('Professor-selected examiner image', { exact: true });
   assert.equal(await image.getAttribute('src'), draft.settings.presentation.customAvatar);
   assert(await image.evaluate(async (element) => { await element.decode(); return element.complete && element.naturalWidth > 0; }));
   assert((await preview.locator('.avatar-stage').evaluate((element) => getComputedStyle(element).backgroundImage)).includes(draft.settings.presentation.customBackground));
@@ -366,6 +376,8 @@ await check('Local photos save, reload, scope, preview, remove, and reset', asyn
 
 await check('Invalid, oversized, and undecodable local photos are rejected', async () => {
   await openSettings();
+  await button('Reset to Defaults').click();
+  await saveAndReload();
   const before = await settingsStorage();
   const payloads = [
     { file: { name: 'synthetic-unsupported.svg', mimeType: 'image/svg+xml', buffer: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"/>') }, expectedError: /Choose a PNG, JPEG, or WebP image/ },
@@ -434,7 +446,7 @@ await check('Version-one local draft migrates without discarding instructor sett
     assert.equal(await field('Response window unit').inputValue(), 'seconds');
     assert.equal(Number(await field('Response window').inputValue()), 90);
     assert.equal((await currentDraft('b', migrationInstructor)).version, 1, 'Loading should not rewrite existing draft');
-    await button('Save Local Draft').click();
+    await clickInView(button('Save Local Draft'));
     const migrated = await currentDraft('b', migrationInstructor);
     assert.equal(migrated.version, 2);
     assert.equal(migrated.settings.presentation.speed, 1.15);
@@ -503,7 +515,9 @@ await check('Student preview reflects approved choices, limits, and exam behavio
   await page.getByRole('group', { name: 'Allowed avatar options', exact: true }).getByLabel('Geometric examiner', { exact: true }).uncheck();
   await field('Default background').selectOption('library');
   await field('Allow students to choose background').check();
-  await page.getByRole('group', { name: 'Allowed background options', exact: true }).getByLabel('Neutral background (preview)', { exact: true }).uncheck();
+  for (const label of ['Neutral background', 'Classroom background', 'Office background', 'Nature background']) {
+    await page.getByRole('group', { name: 'Allowed background options', exact: true }).getByLabel(label, { exact: true }).uncheck();
+  }
   await field('Default voice').selectOption('clear');
   await field('Allow students to choose speaking speed').check();
   await field('Minimum speaking speed').fill('0.9');
@@ -536,6 +550,21 @@ await check('Student preview reflects approved choices, limits, and exam behavio
   await button('Close Student Preview').click();
   assert(await button('Preview as Student').evaluate((element) => element === document.activeElement));
   return { screenshot: file, optionCounts: { avatars: 1, backgrounds: 1 }, professorVoice: 'clear', speedRange: [0.9, 1.3], textSizePx: 24 };
+});
+
+await check('Five environment previews use the actual exam renderer with distinct offline backgrounds', async () => {
+  await openSettings();
+  await button('Reset to Defaults').click();
+  const images = new Set();
+  for (const background of ['neutral', 'library', 'classroom', 'office', 'nature']) {
+    await field('Default background').selectOption(background);
+    const preview = await openPreview();
+    const stage = preview.locator('.exam-stage-viewport');
+    assert.equal(await stage.getAttribute('data-background'), background);
+    images.add(await stage.evaluate(element => getComputedStyle(element).backgroundImage));
+    await button('Close Student Preview').click();
+  }
+  assert.equal(images.size, 5, 'Every catalog choice must change the actual rendered backdrop');
 });
 
 await check('Synthetic assistance policies, counters, states, and focus', async () => {
@@ -598,7 +627,7 @@ await check('Synthetic assistance policies, counters, states, and focus', async 
   await page.waitForFunction(() => document.querySelector('#avatar-preview-reduced-motion')?.disabled === true);
   assert(await preview.getByLabel('Reduce motion', { exact: true }).isChecked());
   assert(await preview.getByLabel('Reduce motion', { exact: true }).isDisabled());
-  assert.equal(await preview.locator('.exam-avatar-portrait').evaluate((element) => getComputedStyle(element).animationName), 'none');
+  assert.equal(await preview.locator('.exam-stage-portrait').evaluate((element) => getComputedStyle(element).animationName), 'none');
   await page.emulateMedia({ reducedMotion: 'no-preference' });
   await button('Close Student Preview').click();
   assert(await button('Preview as Student').evaluate((element) => element === document.activeElement));
@@ -610,12 +639,20 @@ await check('Existing question, material, and dashboard navigation', async () =>
   await page.getByRole('link', { name: /Back to Manage Exam/ }).click();
   await page.getByRole('link', { name: /View Question Bank/ }).click();
   await page.getByRole('heading', { name: 'Question Bank', exact: true }).waitFor();
+  const drafts = page.getByRole('region', { name: 'AI question drafts', exact: true });
+  await drafts.getByRole('button', { name: 'Generate drafts', exact: true }).waitFor();
+  assert.equal(await drafts.getByRole('button', { name: 'Approve into question bank', exact: true }).count(), 0);
+  assert.match(await drafts.innerText(), /outside the exam until you inspect and explicitly approve/);
+  await drafts.getByText('Professor topics and assessment rubric', { exact: true }).click();
+  await drafts.getByLabel('Exam topics, one per line', { exact: true }).waitFor();
+  assert.equal(await drafts.getByLabel('Exam topics, one per line', { exact: true }).inputValue(), 'Synthetic topic');
+  assert.equal(await drafts.getByLabel('Criterion 1 name', { exact: true }).inputValue(), 'Synthetic criterion');
   await page.getByRole('button', { name: /Back to Exam/ }).click();
   await page.getByRole('link', { name: /View Course Materials/ }).click();
   await page.getByRole('heading', { name: 'Course Materials', exact: true }).waitFor();
   await page.getByRole('button', { name: /Back to Exam/ }).click();
   await page.getByRole('link', { name: /Back to Dashboard/ }).click();
-  await page.getByRole('heading', { name: 'My Exams', exact: true }).waitFor();
+  await page.getByRole('heading', { name: 'Your examinations', exact: true }).waitFor();
 });
 
 await check('Form labels and keyboard focus', async () => {
@@ -649,6 +686,7 @@ await check('390px narrow-screen layout', async () => {
 });
 
 await check('No backend writes, unknown API fixtures, or runtime exceptions', async () => {
+  assert.deepEqual(offline.mediaCalls, []);
   assert.deepEqual(blockedMutations, []);
   assert.deepEqual(unknownApi, []);
   assert.deepEqual(pageErrors, []);

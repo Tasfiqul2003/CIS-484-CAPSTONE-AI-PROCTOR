@@ -1,14 +1,15 @@
 import json
 import os
 from uuid import UUID
+from typing import Literal
 import csv
 import io
 from math import ceil
-from datetime import timedelta
+from datetime import timedelta, datetime, timezone
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, File, Form, UploadFile, Header
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict, model_validator
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
@@ -22,12 +23,15 @@ from .face_matching import (
 )
 from .roster_photos import MAX_ARCHIVE_BYTES, read_photo_roster_archive
 from .exam_video import _recording_root, _retention_deadline
-from .avatar_session import snapshot_for_exam, session_policy
+from .avatar_session import snapshot_for_exam, session_policy, StudentPreferences, _validate_preferences
 from .avatar_timing import pause_sum_sql, active_pause_until_sql
 from .developer_demo import (demo_enabled, demo_for_session, minimal_enabled,
                              minimal_for_session, ai_available, demo_question, demo_summary)
 
 from .db import get_db
+from .exam_contracts import replay_answer, remember_answer, answer_metadata
+from .media_timeline import record_response_submitted
+from .transcript_receipts import verify_transcript_receipt
 
 router = APIRouter(prefix="/exam", tags=["exam"])
 
@@ -64,6 +68,7 @@ class StartRequest(BaseModel):
     student_id: UUID
     exam_template_id: UUID
     student_token: str
+    presentation_preferences: StudentPreferences | None = None
 
 
 def _require_recent_face_check(db: Session, student_id: str):
@@ -88,7 +93,7 @@ def require_active_video_recording(db: Session, session_id: str, developer_demo:
     if developer_demo:
         return
     recording = db.execute(
-        text("""SELECT status, next_chunk_index
+        text("""SELECT status, next_chunk_index, expires_at
                 FROM exam_session_videos
                 WHERE session_id = CAST(:sid AS uuid)"""),
         {"sid": session_id},
@@ -102,19 +107,43 @@ def require_active_video_recording(db: Session, session_id: str, developer_demo:
             409,
             "Camera and microphone recording must be active before submitting an answer.",
         )
+    if recording.get("expires_at") is None or recording["expires_at"] <= datetime.now(timezone.utc):
+        raise HTTPException(410, "The recording retention deadline has passed or is unavailable. This attempt cannot accept answers.")
 
 
 class AnswerRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
     session_id: UUID
-    answer_transcript: str
-    answer_timestamp_start: float | None = None
-    answer_timestamp_end: float | None = None
+    answer_transcript: str = Field(max_length=20000)
+    request_id: UUID | None = None
+    input_source: Literal["typed", "confirmed_transcript"] = "typed"
+    transcript_draft_id: UUID | None = None
+    machine_draft: str | None = Field(default=None, max_length=20000)
+    transcript_receipt: str | None = Field(default=None, max_length=4096)
+    answer_timestamp_start: float | None = Field(default=None, ge=0, le=86400)
+    answer_timestamp_end: float | None = Field(default=None, ge=0, le=86400)
     question_sequence_num: int | None = Field(default=None, strict=True, ge=1)
+
+
+    @model_validator(mode="after")
+    def validate_identity_and_offsets(self):
+        if self.request_id is not None and self.question_sequence_num is None:
+            raise ValueError("A request ID requires the displayed question sequence.")
+        if (self.answer_timestamp_start is None) != (self.answer_timestamp_end is None):
+            raise ValueError("Both media offsets must be supplied together.")
+        if self.answer_timestamp_start is not None and self.answer_timestamp_end < self.answer_timestamp_start:
+            raise ValueError("The media end offset precedes its start.")
+        draft = (self.transcript_draft_id, self.machine_draft, self.transcript_receipt)
+        if self.input_source == "confirmed_transcript" and any(value is None for value in draft):
+            raise ValueError("A confirmed transcript requires its original draft and signed receipt.")
+        if self.input_source == "typed" and any(value is not None for value in draft):
+            raise ValueError("Speech draft metadata must be labeled as a confirmed transcript.")
+        return self
 
 
 def accepted_answer(req, session, pending):
     """Use trusted server elapsed time; request timestamps are only video offsets."""
-    if req.question_sequence_num is not None and req.question_sequence_num != pending["sequence_num"]:
+    if req.question_sequence_num != pending["sequence_num"]:
         raise HTTPException(409, "This answer belongs to a different question. Reload the attempt.")
     if session.get("pause_until") is not None:
         raise HTTPException(409, "Finish the current question assistance before submitting an answer.")
@@ -207,15 +236,17 @@ def ask_model(template, history, bank_remaining, course_material_summaries=None)
                     {"role": "user", "content": json.dumps(payload, default=str)},
                 ],
             },
-            timeout=45,
+            timeout=90,
         )
         r.raise_for_status()
         decision = json.loads(r.json()["message"]["content"])
         if not isinstance(decision, dict):
             raise ValueError("Invalid model decision")
         return decision
-    except (httpx.HTTPError, ValueError, KeyError, TypeError) as e:
-        raise HTTPException(502, f"Ollama call failed: {e}")
+    except httpx.TimeoutException as error:
+        raise HTTPException(504, "The AI examiner timed out. Your answer draft can be retried.") from error
+    except (httpx.HTTPError, ValueError, KeyError, TypeError) as error:
+        raise HTTPException(502, "The AI examiner is unavailable or returned an invalid response.") from error
 
 
 def end_session(db: Session, session_id: str):
@@ -253,11 +284,15 @@ def start_exam(req: StartRequest, db: Session = Depends(get_db)):
     ):
         raise HTTPException(403, "Student token does not match this exam.")
     template = db.execute(
-        text("SELECT * FROM exam_templates WHERE id = CAST(:t AS uuid)"),
+        text("SELECT * FROM exam_templates WHERE id = CAST(:t AS uuid) FOR UPDATE"),
         {"t": str(req.exam_template_id)},
     ).mappings().first()
     if not template:
         raise HTTPException(404, "Exam template not found")
+
+    # A professor unpublish/context-save may have held the template lock. Never
+    # accept an exam token that expired while waiting for that policy boundary.
+    read_student_token(f"Bearer {req.student_token}", expected_purpose="student_exam")
 
     if template.get("status") != "published":
         raise HTTPException(403, "This exam is not currently published.")
@@ -294,24 +329,27 @@ def start_exam(req: StartRequest, db: Session = Depends(get_db)):
         _retention_deadline()
         _recording_root(require_space=True)
     avatar_settings, avatar_revision, avatar_mode = snapshot_for_exam(db, req.exam_template_id)
+    if req.presentation_preferences is not None:
+        _validate_preferences(req.presentation_preferences, avatar_settings)
     snapshot = db.execute(
         text("""INSERT INTO exam_sessions (student_id, exam_template_id, time_limit_minutes,
                     question_time_limit_minutes, extended_time_multiplier,
-                    avatar_policy_snapshot, avatar_policy_revision, avatar_exam_mode, developer_demo,
+                    avatar_policy_snapshot, avatar_policy_revision, avatar_exam_mode, developer_demo, avatar_preferences,
                         identity_check_completed, identity_review_required,
                         identity_verification_attempts)
                 SELECT CAST(:s AS uuid), t.id, t.time_limit_minutes, t.question_time_limit_minutes,
                        COALESCE(r.extended_time_multiplier, 1),
-                       CAST(:avatar_policy AS jsonb), :avatar_revision, :avatar_mode, :developer_demo,
+                       CAST(:avatar_policy AS jsonb), :avatar_revision, :avatar_mode, :developer_demo, CAST(:preferences AS jsonb),
                        TRUE, :identity_review_required, :identity_verification_attempts
                 FROM exam_templates t JOIN exam_roster r ON r.exam_template_id = t.id
                     AND r.student_id = CAST(:s AS uuid)
-                WHERE t.id = CAST(:t AS uuid)
+                WHERE t.id = CAST(:t AS uuid) AND t.status = 'published'
                 RETURNING id, time_limit_minutes, extended_time_multiplier, developer_demo"""),
         {"s": str(req.student_id), "t": str(req.exam_template_id),
          "avatar_policy": json.dumps(avatar_settings.model_dump()),
          "avatar_revision": avatar_revision, "avatar_mode": avatar_mode,
          "developer_demo": demo_enabled(),
+         "preferences": req.presentation_preferences.model_dump_json() if req.presentation_preferences else None,
          "identity_review_required": False,
          "identity_verification_attempts": int(face_check["attempt_count"])},
     ).mappings().first()
@@ -333,8 +371,11 @@ def start_exam(req: StartRequest, db: Session = Depends(get_db)):
                         str(first["id"]), "Opening question from the bank.")
         question = first["question_text"]
     else:
-        summaries = load_exam_material_summaries(db, req.exam_template_id)
         use_demo = demo_for_session(snapshot)
+        if not use_demo:
+            db.rollback()
+            raise HTTPException(409, "The professor must approve an opening question before this assessed exam can begin.")
+        summaries = load_exam_material_summaries(db, req.exam_template_id)
         try:
             if use_demo and (minimal_for_session(snapshot) or not ai_available(OLLAMA_URL, OLLAMA_MODEL)):
                 raise HTTPException(502, "The configured model is unavailable.")
@@ -393,7 +434,7 @@ def read_session_state(db, session_id: str, claims: dict):
         raise HTTPException(404, "Session not found")
     if claims.get("sub") != str(row["student_id"]) or claims.get("exam_template_id") != str(row["exam_template_id"]):
         raise HTTPException(403, "Student token does not match this exam session.")
-    question = db.execute(text(f"""SELECT sequence_num, question_text, created_at,
+    question = db.execute(text(f"""SELECT id, sequence_num, question_text, created_at,
         {pause_sum_sql('interactions.session_id', 'interactions.id')} AS avatar_pause_seconds FROM interactions
         WHERE session_id = CAST(:sid AS uuid) ORDER BY sequence_num DESC LIMIT 1"""),
         {"sid": session_id}).mappings().first()
@@ -409,6 +450,8 @@ def read_session_state(db, session_id: str, claims: dict):
             "deadline": deadline.isoformat() if deadline else None,
             "question_deadline": question_deadline.isoformat() if question_deadline else None,
             "pause_until": row["pause_until"].isoformat() if row.get("pause_until") else None,
+            "interaction_id": str(question["id"]) if question and question.get("id") else None,
+            "question_revision": str(question["id"]) if question and question.get("id") else None,
             "sequence_num": question["sequence_num"] if question else 0,
             "question": question["question_text"] if question else ""}
 
@@ -438,11 +481,17 @@ def submit_answer(
     ).mappings().first()
     if not session:
         raise HTTPException(404, "Session not found")
+    # Another answer/provider transaction can hold this attempt lock. Expiry
+    # must still be enforced after the wait, including before receipt replay.
+    claims = read_student_token(authorization, expected_purpose="student_session")
     if (
         claims.get("sub") != str(session["student_id"])
         or claims.get("exam_template_id") != str(session["exam_template_id"])
     ):
         raise HTTPException(403, "Student token does not match this exam session.")
+    replay = replay_answer(db, req)
+    if replay is not None:
+        return replay
     if session["status"] != "in_progress":
         raise HTTPException(409, f"Session is {session['status']}")
     require_active_video_recording(
@@ -463,16 +512,28 @@ def submit_answer(
         raise HTTPException(409, "No question is waiting for an answer")
 
     avatar_settings = session_policy(session)
+    if req.input_source == "confirmed_transcript":
+        verify_transcript_receipt(req.transcript_receipt, student_id=str(session["student_id"]),
+            session_id=sid, interaction_id=str(pending["id"]), sequence_num=pending["sequence_num"],
+            draft_id=str(req.transcript_draft_id), machine_draft=req.machine_draft)
     answer, timestamp_start, timestamp_end = accepted_answer(req, session, pending)
 
     db.execute(
         text("""UPDATE interactions
                 SET student_answer_transcript = :a,
-                    answer_timestamp_start = :ts, answer_timestamp_end = :te
-                WHERE id = :id"""),
+                    answer_timestamp_start = :ts, answer_timestamp_end = :te,
+                    answer_input_source = :input_source, answer_revision_id = CAST(:answer_revision AS uuid),
+                    transcript_draft_id = CAST(:draft_id AS uuid), machine_transcript_draft = :machine_draft
+                WHERE id = :id AND student_answer_transcript IS NULL"""),
         {"a": answer, "ts": timestamp_start,
-         "te": timestamp_end, "id": pending["id"]},
+         "te": timestamp_end, "id": pending["id"], **answer_metadata(req, answer),
+         "draft_id": str(req.transcript_draft_id) if req.transcript_draft_id and answer == req.answer_transcript else None,
+         "machine_draft": req.machine_draft if answer == req.answer_transcript else None},
     )
+    if not session.get('developer_demo', False):
+        record_response_submitted(db, session_id=sid, interaction_id=pending['id'],
+            sequence_num=pending['sequence_num'], event_id=req.request_id,
+            media_offset_seconds=timestamp_end)
 
     template = db.execute(
         text("SELECT * FROM exam_templates WHERE id = :t"),
@@ -491,9 +552,11 @@ def submit_answer(
     out_of_time = (exam_minutes is not None and session["elapsed_min"] >= exam_minutes)
     if out_of_time or len(history) >= MAX_QUESTIONS:
         end_session(db, sid)
-        db.commit()
-        return {"done": True, "reason": "time or question limit reached",
+        response = {"done": True, "reason": "time or question limit reached",
                 "developer_demo": bool(session.get("developer_demo", False))}
+        remember_answer(db, req, response)
+        db.commit()
+        return response
 
     bank_remaining = [
         {"id": str(r["id"]), "text": r["question_text"],
@@ -512,12 +575,16 @@ def submit_answer(
     summaries = load_exam_material_summaries(
         db, session["exam_template_id"]
     )
-    can_follow_up = pending.get("avatar_followup_index", 0) < avatar_settings.behavior.followUps
+    # Assessed questions must be approved before publication. Generate candidate
+    # follow-ups in the professor draft workflow; only demos may invent them live.
+    can_follow_up = demo_for_session(session) and pending.get("avatar_followup_index", 0) < avatar_settings.behavior.followUps
     if not can_follow_up and not bank_remaining:
         end_session(db, sid)
-        db.commit()
-        return {"done": True, "reason": "No further questions available",
+        response = {"done": True, "reason": "No further questions available",
                 "developer_demo": bool(session.get("developer_demo", False))}
+        remember_answer(db, req, response)
+        db.commit()
+        return response
     use_demo = demo_for_session(session)
     try:
         if use_demo and not bank_remaining and (minimal_for_session(session) or not ai_available(OLLAMA_URL, OLLAMA_MODEL)):
@@ -550,9 +617,11 @@ def submit_answer(
 
     if decision.get("end_exam"):
         end_session(db, sid)
-        db.commit()
-        return {"done": True, "reason": "Examination complete",
+        response = {"done": True, "reason": "Examination complete",
                 "developer_demo": bool(session.get("developer_demo", False))}
+        remember_answer(db, req, response)
+        db.commit()
+        return response
 
     chosen = bank_remaining[0] if bank_remaining and decision.get("bank_question_id") else None
 
@@ -568,16 +637,20 @@ def submit_answer(
         question, source, source_id = demo_question(pending["sequence_num"] + 1), "generated", None
     else:
         end_session(db, sid)
-        db.commit()
-        return {"done": True, "reason": "No further questions available",
+        response = {"done": True, "reason": "No further questions available",
                 "developer_demo": bool(session.get("developer_demo", False))}
+        remember_answer(db, req, response)
+        db.commit()
+        return response
 
     seq = pending["sequence_num"] + 1
     root_sequence, followup_index = follow_up_metadata(pending, source)
     insert_question(db, sid, seq, question, source, source_id,
                     decision.get("reasoning"), root_sequence, followup_index)
+    response = {"done": False, **read_session_state(db, sid, claims)}
+    remember_answer(db, req, response)
     db.commit()
-    return {"done": False, **read_session_state(db, sid, claims)}
+    return response
 
 
 # Professor exam creation

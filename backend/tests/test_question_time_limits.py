@@ -1,3 +1,4 @@
+from datetime import datetime, timezone, timedelta
 """Synthetic question timing checks; no application database, model or media."""
 
 from datetime import datetime, timedelta, timezone
@@ -137,7 +138,7 @@ class TurnDB:
                            "elapsed_min": self.exam_elapsed,
                            "developer_demo": False})
         if "FROM exam_session_videos" in sql:
-            return Result({"status": "recording", "next_chunk_index": 1})
+            return Result({"status": "recording", "next_chunk_index": 1, "expires_at": datetime.now(timezone.utc) + timedelta(days=1)})
         if "student_answer_transcript IS NULL" in sql and "SELECT id" in sql:
             return Result({"id": "synthetic-pending", "sequence_num": 1,
                            "created_at": NOW - timedelta(minutes=self.question_elapsed),
@@ -173,6 +174,12 @@ class TurnDB:
 
 
 def prepare_turn(monkeypatch, db):
+    # These are academic-unit fake transactions. Real event SQL/rollback is
+    # exercised independently in test_media_timeline.py and test_question_audio.py.
+    db.timeline_events = []
+    def observe_response(_db, **event):
+        db.timeline_events.append(event)
+    monkeypatch.setattr(exam, "record_response_submitted", observe_response)
     monkeypatch.setattr(exam, "read_student_token", lambda *a, **k: CLAIMS)
     monkeypatch.setattr(exam, "load_exam_material_summaries", lambda *a: [])
     monkeypatch.setattr(stream, "load_exam_material_summaries", lambda *a: [])
@@ -199,7 +206,7 @@ def test_question_timeout_uses_snapshot_and_discards_late_text(monkeypatch, stre
     db = TurnDB(question_limit=question_limit, question_elapsed=elapsed)
     timing = prepare_turn(monkeypatch, db)
     req = exam.AnswerRequest(session_id=SESSION, answer_transcript="Synthetic submitted text",
-                             answer_timestamp_start=-5000, answer_timestamp_end=-4000,
+                             answer_timestamp_start=5000, answer_timestamp_end=6000,
                              question_sequence_num=1)
     if streaming:
         plan = stream.plan_turn(req, CLAIMS)
@@ -212,8 +219,8 @@ def test_question_timeout_uses_snapshot_and_discards_late_text(monkeypatch, stre
         result = exam.submit_answer(req, authorization="synthetic", db=db)
         assert result["done"] is False
     assert db.saved["a"] == (exam.QUESTION_TIMEOUT_ANSWER if expired else req.answer_transcript)
-    assert db.saved["ts"] == (None if expired else -5000)
-    assert db.saved["te"] == (None if expired else -4000)
+    assert db.saved["ts"] == (None if expired else 5000)
+    assert db.saved["te"] == (None if expired else 6000)
     assert not db.ended
     assert db.committed
     for key in ("deadline", "question_deadline", "server_now"):
@@ -239,7 +246,7 @@ def test_stale_question_submission_is_rejected_before_writes(monkeypatch, stream
 def test_total_exam_timeout_ends_instead_of_advancing_question(monkeypatch, streaming):
     db = TurnDB(exam_elapsed=30)
     prepare_turn(monkeypatch, db)
-    req = exam.AnswerRequest(session_id=SESSION, answer_transcript="Late synthetic text")
+    req = exam.AnswerRequest(session_id=SESSION, answer_transcript="Late synthetic text", question_sequence_num=1)
     if streaming:
         plan = stream.plan_turn(req, CLAIMS)
         assert plan["kind"] == "done"

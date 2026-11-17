@@ -449,6 +449,12 @@
   flex: 1 1 200px;
 }
 
+/* Use the active exam's renderer for every professor-selected environment. */
+.avatar-settings .avatar-stage .exam-stage-viewport {
+  flex: 1 1 100%;
+  height: clamp(240px, 36vw, 400px);
+}
+
 .avatar-settings .avatar-stage p {
   margin: 5px 0 0;
   color: var(--exam-ui-muted, #53627a);

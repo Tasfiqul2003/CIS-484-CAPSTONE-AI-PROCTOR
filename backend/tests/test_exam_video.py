@@ -1,3 +1,4 @@
+from datetime import datetime, timezone, timedelta
 from datetime import date, timedelta, datetime, timezone
 from uuid import UUID
 
@@ -57,6 +58,7 @@ class RecordingDB:
                 "next_chunk_index": 0,
                 "total_bytes": 0,
                 "expires_at": params["expires_at"],
+                "expires_at": params["expires_at"],
             }
             return FakeResult()
         if "select status, next_chunk_index, total_bytes" in sql:
@@ -77,6 +79,7 @@ class RecordingDB:
                 "developer_demo": False,
                 "professor_id": PROFESSOR_ID,
                 "video_status": "completed",
+                "video_bytes": len(b"synthetic-video"),
                 "content_type": "video/webm;codecs=vp8,opus",
                 "expires_at": datetime.now(timezone.utc) + timedelta(days=30),
             })
@@ -187,6 +190,16 @@ def test_professor_video_is_scoped_to_exam_owner(monkeypatch, tmp_path):
         allowed = client.get(f"/exam/sessions/{SESSION_ID}/video")
         assert allowed.status_code == 200
         assert allowed.content == b"synthetic-video"
+        assert allowed.headers["x-content-type-options"] == "nosniff"
+        ranged=client.get(f"/exam/sessions/{SESSION_ID}/video",headers={"Range":"bytes=0-3"})
+        assert ranged.status_code == 206 and ranged.content == b"synt"
+        assert ranged.headers["content-range"] == "bytes 0-3/15"
+        unsatisfied=client.get(f"/exam/sessions/{SESSION_ID}/video",headers={"Range":"bytes=999-"})
+        assert unsatisfied.status_code == 416
+        path.write_bytes(b"short")
+        truncated=client.get(f"/exam/sessions/{SESSION_ID}/video",headers={"Range":"bytes=0-3"})
+        assert truncated.status_code == 409
+        path.write_bytes(b"synthetic-video")
 
         app.dependency_overrides[get_current_account] = lambda: {
             "role": "professor",
@@ -235,7 +248,7 @@ def test_answers_require_an_active_recording():
 
     class ActiveRecordingDB:
         def execute(self, *_args, **_kwargs):
-            return FakeResult({"status": "recording", "next_chunk_index": 1})
+            return FakeResult({"status": "recording", "next_chunk_index": 1, "expires_at": datetime.now(timezone.utc) + timedelta(days=1)})
 
     with pytest.raises(HTTPException) as error:
         require_active_video_recording(NoRecordingDB(), SESSION_ID, False)
@@ -261,6 +274,8 @@ def test_professor_review_returns_transcript_only_for_completed_owned_video():
                     "video_status": "completed",
                     "expires_at": datetime.now(timezone.utc) + timedelta(days=30),
                 })
+            if "from exam_media_events" in sql or "from exam_question_audio" in sql:
+                return FakeResult(rows=[])
             if "from interactions" in sql:
                 return FakeResult(rows=[{
                     "sequence_num": 1,
@@ -287,6 +302,11 @@ def test_professor_review_returns_transcript_only_for_completed_owned_video():
             "sequence_num": 1,
             "question": "Synthetic question",
             "answer": "Synthetic answer",
+            "question_audio_assets": [],
+            "question_audio_status": "unavailable",
+            "question_audio_notice": "Original delivered-question audio was not saved.",
+            "transcript_source": "unknown",
+            "response_media_status": "offsets_unavailable",
         }]
 
         app.dependency_overrides[get_current_account] = lambda: {

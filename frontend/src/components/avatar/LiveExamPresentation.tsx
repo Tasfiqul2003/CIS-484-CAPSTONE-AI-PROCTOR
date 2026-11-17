@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Keyboard, Settings } from "lucide-react";
 import ExamStageAvatar from "./ExamStageAvatar";
+import QuestionAudioPlayer from './QuestionAudioPlayer';
+import type { MediaEventKind } from '../media/mediaTimeline';
 import type { AIAvatarState } from "../AIAvatar";
 import StudentSettingsPanel from "../student-settings/StudentSettingsPanel";
 import type { StudentPreferences } from "../student-settings/studentSettings";
@@ -20,12 +22,15 @@ const actionLabels: Record<AssistanceAction, string> = {
 
 export default function LiveExamPresentation({ sessionId, token, question, sequence, answer, expired, submitting,
   developerDemo = false, developerMinimal = false, settingsTarget = null, onTiming, onBusyChange, onTextSizeChange,
+  onQuestionAudioBusy, onMediaObservation,
 }: {
   sessionId: string; token: string; question: string; sequence: number; answer: string; expired: boolean; submitting: boolean;
   developerDemo?: boolean;
   developerMinimal?: boolean;
   settingsTarget?: HTMLElement | null;
   onTiming: (timing: ExamTiming) => void; onBusyChange: (busy: boolean) => void; onTextSizeChange: (size: number) => void;
+  onQuestionAudioBusy?: (busy: boolean) => void;
+  onMediaObservation?: (kind: MediaEventKind, sequence: number, assetId?: string) => Promise<unknown>;
 }) {
   const [presentation, setPresentation] = useState<SessionPresentation | null>(null);
   const [preferences, setPreferences] = useState<StudentPreferences | null>(null);
@@ -38,6 +43,10 @@ export default function LiveExamPresentation({ sessionId, token, question, seque
   const [speechError, setSpeechError] = useState("");
   const [speechSupported, setSpeechSupported] = useState(false);
   const [audioEnabled, setAudioEnabled] = useState(false);
+  const [savedAudioBusy, setSavedAudioBusy] = useState(false);
+  const updateSavedAudioBusy = useCallback((busy: boolean) => {
+    setSavedAudioBusy(busy); onQuestionAudioBusy?.(busy);
+  }, [onQuestionAudioBusy]);
   const [assistance, setAssistance] = useState<AssistanceState | null>(null);
   const [assistanceBusy, setAssistanceBusy] = useState(false);
   const [assistanceError, setAssistanceError] = useState("");
@@ -54,8 +63,8 @@ export default function LiveExamPresentation({ sessionId, token, question, seque
   const pauseCap = useRef<number | null>(null);
   const launchButton = useRef<HTMLButtonElement>(null);
   const options = useRef<HTMLDetailsElement>(null);
-  const latestSpeech = useRef({ presentation, preferences, audioEnabled, speechSupported, developerMinimal });
-  latestSpeech.current = { presentation, preferences, audioEnabled, speechSupported, developerMinimal };
+  const latestSpeech = useRef({ presentation, preferences, audioEnabled, speechSupported, developerMinimal, savedAudioBusy });
+  latestSpeech.current = { presentation, preferences, audioEnabled, speechSupported, developerMinimal, savedAudioBusy };
   useEffect(() => {
     // Reveal recovery/help without closing a disclosure the student opened after reading ends.
     if (options.current && (assistanceBusy || assistanceError || speechError)) options.current.open = true;
@@ -185,7 +194,7 @@ export default function LiveExamPresentation({ sessionId, token, question, seque
 
   const speak = useCallback((text: string, after?: () => void) => {
     const current = latestSpeech.current;
-    if (current.developerMinimal || !speaker.current || !current.presentation || !current.preferences || current.preferences.volume === 0) { after?.(); return; }
+    if (current.developerMinimal || current.savedAudioBusy || !speaker.current || !current.presentation || !current.preferences || current.preferences.volume === 0) { after?.(); return; }
     setSpeechError("");
     try {
       speaker.current.speak(text, current.presentation.voice_profile, current.preferences.speed, current.preferences.volume,
@@ -197,10 +206,10 @@ export default function LiveExamPresentation({ sessionId, token, question, seque
   }, []);
 
   useEffect(() => {
-    if (developerMinimal || !audioEnabled || !presentation || !preferences || preferences.volume === 0 || expired || submitting || assistanceBusy || readQuestions.current.has(sequence)) return;
+    if (developerMinimal || !audioEnabled || savedAudioBusy || !presentation || !preferences || preferences.volume === 0 || expired || submitting || assistanceBusy || readQuestions.current.has(sequence)) return;
     readQuestions.current.add(sequence);
     speak(question);
-  }, [developerMinimal, audioEnabled, presentation, preferences, expired, submitting, assistanceBusy, sequence, question, speak]);
+  }, [developerMinimal, audioEnabled, savedAudioBusy, presentation, preferences, expired, submitting, assistanceBusy, sequence, question, speak]);
   useEffect(() => { if ((expired || submitting) && !assistanceBusy) stopSpeech(); }, [expired, submitting, assistanceBusy, stopSpeech]);
 
   const updatePreferences = (next: StudentPreferences) => {
@@ -223,7 +232,7 @@ export default function LiveExamPresentation({ sessionId, token, question, seque
   };
 
   async function ask(action: AssistanceAction) {
-    if (developerMinimal) return;
+    if (developerMinimal || savedAudioBusy) return;
     const allowed = assistance?.actions[action];
     const recovering = retry.current?.action === action && retry.current.sequence === sequence;
     if ((!allowed && !recovering) || (allowed?.remaining === 0 && !recovering) ||
@@ -293,13 +302,18 @@ export default function LiveExamPresentation({ sessionId, token, question, seque
     {!developerMinimal && <details className="live-exam-options" ref={options}>
       <summary>Examiner controls and assistance</summary>
       <div className="live-exam-options-content">
-        <p>Use the question and typed answer below. Optional read-aloud uses your browser's standard English voice; microphone capture is not connected.</p>
+        <p>Use the question and typed answer below. Saved question audio can be reviewed by your professor. Browser read-aloud is a separate fallback and does not save an audio file. Speech answers use the reviewed draft controls in the answer section when available.</p>
+        {!developerDemo && <QuestionAudioPlayer key={`${sessionId}:${sequence}:${preferences.speed}`}
+          sessionId={sessionId} token={token} sequence={sequence} speed={preferences.speed} volume={preferences.volume}
+          disabled={expired || submitting || assistanceBusy} onBusy={updateSavedAudioBusy} onState={setSpeechState}
+          beforePlay={() => { stopSpeech(); readQuestions.current.add(sequence); latestSpeech.current.audioEnabled = false; setAudioEnabled(false); }}
+          onObservation={onMediaObservation} />}
         <div className="live-exam-controls">
-          {speechSupported && <button type="button" disabled={expired || submitting || assistanceBusy || preferences.volume === 0} onClick={() => {
+          {speechSupported && <button type="button" disabled={expired || submitting || savedAudioBusy || assistanceBusy || preferences.volume === 0} onClick={() => {
             latestSpeech.current.audioEnabled = true; setAudioEnabled(true); readQuestions.current.add(sequence); speak(question);
           }}>Read question aloud</button>}
-          {(speechState === "Speaking" || (assistanceBusy && assistanceText)) && <button type="button" onClick={stopSpeech}>Stop reading</button>}
-          {speechError && speechSupported && !assistanceBusy && <button type="button" disabled={expired || submitting} onClick={() => speak(question)}>Retry question audio</button>}
+          {!savedAudioBusy && (speechState === "Speaking" || (assistanceBusy && assistanceText)) && <button type="button" onClick={stopSpeech}>Stop reading</button>}
+          {speechError && speechSupported && !assistanceBusy && <button type="button" disabled={expired || submitting || savedAudioBusy || preferences.volume === 0} onClick={() => speak(question)}>Retry question audio</button>}
         </div>
         {preferences.volume === 0 && <p>Question audio is muted. Change volume in Student settings to use read-aloud.</p>}
         {!speechSupported && <p>Speech is unavailable in this browser. All questions and assistance remain readable.</p>}
@@ -313,7 +327,7 @@ export default function LiveExamPresentation({ sessionId, token, question, seque
             const allowance = assistance.actions[action]!;
             return <div className="live-exam-assistance-item" key={action}>
               <div><strong>{actionLabels[action]}</strong><span id={`live-assistance-${action}-remaining`} aria-live="polite">{allowance.remaining} of {allowance.limit} remaining</span></div>
-              <button type="button" disabled={allowance.remaining === 0 || expired || submitting || assistanceBusy || (action === "correctness" && !answer.trim())}
+              <button type="button" disabled={allowance.remaining === 0 || expired || submitting || savedAudioBusy || assistanceBusy || (action === "correctness" && !answer.trim())}
                 aria-describedby={`live-assistance-${action}-remaining`}
                 onClick={() => void ask(action)}>{actionLabels[action]}</button>
             </div>;

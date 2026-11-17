@@ -109,6 +109,11 @@ def test_authored_bank_order_overrides_model_selection_and_resets_followup_group
 def test_allowed_generated_followup_retains_root_and_increments_index(monkeypatch, streaming):
     db = BehaviorDB(followups=2, current_followup=1, bank=False)
     prepare_turn(monkeypatch, db)
+    # Live-generated proposals are permitted only in explicitly marked demos.
+    for module in (exam, stream):
+        monkeypatch.setattr(module, 'demo_for_session', lambda session: True)
+        monkeypatch.setattr(module, 'minimal_for_session', lambda session: False)
+        monkeypatch.setattr(module, 'ai_available', lambda *a: True)
     monkeypatch.setattr(exam, "ask_model", lambda *a: {"question": "Allowed synthetic follow-up"})
     monkeypatch.setattr(stream, "decide", lambda *a: {"action": "follow_up", "follow_up_focus": "Synthetic focus"})
     if streaming:
@@ -119,6 +124,21 @@ def test_allowed_generated_followup_retains_root_and_increments_index(monkeypatc
         exam.submit_answer(answer_request(), authorization="synthetic", db=db)
     assert db.inserted["src"] == "generated"
     assert (db.inserted["root"], db.inserted["followup"]) == (1, 2)
+
+
+@pytest.mark.parametrize('streaming', [False, True])
+def test_assessed_attempt_never_inserts_unapproved_live_generated_followups(monkeypatch, streaming):
+    db = BehaviorDB(followups=5, current_followup=0, bank=False)
+    prepare_turn(monkeypatch, db)
+    monkeypatch.setattr(exam, 'ask_model', lambda *a: pytest.fail('Unapproved live questions are not assessed content'))
+    monkeypatch.setattr(stream, 'decide', lambda *a: pytest.fail('Unapproved live questions are not assessed content'))
+    if streaming:
+        plan = stream.plan_turn(answer_request(), CLAIMS)
+        assert plan['kind'] == 'done'
+        list(stream.event_stream(plan))
+    else:
+        assert exam.submit_answer(answer_request(), authorization='synthetic', db=db)['done'] is True
+    assert db.inserted is None and db.ended
 
 
 @pytest.mark.parametrize("question_minutes,timing,fixed_seconds,expected", [

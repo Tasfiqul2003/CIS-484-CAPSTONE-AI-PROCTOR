@@ -20,6 +20,7 @@ import ExamSettingsPage, { LegacyAvatarSettingsRedirect } from "./pages/professo
 import { examSettingsCategories } from "./pages/professor/examSettingsNavigation";
 import ExamSubmissions from "./pages/professor/ExamSubmissions";
 import ExamSessionReview from "./pages/professor/ExamSessionReview";
+import ProfessorLiveVideo from "./pages/professor/ProfessorLiveVideo";
 import ExamSubmitted from "./pages/student/ExamSubmitted";
 
 function AppRoutes() {
@@ -112,6 +113,10 @@ if (
     path.endsWith("/materials")
   ) {
     return <MaterialUpload />;
+  }
+
+  if (/^\/professor\/exam-sessions\/[^/]+\/live\/?$/.test(path)) {
+    return <ProfessorLiveVideo />;
   }
 
   if (

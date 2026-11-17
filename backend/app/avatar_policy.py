@@ -55,7 +55,7 @@ def valid_image(value: str | None) -> bool:
 
 class Presentation(StrictModel):
     avatar: Literal["guide", "geometric", "custom"]
-    background: Literal["neutral", "library", "custom"]
+    background: Literal["neutral", "library", "classroom", "office", "nature", "custom"]
     customAvatar: str | None
     customBackground: str | None
     voice: Literal["calm", "clear"]
@@ -83,7 +83,7 @@ class StudentControls(StrictModel):
     background: StrictBool
     speed: StrictBool
     avatars: list[Literal["guide", "geometric", "custom"]]
-    backgrounds: list[Literal["neutral", "library", "custom"]]
+    backgrounds: list[Literal["neutral", "library", "classroom", "office", "nature", "custom"]]
     minSpeed: Speed
     maxSpeed: Speed
 
@@ -179,7 +179,7 @@ def default_settings() -> AvatarSettings:
         },
         "student": {
             "avatar": False, "background": False, "speed": False,
-            "avatars": ["guide", "geometric"], "backgrounds": ["neutral", "library"],
+            "avatars": ["guide", "geometric"], "backgrounds": ["neutral", "library", "classroom", "office", "nature"],
             "minSpeed": 0.8, "maxSpeed": 1.2,
         },
         "assistance": {

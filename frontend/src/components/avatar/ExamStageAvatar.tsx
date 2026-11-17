@@ -1,5 +1,5 @@
-import { useId } from "react";
-import { isValidPreviewImage } from "./settings";
+import { useId, useState } from "react";
+import { BACKGROUNDS, isValidPreviewImage } from "./settings";
 import type { AIAvatarState } from "../AIAvatar";
 import "./exam-stage-avatar.css";
 
@@ -11,10 +11,15 @@ export default function ExamStageAvatar({ avatar = "guide", background = "neutra
   animation?: boolean; reducedMotion?: boolean; state?: AIAvatarState; developerMinimal?: boolean;
 }) {
   const id = useId().replaceAll(":", "");
+  const [failedBackdrop, setFailedBackdrop] = useState<string | null>(null);
   const photo = avatar === "custom" && isValidPreviewImage(customAvatar) ? customAvatar : null;
   const backdrop = background === "custom" && isValidPreviewImage(customBackground) ? customBackground : null;
-  return <div className={`exam-stage-viewport exam-stage-background-${background}`}
-    style={backdrop ? { backgroundImage: `url("${backdrop}")` } : undefined}>
+  const builtIn = BACKGROUNDS.some(choice => choice.id === background);
+  const unavailable = (!builtIn && !backdrop) || (!!backdrop && failedBackdrop === backdrop);
+  const shownBackground = unavailable ? "neutral" : background;
+  return <div className={`exam-stage-viewport exam-stage-background-${shownBackground}`} data-background={shownBackground}>
+    {backdrop && !unavailable && <img className="exam-environment-photo" src={backdrop} alt="" onError={() => setFailedBackdrop(backdrop)} />}
+    {unavailable && <p className="exam-environment-fallback" role="status">Background unavailable. Showing the neutral environment.</p>}
     {photo ? <img className="exam-stage-photo" src={photo} alt="Professor-selected examiner image" />
       : avatar === "geometric" ? <svg className="exam-stage-portrait" viewBox="0 0 480 480" role="img" aria-label="Geometric examiner">
         <path d="M240 50 410 240 240 430 70 240Z" fill="#eee8f7" stroke="#5b3a91" strokeWidth="8" />

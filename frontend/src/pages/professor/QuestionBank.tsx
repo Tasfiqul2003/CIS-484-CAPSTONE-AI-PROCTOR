@@ -1,5 +1,8 @@
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import QuestionDrafts from "../../components/exam/QuestionDrafts";
+import {useRequestScope} from "../../components/exam/useRequestScope";
+import type {RequestScope} from "../../components/exam/useRequestScope";
 import OralExamMark from "../../components/brand/OralExamMark";
 
 type Question = {
@@ -18,24 +21,6 @@ function getExamId(): string | null {
   return match?.[1] ?? null;
 }
 
-async function readResponse(response: Response) {
-  const data = await response.json().catch(() => ({}));
-
-  if (!response.ok) {
-    const detail = data?.detail;
-    const message =
-      typeof detail === "string"
-        ? detail
-        : detail
-          ? JSON.stringify(detail)
-          : "The request failed.";
-
-    throw new Error(message);
-  }
-
-  return data;
-}
-
 export default function QuestionBank() {
   const examId = getExamId();
 
@@ -45,8 +30,14 @@ export default function QuestionBank() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [preview, setPreview] = useState<Question | null>(null);
+  const [loadedExam,setLoadedExam]=useState<string|null>(null);
+  const fileInput=useRef<HTMLInputElement|null>(null);
+  const {capture,isCurrent,json}=useRequestScope(examId ?? '');
+  const visibleQuestions=loadedExam===examId?questions:[];
 
-  const loadQuestions = useCallback(async () => {
+  const loadQuestions = useCallback(async (expected?:RequestScope) => {
+    const scope=expected??capture();
+    if (!isCurrent(scope)) return;
     if (!examId) {
       setError(
         "Invalid exam ID. Open Questions from a specific exam's Manage Exam page."
@@ -59,25 +50,22 @@ export default function QuestionBank() {
     try {
       setError("");
 
-      const response = await fetch(
-        `/api/exam/templates/${examId}/questions`,
-        { credentials: "include" }
-      );
-
-      const data = await readResponse(response);
-      setQuestions(data);
+      const data=await json<Question[]>(scope,`/api/exam/templates/${encodeURIComponent(scope.owner)}/questions`,{credentials:'include'});
+      if (isCurrent(scope)) setQuestions(data);
     } catch (err) {
-      setError(
+      if (isCurrent(scope)) setError(
         err instanceof Error
           ? err.message
           : "Unable to load examination questions."
       );
     } finally {
-      setLoading(false);
+      if (isCurrent(scope)) {setLoadedExam(examId);setLoading(false);}
     }
-  }, [examId]);
+  }, [examId,capture,isCurrent,json]);
 
   useEffect(() => {
+    setQuestions([]);setLoadedExam(null);setLoading(true);setUploading(false);setDeletingId(null);setPreview(null);setError('');
+    if(fileInput.current)fileInput.current.value='';
     void loadQuestions();
   }, [loadQuestions]);
 
@@ -87,7 +75,8 @@ export default function QuestionBank() {
     const input = event.currentTarget;
     const file = input.files?.[0];
 
-    if (!file || !examId) return;
+    if (!file || !examId || loadedExam!==examId) return;
+    const scope=capture();
 
     const formData = new FormData();
     formData.append("file", file);
@@ -96,55 +85,45 @@ export default function QuestionBank() {
     setError("");
 
     try {
-      const response = await fetch(
-        `/api/exam/templates/${examId}/questions`,
-        {
-          method: "POST",
-          credentials: "include",
-          body: formData,
-        }
-      );
-
-      const data = await readResponse(response);
-      await loadQuestions();
+      const data=await json<{questions_added?:number;filename?:string}>(scope,`/api/exam/templates/${encodeURIComponent(scope.owner)}/questions`,{
+        method:'POST',credentials:'include',body:formData,
+      },60000);
+      if (!isCurrent(scope)) return;
+      await loadQuestions(scope);
+      if (!isCurrent(scope)) return;
 
       window.alert(
         `Upload complete. ${data.questions_added ?? 0} questions added from ${data.filename ?? file.name}.`
       );
     } catch (err) {
-      setError(
+      if (isCurrent(scope)) setError(
         err instanceof Error
           ? err.message
           : "Unable to upload the question file."
       );
     } finally {
-      setUploading(false);
-      input.value = "";
+      if (isCurrent(scope)) {setUploading(false);input.value="";}
     }
   }
 
   async function deleteQuestion(question: Question) {
-    if (!examId) return;
+    if (!examId || loadedExam!==examId) return;
+    const scope=capture();
 
     const confirmed = window.confirm(
       `Delete this question?\n\n"${question.question_text}"`
     );
 
-    if (!confirmed) return;
+    if (!confirmed || !isCurrent(scope)) return;
 
     setDeletingId(question.id);
     setError("");
 
     try {
-      const response = await fetch(
-        `/api/exam/templates/${examId}/questions/${question.id}`,
-        {
-          method: "DELETE",
-          credentials: "include",
-        }
-      );
-
-      await readResponse(response);
+      await json(scope,`/api/exam/templates/${encodeURIComponent(scope.owner)}/questions/${encodeURIComponent(question.id)}`,{
+        method:'DELETE',credentials:'include',
+      },60000);
+      if (!isCurrent(scope)) return;
 
       setQuestions((current) =>
         current.filter((item) => item.id !== question.id)
@@ -154,13 +133,13 @@ export default function QuestionBank() {
         setPreview(null);
       }
     } catch (err) {
-      setError(
+      if (isCurrent(scope)) setError(
         err instanceof Error
           ? err.message
           : "Unable to delete the question."
       );
     } finally {
-      setDeletingId(null);
+      if (isCurrent(scope)) setDeletingId(null);
     }
   }
 
@@ -230,6 +209,7 @@ export default function QuestionBank() {
           <label className="question-upload-zone">
             <input
               type="file"
+              ref={fileInput}
               accept=".csv,.txt,.docx,.pdf,.pptx"
               disabled={uploading || !examId}
               onChange={handleFileChange}
@@ -257,6 +237,8 @@ export default function QuestionBank() {
           </div>
         </section>
 
+        {examId && <QuestionDrafts examId={examId} onApproved={loadQuestions} />}
+
         <section className="question-list">
           <div className="question-list-heading">
             <div>
@@ -264,12 +246,12 @@ export default function QuestionBank() {
               <h2>Saved Questions</h2>
             </div>
 
-            <span className="question-count">{questions.length}</span>
+            <span className="question-count">{visibleQuestions.length}</span>
           </div>
 
-          {loading ? (
+          {loading || loadedExam!==examId ? (
             <p className="question-status">Loading saved questions...</p>
-          ) : questions.length === 0 ? (
+          ) : visibleQuestions.length === 0 ? (
             <div className="empty-question-list">
               <div className="empty-icon">?</div>
               <h3>No questions yet</h3>
@@ -280,7 +262,7 @@ export default function QuestionBank() {
             </div>
           ) : (
             <div className="question-items">
-              {questions.map((question, index) => (
+              {visibleQuestions.map((question, index) => (
                 <article className="question-item" key={question.id}>
                   <div className="question-number">{index + 1}</div>
 
@@ -325,7 +307,7 @@ export default function QuestionBank() {
           )}
         </section>
 
-        {preview && (
+        {preview && loadedExam===examId && (
           <div
             className="question-preview-overlay"
             onClick={(event) => {

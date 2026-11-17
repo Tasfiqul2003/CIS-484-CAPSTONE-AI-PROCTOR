@@ -12,7 +12,8 @@ def _init():
         url = os.getenv("DATABASE_URL")
         if not url:
             raise RuntimeError("DATABASE_URL is not set")
-        _engine = create_engine(url, pool_pre_ping=True)
+        # Database exceptions must not print bound transcripts, tokens or secrets.
+        _engine = create_engine(url, pool_pre_ping=True, hide_parameters=True)
         _SessionLocal = sessionmaker(bind=_engine, autoflush=False)
 
 

@@ -8,6 +8,7 @@ from sqlalchemy import text
 from .db import open_session
 from .student_auth import read_student_token
 from .exam import (
+    submit_answer,
     MAX_QUESTIONS,
     OLLAMA_MODEL,
     OLLAMA_URL,
@@ -154,7 +155,7 @@ def plan_turn(req: AnswerRequest, claims: dict) -> dict:
             "seq": pending["sequence_num"] + 1,
             "root_sequence": pending.get("avatar_root_sequence") or pending["sequence_num"],
             "followup_index": pending.get("avatar_followup_index", 0),
-            "can_follow_up": pending.get("avatar_followup_index", 0) < avatar_settings.behavior.followUps,
+            "can_follow_up": demo_for_session(session) and pending.get("avatar_followup_index", 0) < avatar_settings.behavior.followUps,
             "answer": answer,
             "ts": timestamp_start,
             "te": timestamp_end,
@@ -358,9 +359,14 @@ def answer_stream(
     if claims.get("session_id") != str(req.session_id):
         raise HTTPException(403, "Student token does not match this session.")
 
-    plan = plan_turn(req, claims)  # Validate before streaming starts
+    db = open_session()
+    try:
+        result = submit_answer(req, authorization=authorization, db=db)
+    finally:
+        db.close()
+    event = "done" if result.get("done") else "complete"
     return StreamingResponse(
-        event_stream(plan),
+        iter([sse(event, result)]),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )

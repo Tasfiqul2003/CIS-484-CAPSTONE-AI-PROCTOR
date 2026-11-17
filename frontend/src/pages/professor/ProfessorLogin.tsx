@@ -33,13 +33,17 @@ export default function ProfessorLogin() {
       });
 
       if (!response.ok) {
-        let message = "Login failed. Check your username and password.";
+        let message = response.status === 401
+          ? "Login failed. Check your username and password."
+          : response.status >= 500
+            ? "The login service is unavailable. Try again when the backend is ready."
+            : "Unable to sign in. Please try again.";
 
         try {
           const data = await response.json();
-          if (data.detail) {
+          if (response.status < 500 && typeof data.detail === "string") {
             message = data.detail;
-          } else if (data.message) {
+          } else if (response.status < 500 && typeof data.message === "string") {
             message = data.message;
           }
         } catch {

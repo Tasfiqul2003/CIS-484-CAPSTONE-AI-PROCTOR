@@ -17,8 +17,18 @@ export LLM="$MODEL" HOST=127.0.0.1 PORT="$APP_PORT" FH_PORT
 export OLLAMA_URL="http://127.0.0.1:$OLLAMA_PORT" RENDER_URL="http://127.0.0.1:$FH_PORT"
 export FH_DIR="$WORK/SoulX-FlashHead" FH_IMAGE="$WORK/professor.jpg"
 
+# Starting right after pkill is the normal way to restart, and a killed process takes a moment to let
+# go of its socket, so wait rather than losing the race and exiting.
 for p in "$APP_PORT" "$FH_PORT"; do
-  if (exec 3<>"/dev/tcp/127.0.0.1/$p") 2>/dev/null; then echo "Port $p is in use; nothing was started." >&2; exit 1; fi
+  for _ in $(seq 1 20); do
+    (exec 3<>"/dev/tcp/127.0.0.1/$p") 2>/dev/null || break
+    sleep 1
+  done
+  if (exec 3<>"/dev/tcp/127.0.0.1/$p") 2>/dev/null; then
+    echo "Port $p is still in use after 20 seconds; nothing was started." >&2
+    echo "Something else is holding it: check with  ss -lptn 'sport = :$p'" >&2
+    exit 1
+  fi
 done
 nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader | sed 's/^/GPU memory in use before start: /'
 

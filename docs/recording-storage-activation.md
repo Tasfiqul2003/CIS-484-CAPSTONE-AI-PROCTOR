@@ -22,8 +22,8 @@ and volume are declared external. The application command targets only the
 backend with `--no-deps --no-build --pull never`; DB, Ollama, the speech worker
 and avatar services are not recreated, rebuilt or downloaded.
 
-Before restarting the backend, it checks for assessed exam sessions still in
-progress and refuses to proceed while any remain. It also refuses to replace
+Before restarting the backend, the default check blocks saved assessed exam
+sessions still marked in progress. It also refuses to replace
 a changed container or image tag. It saves private configuration, the original
 inspection and private environment bytes outside the checkout. Those files
 contain credentials and must remain local. A failed health, settings or shared
@@ -48,15 +48,39 @@ blank retention continues to disable capture while the mount is prepared.
 A retention choice and a live synthetic consent/capture/submission/review
 test remain necessary before recording can be considered activated.
 
+## Explicit maintenance window
+
+The timing report found four attempts past their total deadline and two with
+no total time limit. That report alone does not establish whether a browser is
+currently using an untimed attempt. Finishing or deleting saved attempts is
+unnecessary for attaching the recording volume.
+
+When the operator confirms nobody is currently taking an exam, use
+`-MaintenanceWindow -ExpectedOpenSessions 6` with the delivered activation
+command. This keeps all saved attempts, answers, consent and grades unchanged.
+It requires the expected count and compares a read-only activity fingerprint
+again before restarting. A new attempt, changed question/answer counts,
+consent, avatar-action or upload metadata stops the restart. Recent recording
+uploads block both normal and maintenance restarts, including uploads still
+finishing after submission. The default mode continues to block open attempts.
+The explicit window and aggregate activity fingerprint are recorded only in
+the private rollback folder. Student identities and answer text are not
+printed or changed. The activity checks support the operator's maintenance
+window; they cannot prove that a browser has no in-flight request.
+
 ## Verification on 2026-11-18
 
-All 114 repository checks pass. Fourteen synthetic activation tests pass, including a real local parse with
+All 121 repository checks pass. Twenty-one synthetic activation tests pass, including a real local parse with
 Docker Compose 5.1.4. The parser check starts no containers and verifies exact
 replacement of extra mounts/ports and preservation of literal dollar signs
 in private values. Tests cover the active-exam guard, image changes, differing
 databases, existing volumes, custom resource limits, unmounted recordings,
 source-external private backups, settings preservation, rollback and repeated
-use. The Docker Engine activation itself remains untested in this session
+use. Maintenance tests cover unchanged saved attempts, expected-count checks,
+activity changes and uploads still finishing after submission. The activity
+snapshot test executes its backend program against synthetic database results
+and verifies that only read-only queries run and identifiers are not printed.
+The Docker Engine activation itself remains untested in this session
 because access to its named pipe is denied. This is setup code with tests,
 not a claim of successful live backend recreation.
 

@@ -22,6 +22,48 @@ DATE_KEY = 'EXAM_VIDEO_RETENTION_UNTIL'
 BACKEND = 'cis-484-capstone-ai-proctor-backend-1'
 WORKER = 'cis-484-capstone-ai-proctor-transcription-worker-1'
 
+# Returns only a count and a fingerprint of non-content activity metadata.
+# Student identities, questions and answers never leave the backend process.
+SESSION_SNAPSHOT_CODE = """
+import hashlib, json
+from app.db import open_session
+from sqlalchemy import text
+db = open_session()
+try:
+    db.execute(text('SET TRANSACTION READ ONLY'))
+    db.execute(text('SET LOCAL statement_timeout=5000'))
+    rows = db.execute(text('''
+        SELECT s.id, s.started_at, s.recording_consent_status,
+               s.recording_consent_decided_at,
+               q.questions, q.answered, q.last_question,
+               a.actions, a.last_action, v.status AS video_status,
+               v.next_chunk_index, v.updated_at AS video_updated_at
+        FROM exam_sessions s
+        LEFT JOIN LATERAL (
+            SELECT count(*) AS questions,
+                   count(*) FILTER (WHERE student_answer_transcript IS NOT NULL) AS answered,
+                   max(created_at) AS last_question
+            FROM interactions WHERE session_id = s.id
+        ) q ON true
+        LEFT JOIN LATERAL (
+            SELECT count(*) AS actions, max(created_at) AS last_action
+            FROM avatar_assistance_requests WHERE session_id = s.id
+        ) a ON true
+        LEFT JOIN exam_session_videos v ON v.session_id = s.id
+        WHERE s.status = 'in_progress' AND NOT s.developer_demo
+        ORDER BY s.id
+    ''')).mappings().all()
+    live = db.execute(text('''SELECT count(*) FROM exam_session_videos
+        WHERE status = 'recording' AND updated_at > clock_timestamp() - interval '90 seconds'
+    ''')).scalar_one()
+    data = json.dumps([dict(row) for row in rows], sort_keys=True, default=str).encode('utf-8')
+    print(json.dumps({'open': len(rows), 'fingerprint': hashlib.sha256(data).hexdigest(),
+                      'active_recordings': int(live)}))
+finally:
+    db.rollback()
+    db.close()
+"""
+
 
 class ActivationError(Exception):
     pass
@@ -263,13 +305,8 @@ class Docker:
             args += ['-f', str(override)]
         return args
 
-    def active_sessions(self):
-        code = ("import json; from app.db import open_session; from sqlalchemy import text; "
-                "db=open_session(); db.execute(text('SET TRANSACTION READ ONLY')); "
-                "db.execute(text('SET LOCAL statement_timeout=5000')); "
-                "n=db.execute(text(\"SELECT count(*) FROM exam_sessions WHERE status='in_progress' "
-                "AND NOT developer_demo\")).scalar_one(); db.rollback(); db.close(); print(json.dumps({'open':n}))")
-        return int(json.loads(self.run(['exec', BACKEND, 'python', '-c', code]))['open'])
+    def session_snapshot(self):
+        return json.loads(self.run(['exec', BACKEND, 'python', '-c', SESSION_SNAPSHOT_CODE]))
 
     def healthy(self):
         code = "import urllib.request; r=urllib.request.urlopen('http://127.0.0.1:8000/health/db',timeout=2); assert r.status==200; print('ok')"
@@ -328,11 +365,21 @@ def verify_running(plan, actual):
         raise ActivationError('The new backend mounts or network differ from the reviewed plan.')
 
 
-def activate(plan, docker, backup_dir, retention_until=None):
+def activate(plan, docker, backup_dir, retention_until=None, *, maintenance_window=False,
+             expected_open_sessions=None):
     if backup_dir.resolve().is_relative_to(plan.repo.resolve()):
         raise ActivationError('Private recovery files must be outside the Git checkout.')
-    if docker.active_sessions():
+    initial = docker.session_snapshot()
+    if initial['active_recordings']:
+        raise ActivationError('A recording upload is still active. Wait until it finishes before restarting the backend.')
+    if initial['open'] and not maintenance_window:
         raise ActivationError('An assessed exam session is still in progress. Finish it before recreating the backend.')
+    if maintenance_window:
+        if expected_open_sessions is None or expected_open_sessions < 0:
+            raise ActivationError('An explicit maintenance window requires the expected number of saved open attempts.')
+        if initial['open'] != expected_open_sessions:
+            raise ActivationError('The saved open-attempt count changed. Inspect it before choosing a maintenance window.')
+        print('Explicit maintenance window: preserving ' + str(initial['open']) + ' saved open attempts without changing their records.')
     if docker.unmounted_recordings(plan.before):
         raise ActivationError('Existing recordings in the container layer need migration before backend recreation.')
     if (docker.inspect(BACKEND)['Id'] != plan.before['Id'] or docker.inspect(WORKER)['Id'] != plan.worker['Id']):
@@ -349,6 +396,8 @@ def activate(plan, docker, backup_dir, retention_until=None):
     private_write(before_file, plan.before_yaml.encode('utf-8'))
     private_write(after_file, plan.after_yaml.encode('utf-8'))
     private_write(folder / 'backend-before.json', json.dumps(plan.before, ensure_ascii=True).encode('utf-8'))
+    if maintenance_window:
+        private_write(folder / 'maintenance-window.json', json.dumps(initial, sort_keys=True).encode('utf-8'))
     env_file = plan.repo / '.env'
     env_before = env_file.read_bytes()
     env_after = update_retention_setting(env_before, retention_until) if retention_until else env_before
@@ -367,8 +416,9 @@ def activate(plan, docker, backup_dir, retention_until=None):
                 written_env = True
             finally:
                 temporary.unlink(missing_ok=True)
-        if docker.active_sessions():
-            raise ActivationError('An assessed exam started during preparation. The backend was not restarted.')
+        current = docker.session_snapshot()
+        if current['active_recordings'] or current != initial:
+            raise ActivationError('Exam activity changed during preparation. The backend was not restarted.')
         attempted = True
         print('Recreating only the backend with its existing image and the shared recording mount.')
         docker.run(docker.compose(plan.project, after_file) +
@@ -416,7 +466,14 @@ def main():
     parser.add_argument('--backup-dir', type=Path, default=Path.home() / 'CYBROS-backups')
     parser.add_argument('--retention-until')
     parser.add_argument('--apply', action='store_true')
+    parser.add_argument('--maintenance-window', action='store_true',
+                        help='Operator confirms no one is taking an exam; keep all saved attempts unchanged.')
+    parser.add_argument('--expected-open-sessions', type=int)
     args = parser.parse_args()
+    if args.maintenance_window and (args.expected_open_sessions is None or args.expected_open_sessions < 0):
+        parser.error('--maintenance-window requires a nonnegative --expected-open-sessions count')
+    if not args.maintenance_window and args.expected_open_sessions is not None:
+        parser.error('--expected-open-sessions requires --maintenance-window')
     repo = args.repo.resolve()
     try:
         docker = Docker(repo)
@@ -435,7 +492,8 @@ def main():
         if not args.apply:
             print('Read-only check complete. Add --apply to recreate only the backend; no image build, model download or SQL migration is required.')
             return 0
-        activate(plan, docker, args.backup_dir.resolve(), args.retention_until)
+        activate(plan, docker, args.backup_dir.resolve(), args.retention_until,
+                 maintenance_window=args.maintenance_window, expected_open_sessions=args.expected_open_sessions)
         return 0
     except ActivationError as error:
         print(str(error), file=sys.stderr)

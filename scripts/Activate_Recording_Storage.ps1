@@ -3,16 +3,21 @@ param(
     [string]$Package,
     [string]$BackupDir = (Join-Path $env:USERPROFILE 'CYBROS-backups'),
     [string]$RetentionUntil,
-    [switch]$Apply
+    [switch]$Apply,
+    [switch]$MaintenanceWindow,
+    [int]$ExpectedOpenSessions = -1
 )
 
 $ErrorActionPreference = 'Stop'
+if ($MaintenanceWindow -and $ExpectedOpenSessions -lt 0) {
+    throw 'Provide -ExpectedOpenSessions with the saved open-attempt count for this maintenance window.'
+}
 if (-not $Package) {
     $deliveryRoot = $PSScriptRoot
     if (Test-Path -LiteralPath (Join-Path $PSScriptRoot 'activate_recording_storage.py')) {
         $deliveryRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
     }
-    $Package = Join-Path $deliveryRoot 'recording-storage-update'
+    $Package = Join-Path $deliveryRoot 'recording-storage-maintenance-update'
 }
 $Repo = (Resolve-Path -LiteralPath $Repo).Path
 $Package = (Resolve-Path -LiteralPath $Package).Path
@@ -31,5 +36,6 @@ if ($Apply) { $controller = Join-Path $Repo 'scripts\activate_recording_storage.
 $controllerArgs = @($controller, '--repo', $Repo, '--backup-dir', $BackupDir)
 if ($RetentionUntil) { $controllerArgs += @('--retention-until', $RetentionUntil) }
 if ($Apply) { $controllerArgs += '--apply' }
+if ($MaintenanceWindow) { $controllerArgs += @('--maintenance-window', '--expected-open-sessions', [string]$ExpectedOpenSessions) }
 & python @controllerArgs
 if ($LASTEXITCODE -ne 0) { throw 'Recording storage activation stopped. Review the status above and any reported private recovery folder.' }

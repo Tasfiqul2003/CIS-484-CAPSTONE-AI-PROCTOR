@@ -53,8 +53,14 @@ class FakeDocker:
         self.changed_tag = False
         self.recreated = False
         self.restored = False
+        self.active_recordings = 0
+        self.snapshots = None
 
-    def active_sessions(self): return self.open_sessions
+    def session_snapshot(self):
+        if self.snapshots is not None:
+            return self.snapshots.pop(0)
+        return {'open': self.open_sessions, 'fingerprint': 'synthetic-session-fingerprint',
+                'active_recordings': self.active_recordings}
     def unmounted_recordings(self, _): return self.layer_media
     def healthy(self): return True
     def compose(self, project, override): return ['compose', '-p', project, '-f', str(override)]
@@ -195,6 +201,86 @@ class StorageActivationTests(unittest.TestCase):
         with redirect_stdout(io.StringIO()):
             module.activate(plan, docker, self.root / 'backups')
         self.assertFalse(docker.recreated)
+
+    def test_explicit_maintenance_keeps_six_open_attempts_unchanged(self):
+        docker = FakeDocker(self.plan)
+        docker.open_sessions = 6
+        with redirect_stdout(io.StringIO()):
+            module.activate(self.plan, docker, self.root / 'backups',
+                            maintenance_window=True, expected_open_sessions=6)
+        self.assertTrue(docker.recreated)
+        self.assertEqual(docker.open_sessions, 6)
+        self.assertEqual((self.repo / '.env').read_bytes(), self.env_before)
+
+    def test_maintenance_requires_an_explicit_expected_count(self):
+        docker = FakeDocker(self.plan)
+        docker.open_sessions = 6
+        with self.assertRaisesRegex(module.ActivationError, 'expected number'):
+            module.activate(self.plan, docker, self.root / 'backups', maintenance_window=True)
+        self.assertFalse(docker.recreated)
+
+    def test_changed_open_count_prevents_maintenance_restart(self):
+        docker = FakeDocker(self.plan)
+        docker.open_sessions = 7
+        with self.assertRaisesRegex(module.ActivationError, 'count changed'):
+            module.activate(self.plan, docker, self.root / 'backups',
+                            maintenance_window=True, expected_open_sessions=6)
+        self.assertFalse(docker.recreated)
+
+    def test_new_activity_with_the_same_count_blocks_restart(self):
+        docker = FakeDocker(self.plan)
+        docker.snapshots = [
+            {'open': 6, 'fingerprint': 'synthetic-before', 'active_recordings': 0},
+            {'open': 6, 'fingerprint': 'synthetic-new-question', 'active_recordings': 0},
+        ]
+        with redirect_stdout(io.StringIO()), self.assertRaises(module.ActivationError):
+            module.activate(self.plan, docker, self.root / 'backups',
+                            maintenance_window=True, expected_open_sessions=6)
+        self.assertFalse(docker.recreated)
+
+    def test_active_recording_blocks_even_an_explicit_maintenance_window(self):
+        docker = FakeDocker(self.plan)
+        docker.open_sessions = 6
+        docker.active_recordings = 1
+        with self.assertRaisesRegex(module.ActivationError, 'recording upload'):
+            module.activate(self.plan, docker, self.root / 'backups',
+                            maintenance_window=True, expected_open_sessions=6)
+        self.assertFalse(docker.recreated)
+
+    def test_submitted_session_upload_blocks_normal_restart(self):
+        docker = FakeDocker(self.plan)
+        docker.open_sessions = 0
+        docker.active_recordings = 1
+        with self.assertRaisesRegex(module.ActivationError, 'recording upload'):
+            module.activate(self.plan, docker, self.root / 'backups')
+        self.assertFalse(docker.recreated)
+
+    def test_snapshot_is_read_only_hides_identifiers_and_tracks_activity(self):
+        from types import ModuleType
+        from unittest.mock import Mock
+        app = ModuleType('app'); app.__path__ = []
+        db_module = ModuleType('app.db')
+        db = Mock()
+        rows = [{'id': 'synthetic-private-session-id', 'questions': 1, 'answered': 0}]
+        db.execute.return_value.mappings.return_value.all.side_effect = lambda: copy.deepcopy(rows)
+        db.execute.return_value.scalar_one.return_value = 0
+        db_module.open_session = lambda: db
+        app.db = db_module
+        snapshots = []
+        with patch.dict(sys.modules, {'app': app, 'app.db': db_module}):
+            for answered in [0, 1]:
+                rows[0]['answered'] = answered
+                output = io.StringIO()
+                with redirect_stdout(output):
+                    exec(compile(module.SESSION_SNAPSHOT_CODE, '<synthetic-snapshot>', 'exec'), {})
+                self.assertNotIn('synthetic-private-session-id', output.getvalue())
+                snapshots.append(json.loads(output.getvalue()))
+        self.assertEqual(snapshots[0]['open'], 1)
+        self.assertNotEqual(snapshots[0]['fingerprint'], snapshots[1]['fingerprint'])
+        for call in db.execute.call_args_list:
+            self.assertIn(str(call.args[0]).strip().split()[0].upper(), ['SET', 'SELECT'])
+        self.assertEqual(db.rollback.call_count, 2)
+        self.assertEqual(db.close.call_count, 2)
 
     def test_real_compose_parser_preserves_dollars_and_replaces_added_mounts(self):
         # Config parsing is local: it does not contact Docker Engine or start a container.

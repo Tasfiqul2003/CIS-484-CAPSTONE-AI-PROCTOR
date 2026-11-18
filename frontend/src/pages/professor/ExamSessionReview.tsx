@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AlertTriangle, ArrowLeft, LoaderCircle, Play, RefreshCw, Sparkles } from "lucide-react";
+import { AlertTriangle, ArrowLeft, LoaderCircle, Play, RefreshCw, Sparkles, Headphones, FileText } from "lucide-react";
 import ProfessorHeader from "../../components/professor/ProfessorHeader";
 import OralExamMark from "../../components/brand/OralExamMark";
+import "../../styles/exam-ui-tokens.css";
+import "./exam-review.css";
 import ProvisionalAssessment from '../../components/exam/ProvisionalAssessment';
 
 type AnswerReview = {
@@ -24,6 +26,8 @@ type ReviewData = {
   exam_template_id?: string | null;
   course: string | null;
   status: string;
+  identity_check_completed?: boolean;
+  identity_review_required?: boolean;
   video_url: string;
   recording_expires_at?: string;
   answers: AnswerReview[];
@@ -237,7 +241,7 @@ export default function ExamSessionReview() {
   const status = report?.assessment?.status;
 
   return (
-    <div className="professor-dashboard-page professor-review-page">
+    <div className="professor-dashboard-page professor-review-page review-settings-style">
       <ProfessorHeader title="Professor review" />
       <main className="professor-review-content">
         <div className="professor-review-heading">
@@ -263,6 +267,7 @@ export default function ExamSessionReview() {
           </section>
         ) : review ? (
           <div className="professor-review-grid">
+            {review.identity_review_required && review.identity_check_completed === false && <p role="status">Identity was not verified by a photo check. This attempt requires professor identity review.</p>}
             <section className="professor-review-qa" aria-labelledby="qa-heading">
               <h2 id="qa-heading">Questions and answers</h2>
               {groups.length === 0 ? <p>No answers were saved for this session.</p> : groups.map((turns, index) => {
@@ -290,8 +295,8 @@ export default function ExamSessionReview() {
               })}
             </section>
 
-            <section className="exam-card" aria-labelledby="transcript-heading">
-              <h2 id="transcript-heading">Submitted answer transcript</h2>
+            <section className="exam-card review-transcript" aria-labelledby="transcript-heading">
+              <h2 id="transcript-heading"><FileText size={20} aria-hidden="true" />Submitted answer transcript</h2>
               <p>Exchange seek positions are approximate times reported by the student's browser. They may include question reading and silence; they do not prove when an answer was spoken.</p>
               {(review.answers ?? []).length === 0 ? (
                 <p>No answer transcript was saved for this session.</p>
@@ -319,6 +324,8 @@ export default function ExamSessionReview() {
                       <p>{item.answer || "No answer submitted."}</p>
                       {item.machine_transcript_draft && <details><summary>Original speech draft</summary><p>{item.machine_transcript_draft}</p></details>}
                       <p>Transcript source: {item.transcript_source === "confirmed_transcript" ? "Student-confirmed speech transcript"
+                        : item.transcript_source === "automatic_transcript" ? "Automatic speech transcript (not student reviewed)"
+                        : item.transcript_source === "unanswered_voice" ? "No intelligible spoken response"
                         : item.transcript_source === "typed" ? "Typed answer" : item.transcript_source === "timeout" ? "Question timed out" : "Legacy source unknown"}.</p>
                       {item.response_media_status === "available"
 ? <button type="button" onClick={() => void playResponse(item)}>Play exchange {item.sequence_num}</button>
@@ -330,7 +337,7 @@ export default function ExamSessionReview() {
             </section>
             {sessionId && <ProvisionalAssessment sessionId={sessionId}
               onConfirmed={status => setReview(current => current ? { ...current, status } : current)} />}
-            <section className="exam-card">
+            <section className="exam-card review-timeline">
               <details><summary>Delivery and interruption timeline</summary>
                 <p>Times are approximate recording offsets reported by the browser. An interruption marks a continuity boundary; missing observations are not filled in.</p>
                 {review.media_events?.length ? <ol>{review.media_events.map(event => <li key={event.event_id}>
@@ -344,7 +351,7 @@ export default function ExamSessionReview() {
             </section>
             <div className="professor-review-side">
               <section className="professor-review-panel professor-review-video" aria-labelledby="recording-heading">
-                <h2 id="recording-heading">Recording</h2>
+                <h2 id="recording-heading"><Headphones size={20} aria-hidden="true" />Recording</h2>
                 <video ref={bindVideo} controls preload="metadata" src={review.video_url}
                   onError={() => setMediaError("Recording unavailable, expired, or unsupported by this browser.")}
                   onPlay={() => questionAudio.current?.pause()}

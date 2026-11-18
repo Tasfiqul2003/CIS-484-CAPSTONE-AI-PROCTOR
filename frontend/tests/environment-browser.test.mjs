@@ -68,6 +68,7 @@ await page.route('**/*', async route => {
   if (url.pathname.endsWith('/bundle.css')) return route.fulfill({ contentType: 'text/css', body: css });
   if (!url.pathname.startsWith('/api/')) return route.fulfill({ contentType: 'text/html', body: '<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/bundle.css"></head><body style="margin:0"><div id="root"></div><script src="/bundle.js"></script></body></html>' });
   calls.push({ path: url.pathname, method: request.method() });
+  if (url.pathname === '/api/avatar/status') return json({enabled:false,ready:false});
   if (url.pathname.endsWith('/student-presentation')) {
     if (request.method() === 'PUT') savedBackground = request.postDataJSON().preferences.background;
     return json(preview());
@@ -124,6 +125,8 @@ try {
   calls = []; await visit('#attempt');
   await page.getByRole('button', { name: 'Save and continue to recording notice' }).click();
   await page.getByRole('button', { name: 'I understand — start recording and exam' }).click();
+  await page.getByText('Accessibility and recovery', {exact:true}).click();
+  await page.getByRole('button', { name: 'Use keyboard controls', exact: true }).click();
   await page.getByLabel('Test answer', { exact: true }).fill('Synthetic first answer');
   await page.getByRole('button', { name: 'Submit test answer →', exact: true }).click();
   await page.locator('.exam-error').filter({ hasText: /fetch/i }).waitFor();

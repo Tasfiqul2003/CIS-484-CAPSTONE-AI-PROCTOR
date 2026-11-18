@@ -24,3 +24,6 @@
 .exam-stage-static-label, .exam-stage-substitute { grid-area: viewport; align-self: end; justify-self: start; z-index: 1; max-width: calc(100% - 24px); margin: 0 12px 12px; padding: 4px 10px; border-radius: 20px; background: #fff; color: #482b78; font-size: .875rem; line-height: 1.5; font-weight: 650; }
 .exam-stage-substitute { background: #1d4ed8; color: #fff; border: 1px solid #fff; }
 @media (max-width: 480px) { .exam-stage-viewport { border-radius: 10px; height: 300px; } .exam-stage-substitute, .exam-stage-static-label { margin: 0 8px 8px; font-size: .875rem; } }
+
+.exam-environment-content { grid-area: viewport; position: relative; align-self: stretch; min-width: 0; min-height: 0; z-index: 1; display: grid; place-items: center; padding: 24px; }
+.exam-environment-content .avatar-video-stage { max-width: min(420px, 82%); }

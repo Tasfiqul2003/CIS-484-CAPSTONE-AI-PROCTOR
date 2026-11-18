@@ -17,6 +17,7 @@ for(let i=0;i<count;i++)bytes.writeInt16LE(Math.round(Math.sin(i/rate*2*Math.PI*
 const bundle=await build({stdin:{contents:`import React from 'react';import{createRoot}from'react-dom/client';
  import Presentation from './src/components/avatar/LiveExamPresentation';window.savedBusy=[];
  createRoot(document.getElementById('root')).render(<Presentation sessionId='${session}' token='synthetic-session-token'
+ stage={location.hash==='#video'?<div data-testid='synthetic-video'>Synthetic FlashHead stage</div>:null}
  question='Synthetic approved question' sequence={1} answer='' expired={false} submitting={false}
  onTiming={()=>{}} onBusyChange={()=>{}} onTextSizeChange={()=>{}} onQuestionAudioBusy={busy=>window.savedBusy.push(busy)}/>);`,
  resolveDir:fileURLToPath(new URL('..',import.meta.url)),loader:'tsx'},bundle:true,write:false,outdir:'live-presentation-memory',jsx:'automatic',
@@ -25,6 +26,7 @@ const js=bundle.outputFiles.find(file=>file.path.endsWith('.js')).text,css=bundl
 const browser=await chromium.launch({headless:true,args:['--mute-audio','--autoplay-policy=no-user-gesture-required'],executablePath:process.env.AVATAR_CHROME_PATH||'C:/Program Files/Google/Chrome/Application/chrome.exe'});
 try{
  const context=await browser.newContext({reducedMotion:'reduce'}),page=await context.newPage();page.setDefaultTimeout(6000);
+ let environmentMode=false,background='neutral';
  const errors=[],requests=[];page.on('pageerror',error=>errors.push(error.message));
  await context.addInitScript(()=>{
   window.browserSpeechCalls=0;window.captureCalls=0;
@@ -42,10 +44,12 @@ try{
   if(url.pathname==='/bundle.css')return route.fulfill({contentType:'text/css',body:css});
   if(!url.pathname.startsWith('/api/'))return route.fulfill({contentType:'text/html',body:'<!doctype html><html><head><link rel="stylesheet" href="/bundle.css"></head><body><div id="root"></div><script src="/bundle.js"></script></body></html>'});
   requests.push({method:request.method(),path:url.pathname});
-  if(url.pathname.endsWith('/presentation'))return json({session_id:session,revision:1,voice_profile:'clear',
+  if(url.pathname.endsWith('/presentation')){
+   if(request.method()==='PUT')background=request.postDataJSON().background;
+   return json({session_id:session,revision:1,voice_profile:'clear',
    policy:{defaults:{avatar:'guide',background:'neutral',customAvatar:null,customBackground:null,voiceLabel:'Synthetic voice',speed:1,reducedMotion:false,animation:false},
-    allowAvatar:false,allowBackground:false,allowSpeed:false,avatarChoices:[{id:'guide',label:'Guide'}],backgroundChoices:[{id:'neutral',label:'Neutral'}],minSpeed:1,maxSpeed:1},
-   preferences:{avatar:'guide',background:'neutral',volume:70,textSize:16,reducedMotion:false,speed:1}});
+    allowAvatar:false,allowBackground:environmentMode,allowSpeed:false,avatarChoices:[{id:'guide',label:'Guide'}],backgroundChoices:(environmentMode?['neutral','library','classroom','office','nature']:['neutral']).map(id=>({id,label:id})),minSpeed:1,maxSpeed:1},
+   preferences:{avatar:'guide',background,volume:70,textSize:16,reducedMotion:false,speed:1}});}
   if(url.pathname.endsWith('/assistance'))return json({session_id:session,question_sequence_num:1,mode:'assessed',actions:{},server_now:new Date().toISOString(),deadline:null,question_deadline:null});
   if(url.pathname.endsWith('/speech/capabilities'))return json({synthesis:{available:true}});
   if(request.method()==='POST'&&url.pathname.endsWith('/question-audio'))return json({asset_id:asset,interaction_id:'40000000-0000-4000-8000-000000000001',
@@ -77,4 +81,22 @@ try{
  assert.equal(await page.evaluate(()=>window.captureCalls),0);assert.deepEqual(errors,[]);
  assert.ok(requests.every(request=>request.method==='GET'||request.path.endsWith('/question-audio')));
  console.log('PASS muted preference disables retry without changing question, assistance or recording policy');
+ environmentMode=true;
+ for(const stage of ['static','video']) {
+  await page.goto('http://127.0.0.1:52394/presentation#'+stage);await page.reload();
+  await page.getByRole('button',{name:'Student settings',exact:true}).click();
+  const settings=page.getByRole('dialog',{name:'Student settings',exact:true});
+  for(const id of ['neutral','library','classroom','office','nature']) {
+   await settings.getByLabel('Background',{exact:true}).selectOption(id);
+   assert.equal(await page.locator('[data-background]').getAttribute('data-background'),id);
+  }
+  if(stage==='video')assert.equal(await page.locator('.exam-environment-content [data-testid="synthetic-video"]').count(),1);
+  else assert.equal(await page.getByRole('img',{name:'Static faceless examiner'}).count(),1);
+  await settings.getByRole('button',{name:/Save/}).click();
+  await page.getByText('Preferences saved for this attempt.',{exact:false}).waitFor();
+  await page.reload();await page.waitForFunction(()=>document.querySelector('[data-background]')?.dataset.background==='nature');
+ }
+ assert.deepEqual(errors,[]);
+ console.log('PASS keyboard settings update all five environments around static and supplied video stages, and persist after reload');
+
 }finally{await browser.close();}

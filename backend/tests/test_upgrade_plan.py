@@ -24,7 +24,8 @@ def test_default_plan_never_reads_secrets_starts_database_or_connects(monkeypatc
     monkeypatch.setattr(upgrade, 'create_engine', forbidden)
     assert upgrade.run('plan') == 0
     assert '"starts_services": false' in capsys.readouterr().out
-    assert len(upgrade.plan()['new_migrations']) == 5
+    assert len(upgrade.plan()['new_migrations']) == 7
+    assert 'migrations/021_automatic_oral_transcripts.sql' in upgrade.plan()['new_migrations']
 
 
 @pytest.mark.parametrize('name', ['cybros_p3', 'postgres', 'cybros_validation_', 'cybros_validation_abc;DROP DATABASE postgres',

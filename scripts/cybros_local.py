@@ -78,6 +78,8 @@ def environment(cfg):
         "ADMIN_BOOTSTRAP_TOKEN": cfg["bootstrap_token"],
         "AUTH_COOKIE_SECURE": "false",
         "DEVELOPER_DEMO_MODE": "0", "DEVELOPER_MINIMAL_MODE": "0",
+        "AVATAR_SERVICE_URL": "", "AVATAR_SERVICE_TOKEN": "",
+        "CYBROS_DEVELOPER_FACE_BYPASS": "1" if cfg.get("developer_face_bypass_enabled") is True else "0",
         "OLLAMA_URL": "http://127.0.0.1:11434",
         "OLLAMA_MODEL": cfg["model"],
         # P3's installed offline engine was verified with generated WAV only.

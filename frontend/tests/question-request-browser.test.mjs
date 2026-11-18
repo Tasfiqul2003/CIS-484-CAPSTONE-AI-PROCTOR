@@ -45,6 +45,8 @@ function draft(id){return{id:`draft-${id}`,question_text:`${owner(id)} pending q
 function context(id){return{topic_coverage_required:[owner(id)],rubric:{criteria:[{name:`${owner(id)} rubric`,description:'Synthetic context.',max_score:5}]},context_hash:(id===A?'a':'b').repeat(64),can_edit:true};}
 await page.route('**/*',async route=>{
 const request=route.request(),url=new URL(request.url());const json=(value,status=200)=>route.fulfill({status,contentType:'application/json',body:JSON.stringify(value)});
+if(url.pathname==='/api/auth/me')return json({role:'professor',professor_id:'synthetic-professor'});
+if(url.pathname==='/api/auth/professor/exams')return json([{id:A,title:'Alpha',course:'SYNTH'},{id:B,title:'Beta',course:'SYNTH'}]);
 if(url.pathname.endsWith('/bundle.js'))return route.fulfill({contentType:'application/javascript',body:script});
 if(!url.pathname.startsWith('/api/'))return route.fulfill({contentType:'text/html',body:'<!doctype html><html><body><div id="root"></div><script src="/bundle.js"></script></body></html>'});
 requests.push({path:url.pathname,method:request.method()});

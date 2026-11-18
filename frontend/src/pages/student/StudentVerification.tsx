@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { CheckCircle2 } from "lucide-react";
 import JACardScanner from "../../components/JACardScanner";
 import OralExamMark from "../../components/brand/OralExamMark";
+import { clearDeveloperFaceBypass } from './studentIdentity';
 
 type Student = {
   id: string;
@@ -47,6 +48,7 @@ export default function StudentVerification() {
       sessionStorage.setItem("oralexam_student_id", result.student.id);
       sessionStorage.setItem("oralexam_student_name", result.student.name);
       sessionStorage.removeItem("oralexam_face_check_passed");
+      clearDeveloperFaceBypass();
       sessionStorage.removeItem("oralexam_exam_session_id");
       sessionStorage.removeItem("oralexam_exam_session_token");
       sessionStorage.removeItem("oralexam_developer_demo");
@@ -70,6 +72,7 @@ export default function StudentVerification() {
     sessionStorage.removeItem("oralexam_student_id");
     sessionStorage.removeItem("oralexam_student_name");
     sessionStorage.removeItem("oralexam_face_check_passed");
+    clearDeveloperFaceBypass();
   }
 
   return (

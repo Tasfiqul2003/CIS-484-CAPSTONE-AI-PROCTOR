@@ -33,7 +33,7 @@ def plan():
         executable_sql(migration)
     return {'action': 'plan', 'starts_services': False, 'database_changes': False,
             'catalog_files': len(migrations),
-            'new_migrations': [m.name for m in migrations if Path(m.name).name.startswith(('016_', '017_', '018_', '019_', '020_'))],
+            'new_migrations': [m.name for m in migrations if Path(m.name).name.startswith(('016_', '017_', '018_', '019_', '020_', '021_'))],
             'maintenance': 'protected backup -> isolated restore -> migrations -> real SQL contracts -> optional reviewed source upgrade',
             'media_coverage': 'Database backup only; recording and WAV asset backups are separate.'}
 

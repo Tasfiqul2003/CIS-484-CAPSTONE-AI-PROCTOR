@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { CameraOff } from "lucide-react";
 import OralExamMark from "../../components/brand/OralExamMark";
+import { DEVELOPER_EIDS } from "./studentIdentity";
 
 type FaceCheckResult = {
   matched: boolean;
@@ -12,6 +13,12 @@ type FaceCheckResult = {
 
 const MIN_RECORDING_SECONDS = 3;
 const MAX_RECORDING_SECONDS = 6;
+const DEVELOPER_BYPASS_KEY = "oralexam_developer_face_bypass";
+const DEVELOPER_BYPASS_ENDPOINT = "/api/exam/student/developer-face-bypass";
+type DeveloperBypassResult = {
+  student: { id: string; name: string; eid: string };
+  expires_at: string;
+};
 
 async function extractFrames(recording: Blob): Promise<Blob[]> {
   const objectUrl = URL.createObjectURL(recording);
@@ -92,6 +99,101 @@ export default function FaceVerification() {
   const studentId = sessionStorage.getItem("oralexam_student_id");
   const studentName = sessionStorage.getItem("oralexam_student_name");
   const studentEid = sessionStorage.getItem("oralexam_student_eid") || "";
+  const [developerEids, setDeveloperEids] = useState<string[]>([]);
+  const [bypassEid, setBypassEid] = useState<string>(DEVELOPER_EIDS.some(eid => eid === studentEid) ? studentEid : "");
+  const [bypassBusy, setBypassBusy] = useState(false);
+  const [bypassError, setBypassError] = useState("");
+  const [bypassResult, setBypassResult] = useState<DeveloperBypassResult | null>(null);
+  const [bypassExpired, setBypassExpired] = useState(false);
+  const bypassBusyRef = useRef(false);
+  const bypassControllerRef = useRef<AbortController | null>(null);
+  const bypassGenerationRef = useRef(0);
+  const captureBusy = cameraStarting || cameraActive || processing;
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => controller.abort(), 5000);
+    void (async () => {
+      try {
+        const response = await fetch(DEVELOPER_BYPASS_ENDPOINT, { credentials: "include", signal: controller.signal });
+        const data = await response.json();
+        if (controller.signal.aborted || !response.ok || data.enabled !== true || !Array.isArray(data.allowed_eids)) return;
+        setDeveloperEids(DEVELOPER_EIDS.filter(eid => data.allowed_eids.includes(eid)));
+      } catch {
+        // An unavailable or disabled server capability never enables a local bypass.
+      } finally {
+        window.clearTimeout(timer);
+      }
+    })();
+    return () => {
+      controller.abort();
+      window.clearTimeout(timer);
+      bypassGenerationRef.current += 1;
+      bypassControllerRef.current?.abort();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!bypassResult) return;
+    const timer = window.setTimeout(() => setBypassExpired(true), Math.max(0, Date.parse(bypassResult.expires_at) - Date.now()));
+    return () => window.clearTimeout(timer);
+  }, [bypassResult]);
+
+  async function bypassPhotoCheck(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const eid = bypassEid.trim().toLowerCase();
+    if (bypassBusyRef.current || cameraStartingRef.current || captureBusy || !developerEids.includes(eid)) return;
+    bypassBusyRef.current = true;
+    setBypassBusy(true);
+    setBypassError("");
+    const generation = ++bypassGenerationRef.current;
+    const controller = new AbortController();
+    bypassControllerRef.current = controller;
+    const timer = window.setTimeout(() => controller.abort(), 10000);
+    try {
+      const response = await fetch(DEVELOPER_BYPASS_ENDPOINT, {
+        method: "POST", credentials: "include", signal: controller.signal,
+        headers: { "Content-Type": "application/json" }, body: JSON.stringify({ eid }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (generation !== bypassGenerationRef.current) return;
+      if (!response.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Developer photo bypass was not authorized.");
+      const student = data.student;
+      const expiry = typeof data.expires_at === "string" ? Date.parse(data.expires_at) : NaN;
+      if (controller.signal.aborted || data.allowed !== true || data.matched !== false || data.developer_bypass !== true
+        || data.identity_check_completed !== false || data.review_required !== true
+        || !student || typeof student.id !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(student.id)
+        || typeof student.name !== "string" || !student.name.trim() || student.eid !== eid
+        || !developerEids.includes(student.eid) || !Number.isFinite(expiry) || expiry <= Date.now()
+        || expiry - Date.now() > 16 * 60 * 1000) {
+        throw new Error("The server did not return a valid, current developer photo bypass.");
+      }
+      // This is a navigation hint. Only the server's signed HttpOnly cookie authorizes access.
+      sessionStorage.removeItem("oralexam_face_check_passed");
+      sessionStorage.removeItem("oralexam_exam_session_id");
+      sessionStorage.removeItem("oralexam_exam_session_token");
+      sessionStorage.removeItem("oralexam_developer_demo");
+      sessionStorage.setItem("oralexam_student_id", student.id);
+      sessionStorage.setItem("oralexam_student_name", student.name);
+      sessionStorage.setItem("oralexam_student_eid", student.eid);
+      sessionStorage.setItem(DEVELOPER_BYPASS_KEY, JSON.stringify({ student_id: student.id, eid: student.eid, expires_at: data.expires_at }));
+      setResult(null);
+      setBypassExpired(false);
+      setBypassResult({ student, expires_at: data.expires_at });
+    } catch (failure) {
+      if (generation === bypassGenerationRef.current) {
+        setBypassError(controller.signal.aborted ? "Developer photo bypass timed out. Please try again."
+          : failure instanceof Error ? failure.message : "Developer photo bypass was not authorized.");
+      }
+    } finally {
+      window.clearTimeout(timer);
+      if (generation === bypassGenerationRef.current) {
+        bypassBusyRef.current = false;
+        bypassControllerRef.current = null;
+        setBypassBusy(false);
+      }
+    }
+  }
 
   useEffect(() => {
     return () => {
@@ -156,6 +258,7 @@ export default function FaceVerification() {
   }
 
   async function startRecording() {
+    if (cameraStartingRef.current || bypassBusyRef.current || captureBusy) return;
     setError("");
     setResult(null);
     setFrozenFrame("");
@@ -267,12 +370,23 @@ export default function FaceVerification() {
   }
 
   function continueToPortal() {
+    if (bypassResult) {
+      if (bypassExpired || Date.parse(bypassResult.expires_at) <= Date.now()
+        || bypassResult.student.id !== studentId || bypassResult.student.eid !== studentEid) {
+        setBypassExpired(true);
+        sessionStorage.removeItem(DEVELOPER_BYPASS_KEY);
+        return;
+      }
+      window.location.href = "/student/exams";
+      return;
+    }
     if (!result?.allowed || !studentId || !studentEid) {
       window.location.href = "/student/verification";
       return;
     }
 
-    // The backend independently enforces the recorded match/override state.
+    // The backend independently enforces the recent recorded match.
+    sessionStorage.removeItem(DEVELOPER_BYPASS_KEY);
     sessionStorage.setItem("oralexam_face_check_passed", "true");
     window.location.href = "/student/exams";
   }
@@ -306,7 +420,7 @@ export default function FaceVerification() {
           <h1 id="photo-check-heading">Photo check</h1>
           <p className="verification-description">
             {studentName ? `Welcome, ${studentName}. ` : ""}
-            Look at the camera for 3–6 seconds.
+            {bypassResult ? "Developer photo bypass selected." : "Look at the camera for 3–6 seconds."}
           </p>
           <p className="photo-check-hint">No need to hold your JACard.</p>
 
@@ -352,11 +466,12 @@ export default function FaceVerification() {
             </>
           )}
 
-          {!cameraActive && !cameraStarting && !processing && !result?.allowed
+          {!cameraActive && !cameraStarting && !processing && !result?.allowed && !bypassResult
             && !result?.review_required && (
             <button
               type="button"
               className="continue-button"
+              disabled={bypassBusy}
               onClick={() => void startRecording()}
             >
               {result || error ? "Try again" : "Start camera"}
@@ -385,7 +500,15 @@ export default function FaceVerification() {
             </div>
           )}
 
-          {result?.allowed && (
+          {bypassResult && (
+            <div role="status">
+              <p>Developer photo bypass accepted for {bypassResult.student.eid}. No photo comparison was performed. Identity remains unverified and requires professor review.</p>
+              <p>Exam recording requirements and AI settings still apply.</p>
+              {bypassExpired && <p role="alert">This developer photo bypass has expired. Request a new bypass below.</p>}
+            </div>
+          )}
+
+          {(result?.allowed || (bypassResult && !bypassExpired)) && (
             <button
               type="button"
               className="continue-button"
@@ -403,6 +526,37 @@ export default function FaceVerification() {
             <p>
               This experimental comparison does not prove liveness or verify that a physical JACard is authentic.
             </p>
+            {developerEids.length > 0 && (
+              <section aria-labelledby="developer-photo-bypass-heading">
+                <h2 id="developer-photo-bypass-heading"><span className="eyebrow">Developer mode</span></h2>
+                <p>For the listed synthetic accounts only. This skips the photo comparison; it does not verify identity. Your professor will see that identity is unverified and requires review.</p>
+                <form onSubmit={event => void bypassPhotoCheck(event)}>
+                  <label htmlFor="developer-photo-bypass-eid">Bypass</label>
+                  <input id="developer-photo-bypass-eid" list="developer-photo-bypass-eids" type="text"
+                    autoComplete="off" spellCheck={false} value={bypassEid} disabled={captureBusy || bypassBusy}
+                    aria-describedby="developer-photo-bypass-help"
+                    onChange={event => {
+                      setBypassEid(event.target.value);
+                      setBypassError("");
+                      if (bypassResult) {
+                        setBypassResult(null);
+                        setBypassExpired(false);
+                        sessionStorage.removeItem(DEVELOPER_BYPASS_KEY);
+                      }
+                    }} />
+                  <datalist id="developer-photo-bypass-eids">
+                    {developerEids.map(eid => <option key={eid} value={eid} />)}
+                  </datalist>
+                  <p id="developer-photo-bypass-help">Enter a demo student account recording and AI settings still apply.</p>
+                  <button type="submit" className="continue-button"
+                    disabled={captureBusy || bypassBusy || !developerEids.includes(bypassEid.trim().toLowerCase())}>
+                    Bypass photo check
+                  </button>
+                </form>
+                {bypassBusy && <p role="status">Requesting developer photo bypass…</p>}
+                {bypassError && <p role="alert">{bypassError}</p>}
+              </section>
+            )}
           </details>
 
           <div className="verification-secondary-actions">

@@ -230,7 +230,8 @@ export default function LiveExamPresentation({ sessionId, token, question, seque
   const updatePreferences = (next: StudentPreferences) => {
     preferenceGeneration.current += 1;
     latestSpeech.current.preferences = next;
-    stopSpeech(); setPreferences(next); setPreferenceStatus(""); onTextSizeChange(next.textSize);
+    if (next.volume !== preferences?.volume || next.speed !== preferences?.speed) stopSpeech();
+    setPreferences(next); setPreferenceStatus(""); onTextSizeChange(next.textSize);
   };
   const savePreferences = async () => {
     if (!preferences || saving) return;
@@ -330,10 +331,10 @@ export default function LiveExamPresentation({ sessionId, token, question, seque
   return <section className={`live-exam-presentation${developerMinimal ? " live-exam-presentation-minimal" : ""}`} aria-label="Examiner and assistance" style={{ fontSize: preferences.textSize }}>
     {settingsAccess}
     <div className="exam-avatar-stage">
-      {stage ?? <ExamStageAvatar avatar={preferences.avatar} background={preferences.background}
+      <ExamStageAvatar avatar={preferences.avatar} background={preferences.background}
         customAvatar={presentation.policy.defaults.customAvatar} customBackground={presentation.policy.defaults.customBackground}
         animation={!developerMinimal && presentation.policy.defaults.animation} reducedMotion={developerMinimal || reducedMotion}
-        state={state} developerMinimal={developerMinimal} />}
+        state={state} developerMinimal={developerMinimal}>{stage}</ExamStageAvatar>
       <p className="live-exam-stage-status" role="status">{developerMinimal ? <Keyboard size={24} aria-hidden="true" /> : <span aria-hidden="true" />}{status}</p>
     </div>
     {assistanceNotice && <div className="live-exam-assist-toast" role="status" key={assistanceNotice.id}>{assistanceNotice.text}</div>}
@@ -377,11 +378,6 @@ export default function LiveExamPresentation({ sessionId, token, question, seque
           {assistanceText && <div className="live-exam-assistance-text" role="status">{assistanceText}</div>}
         </section>}
         {assistanceError && <p role="alert">{assistanceError}</p>}
-        {!developerDemo && <QuestionAudioPlayer key={`${sessionId}:${sequence}:${preferences.speed}`}
-          sessionId={sessionId} token={token} sequence={sequence} speed={preferences.speed} volume={preferences.volume}
-          disabled={expired || submitting || assistanceBusy} onBusy={updateSavedAudioBusy} onState={setSpeechState}
-          beforePlay={() => { stopSpeech(); readQuestions.current.add(sequence); latestSpeech.current.audioEnabled = false; setAudioEnabled(false); }}
-          onObservation={onMediaObservation} />}
         <div className="live-exam-controls">
           {assistanceError && <button type="button" disabled={preparing.current || submitting} onClick={() => void reloadAssistance()}>Retry loading assistance</button>}
           {retry.current && <button type="button" disabled={preparing.current || submitting} onClick={() => void ask(retry.current!.action)}>Retry assistance request</button>}

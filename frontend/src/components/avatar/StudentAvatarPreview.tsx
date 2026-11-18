@@ -1,4 +1,3 @@
-import AIAvatar from "../AIAvatar";
 import { useEffect, useMemo, useRef, useState } from "react";
 import ExamStageAvatar from "./ExamStageAvatar";
 import {
@@ -141,7 +140,7 @@ export default function StudentAvatarPreview({ settings, onClose, simple = false
           <figcaption>{talking.name}</figcaption>
         </figure> : <div className={`avatar-stage avatar-background-${shownBackground}`} data-state={state.toLowerCase()}
           style={shownBackground === "custom" && customBackground ? { backgroundImage: `url("${customBackground}")` } : undefined}>
-          <AIAvatar compact avatar={shownAvatar} customAvatar={customAvatar} background={shownBackground}
+          <ExamStageAvatar avatar={shownAvatar} customAvatar={customAvatar} background={shownBackground}
             customBackground={customBackground} state={state} animation={settings.presentation.animation} reducedMotion={reducedMotion} />
         </div>}
         <div className="avatar-preview-simple-question">

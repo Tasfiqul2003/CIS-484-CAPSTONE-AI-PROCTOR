@@ -1,0 +1,54 @@
+/* Replay uses the settings palette, card rhythm and native accessible controls. */
+.professor-review-page.review-settings-style { background: #f7f7fb; color: #30283e; font-size: 14px; line-height: 1.6; }
+.review-settings-style .professor-review-content { width: min(calc(100% - 48px), 1240px); max-width: 1240px; margin: auto; padding: 30px 0 64px; }
+.review-settings-style .professor-review-heading { margin-bottom: 24px; padding: 20px 24px; border: 1px solid #e4dfed; border-radius: 14px; background: #fff; box-shadow: 0 2px 8px #30204405; }
+.review-settings-style .professor-review-title h1 { font-size: 20px; letter-spacing: -.4px; line-height: 1.5; }
+.review-settings-style .professor-review-title h1 span { font-weight: 450; color: #7b7088; }
+.review-settings-style .professor-review-title p { font-size: 12px; color: #80738b; }
+.review-settings-style .professor-review-course { font-size: 11px; letter-spacing: .5px; }
+.professor-review-page.review-settings-style .professor-review-grid { display: grid; grid-template-columns: minmax(0,1.45fr) minmax(300px,1fr); grid-template-areas: "questions side" "transcript side" "assessment side" "timeline side"; align-items: start; gap: 20px; }
+.review-settings-style .professor-review-qa { grid-area: questions; }
+.review-settings-style .review-transcript { grid-area: transcript; }
+.review-settings-style .professor-review-grid > .question-builder { grid-area: assessment; }
+.review-settings-style .review-timeline { grid-area: timeline; }
+.review-settings-style .professor-review-side { grid-area: side; display: grid; gap: 18px; position: sticky; top: 24px; }
+.review-settings-style :is(.exam-card,.question-builder,.professor-review-panel) { min-width: 0; margin: 0; padding: 22px; background: #fff; border: 1px solid #e4dfed; border-radius: 14px; box-shadow: 0 2px 8px #30204405; }
+.review-settings-style h2 { display: flex; align-items: center; gap: 9px; margin: 0 0 12px; color: #3b285c; font-size: 16px; line-height: 1.5; font-weight: 650; }
+.review-settings-style h2 svg { color: #8865b1; flex-shrink: 0; }
+.review-settings-style h3 { margin: 0 0 8px; font-size: 14px; color: #463253; }
+.review-settings-style :is(.exam-card,.question-builder) > p { color: #81748b; font-size: 12px; margin: 8px 0 18px; line-height: 1.7; }
+.review-settings-style .review-question { margin: 12px 0 0; padding: 18px 20px; border: 1px solid #e4dfed; border-left: 3px solid #9272bc; border-radius: 12px; background: #fff; }
+.review-settings-style .review-question-label { font-size: 10px; letter-spacing: 1px; color: #8b6cac; }
+.review-settings-style .review-answer { font-size: 13px; padding: 12px 14px; border-radius: 9px; background: #f9f7fc; border-color: #ece6f3; }
+.review-settings-style .review-transcript > ol { list-style: none; padding: 0; margin: 18px 0 0; display: grid; gap: 14px; counter-reset: exchanges; }
+.review-settings-style .review-transcript > ol > li { counter-increment: exchanges; padding: 18px; border: 1px solid #eae4f0; border-radius: 11px; background: #fcfbfe; overflow-wrap: anywhere; }
+.review-settings-style .review-transcript > ol > li::before { content: "EXCHANGE " counter(exchanges); display: block; font-size: 10px; font-weight: 700; letter-spacing: 1px; color: #9374b4; margin-bottom: 7px; }
+.review-settings-style .review-transcript li p { margin: 8px 0; color: #74647f; font-size: 12px; line-height: 1.7; }
+.review-settings-style audio { display: block; width: 100%; height: 42px; margin: 10px 0; }
+.review-settings-style video { display: block; width: 100%; aspect-ratio: 16/10; border-radius: 10px; background: #211c2b; object-fit: contain; }
+.review-settings-style button, .review-settings-style .professor-back-button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 40px; max-width: 100%; padding: 9px 14px; border: 1px solid #dcd2e8; border-radius: 9px; background: #fff; color: #68458f; font: inherit; font-size: 12px; font-weight: 600; line-height: 1.5; cursor: pointer; text-decoration: none; }
+.review-settings-style button:hover:not(:disabled) { background: #f5f0fb; border-color: #bca5d5; }
+.review-settings-style .question-builder > button:first-of-type { background: #6d28d9; border-color: #6d28d9; color: #fff; }
+.review-settings-style .question-builder > button:last-of-type { margin-top: 4px; }
+.review-settings-style button:disabled { opacity: .55; cursor: not-allowed; }
+.review-settings-style :is(button,input,select,textarea,a,summary):focus-visible { outline: 3px solid #a984d3; outline-offset: 3px; }
+.review-settings-style label { display: block; margin: 10px 0 6px; color: #65516f; font-size: 12px; font-weight: 600; }
+.review-settings-style :is(select,input,textarea) { max-width: 100%; min-height: 40px; border: 1px solid #dfd6e9; border-radius: 8px; padding: 9px 12px; background: #fff; color: #43304f; font: inherit; font-size: 13px; }
+.review-settings-style input[type="number"] { width: 130px; }
+.review-settings-style textarea { resize: vertical; }
+.review-settings-style fieldset { min-width: 0; border: 1px solid #e6dfed; border-radius: 10px; padding: 16px; background: #fcfbfe; }
+.review-settings-style legend { padding: 0 7px; font-size: 13px; font-weight: 650; color: #674887; }
+.review-settings-style fieldset p { font-size: 12px; color: #84758e; margin: 6px 0 12px; }
+.review-settings-style summary { color: #765393; font-size: 12px; font-weight: 600; cursor: pointer; padding: 5px 0; }
+.review-settings-style details p { font-size: 12px; color: #84758e; margin: 10px 0; }
+.review-settings-style .professor-review-note { color: #8c7d96; font-size: 11px; line-height: 1.7; margin-top: 12px; }
+.review-settings-style .professor-review-assessing { font-size: 13px; color: #8669a5; }
+.review-settings-style .professor-review-flags p { font-size: 12px; color: #84758e; }
+@media(max-width: 850px) {
+ .professor-review-page.review-settings-style .professor-review-grid { grid-template-columns: minmax(0,1fr); grid-template-areas: "side" "questions" "transcript" "assessment" "timeline"; }
+ .review-settings-style .professor-review-side { position: static; }
+ .review-settings-style .professor-review-content { width: calc(100% - 28px); padding-top: 18px; }
+ .review-settings-style .professor-review-heading { padding: 16px; gap: 14px; }
+ .review-settings-style .professor-review-title h1 { font-size: 18px; }
+ .review-settings-style :is(.exam-card,.question-builder,.professor-review-panel) { padding: 18px; }
+}

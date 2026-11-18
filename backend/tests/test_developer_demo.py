@@ -478,6 +478,14 @@ def test_existing_real_attempt_never_uses_new_global_demo_substitutes(monkeypatc
     db.marked_demo = False
     prepare_behavior(monkeypatch, db)
 
+    if not streaming:
+        monkeypatch.setattr(exam, 'ask_follow_up', lambda *a: ('Synthetic main follow-up?', 'Saved exam policy'))
+        monkeypatch.setattr(exam, 'ai_available', lambda *a: pytest.fail('Real attempt must not probe demo capabilities'))
+        result, _ = run_answer(db, streaming)
+        assert result['done'] is False and db.marked_demo is False
+        assert db.inserted['src'] == 'generated'
+        return
+
     def real_failure(*args, **kwargs):
         pytest.fail('An assessed attempt must not synthesize unapproved follow-up questions')
 

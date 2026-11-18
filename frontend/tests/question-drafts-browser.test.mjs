@@ -28,7 +28,9 @@ const contextSaves=[];
 await page.route('**/*',async route=>{
   const request=route.request(),url=new URL(request.url());
   const json=(value,status=200)=>route.fulfill({status,contentType:'application/json',body:JSON.stringify(value)});
-  if(url.pathname.endsWith('/bundle.js'))return route.fulfill({contentType:'application/javascript',body:script});
+  if(url.pathname==='/api/auth/me')return json({role:'professor',professor_id:'synthetic-professor'});
+if(url.pathname==='/api/auth/professor/exams')return json([{id:exam,title:'Synthetic exam',course:'SYNTH'}]);
+if(url.pathname.endsWith('/bundle.js'))return route.fulfill({contentType:'application/javascript',body:script});
   if(!url.pathname.startsWith('/api/'))return route.fulfill({contentType:'text/html',body:'<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"></head><body><div id="root"></div><script src="/bundle.js"></script></body></html>'});
   if(url.pathname.endsWith('/questions'))return json(questions);
   if(url.pathname.endsWith('/question-drafts/context')){

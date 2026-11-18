@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { formatRemaining, readExamClock, remainingTime } from "./examTiming";
 import type { ExamClock, ExamTiming, RemainingTime } from "./examTiming";
 import LiveExamPresentation from "../../components/avatar/LiveExamPresentation";
+import AutomaticOralExam from "../../components/exam/AutomaticOralExam";
 import SpeechDraft from "../../components/exam/SpeechDraftPanel";
 import EnvironmentPreview from "../../components/avatar/EnvironmentPreview";
 import type { StudentPreferences } from "../../components/student-settings/studentSettings";
@@ -20,6 +21,8 @@ import type { AvatarStatus } from "../../components/avatar/avatarService";
 import OralExamMark from "../../components/brand/OralExamMark";
 import { DemoAttemptNotice, useDeveloperDemo } from "../../components/developer-demo/DemoWorkspace";
 import "./StudentExam.css";
+import "./examiner-workspace.css";
+import { hasStudentFaceAccess } from './studentIdentity';
 
 type StartResponse = ExamTiming & {
   session_id: string;
@@ -32,6 +35,9 @@ type StartResponse = ExamTiming & {
   developer_demo?: boolean;
   exam_title?: string;
   started_at?: string | null;
+  identity_check_completed?: boolean;
+  identity_review_required?: boolean;
+  technical_restart_allowed?: boolean;
 };
 
 type AnswerResponse = { done: true; reason?: string }
@@ -58,11 +64,13 @@ async function apiRequest<T>(
   endpoint: string,
   body: Record<string, unknown>,
   token?: string,
+  signal?: AbortSignal,
 ): Promise<T> {
   const response = await fetch(`/api${endpoint}`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
     body: JSON.stringify(body),
+    signal,
   });
 
   if (!response.ok) {
@@ -77,7 +85,19 @@ async function apiRequest<T>(
 
 export default function StudentExam() {
   const developer = useDeveloperDemo();
+  const [endConfirmation, setEndConfirmation] = useState(false);
+  const [endingExam, setEndingExam] = useState(false);
+  const [endRequested, setEndRequested] = useState(false);
+  const endRequestedRef = useRef(false);
+  const endDialog = useRef<HTMLDialogElement | null>(null);
+  useEffect(() => {
+    if (endConfirmation && !endDialog.current?.open) endDialog.current?.showModal();
+    else if (!endConfirmation) endDialog.current?.close();
+  }, [endConfirmation]);
+  const [keyboardMode, setKeyboardMode] = useState(false);
+  const oralSubmission = useRef<number | null>(null);
   const [demoAttempt, setDemoAttempt] = useState(false);
+  const [identityReviewRequired, setIdentityReviewRequired] = useState(false);
   const [settingsTarget, setSettingsTarget] = useState<HTMLDivElement | null>(null);
   const developerMinimal = demoAttempt && developer.enabled && developer.minimal === true;
   const [sessionId, setSessionId] = useState("");
@@ -277,6 +297,7 @@ export default function StudentExam() {
     liveController.current?.stop(); liveController.current = null;
     mediaStream.current?.getTracks().forEach(track => track.stop());
     mediaStream.current = null;
+    recordingMix.current?.close(); recordingMix.current = null;
     setRecordingActive(false);
   }
 
@@ -418,7 +439,7 @@ export default function StudentExam() {
     if (
       !examTemplateId ||
       !studentId ||
-      sessionStorage.getItem("oralexam_face_check_passed") !== "true" ||
+      !hasStudentFaceAccess(studentId) ||
       sessionStorage.getItem("oralexam_student_id") !== studentId
     ) {
       window.location.href = "/student/verification";
@@ -463,20 +484,27 @@ export default function StudentExam() {
         if (!mounted.current) throw new Error('Exam startup was cancelled when leaving the page.');
       }
 
-      const saved = sessionStorage.getItem(storageKey);
+      let saved = sessionStorage.getItem(storageKey);
       if (saved && preflight.recording_required) {
         let finished = false;
         try {
           const attempt = JSON.parse(saved) as { id: string; token: string };
           const state = await fetch(`/api/exam/sessions/${encodeURIComponent(attempt.id)}`,
             { headers: { Authorization: `Bearer ${attempt.token}` } });
-          finished = state.ok && (await state.json() as { status?: string }).status !== "in_progress";
+          if (state.ok) {
+            const previous = await state.json() as StartResponse;
+            if (previous.status === 'flagged' && previous.technical_restart_allowed === true) {
+              // This is a new attempt, explicitly authorized for a technical failure.
+              // Never resume the interrupted recording or erase its server evidence.
+              sessionStorage.removeItem(storageKey); saved = null;
+            } else finished = previous.status !== 'in_progress';
+          }
         } catch { /* treat as interrupted below */ }
         if (finished) {
           sessionStorage.removeItem(storageKey);
           throw new Error("You have already completed this exam.");
         }
-        throw new Error(
+        if (saved) throw new Error(
           "This attempt may have an interrupted recording and cannot be safely resumed. Contact your professor.",
         );
       }
@@ -545,6 +573,7 @@ export default function StudentExam() {
       }
       setSessionId(result.session_id);
       setDemoAttempt(result.developer_demo === true);
+      setIdentityReviewRequired(result.identity_check_completed === false && result.identity_review_required === true);
       sessionStorage.setItem("oralexam_exam_session_id", result.session_id);
       sessionStorage.setItem("oralexam_exam_session_token", sessionToken.current);
       // Display only: permission to use substitutes and to grade is enforced by the server.
@@ -624,10 +653,34 @@ export default function StudentExam() {
     }
   }
 
+  async function endExamNow() {
+    if (!sessionId || submittingRequest.current || recordingInterrupted.current) return;
+    endRequestedRef.current = true; setEndRequested(true);
+    submittingRequest.current = true; setEndingExam(true); setSubmitting(true); setError("");
+    oralSubmission.current = null;
+    const controller = new AbortController();
+    const deadline = window.setTimeout(() => controller.abort(), 15000);
+    try {
+      const result = await apiRequest<{done: boolean}>(`/exam/sessions/${encodeURIComponent(sessionId)}/end`, {}, sessionToken.current, controller.signal);
+      if (!result.done) throw new Error('The server did not confirm that the exam ended.');
+      clock.current = null;
+      setCompletedQuestions(Math.max(0, questionNumber - 1));
+      setEndConfirmation(false);
+      await finalizeCompletedExam();
+    } catch (failure) {
+      setError(controller.signal.aborted ? 'Ending the exam timed out. Retry ending the exam; your unfinished answer will not be submitted.'
+        : failure instanceof Error ? failure.message : 'The exam could not be ended. Retry ending the exam.');
+      setEndConfirmation(false);
+    } finally {
+      window.clearTimeout(deadline);
+      submittingRequest.current = false; setSubmitting(false); setEndingExam(false);
+    }
+  }
+
   const handleNext = useCallback(async () => {
     const current = clock.current ? remainingTime(clock.current, performance.now()) : remaining;
     const timedOut = current.exam === 0 || current.question === 0;
-    if (recordingInterrupted.current || !sessionId || (!answer.trim() && !timedOut) || submittingRequest.current
+    if (endRequestedRef.current || recordingInterrupted.current || !sessionId || (!answer.trim() && !timedOut) || submittingRequest.current
         || assisting || speechBusy || questionAudioBusy || (!demoAttempt && (!recordingActive || Boolean(recordingError)))) return;
 
     submittingRequest.current = true;
@@ -740,6 +793,14 @@ export default function StudentExam() {
     recordingError,
     finalizeCompletedExam,
   ]);
+
+  useEffect(() => {
+    if (oralSubmission.current !== questionNumber || submitting || assisting || speechBusy || questionAudioBusy
+        || interruptedRecording || (!demoAttempt && (!recordingActive || Boolean(recordingError)))) return;
+    oralSubmission.current = null;
+    void handleNext();
+  }, [answer, questionNumber, submitting, assisting, speechBusy, questionAudioBusy, interruptedRecording,
+      demoAttempt, recordingActive, recordingError, handleNext]);
 
   useEffect(() => { setVoiceNotice(""); setQuestionTextShown(false); }, [questionNumber]);
 
@@ -964,6 +1025,11 @@ export default function StudentExam() {
 
   const sampleQuestion = question.startsWith("[Developer demo] ");
   const questionText = sampleQuestion ? question.slice("[Developer demo] ".length) : question;
+  const endExamButton = <button type="button" className="exam-end-button"
+    disabled={submitting || endingExam || interruptedRecording || finalizationPending || (!demoAttempt && !recordingActive)}
+    onClick={() => endRequested ? void endExamNow() : setEndConfirmation(true)}>
+    {endingExam ? 'Ending exam…' : endRequested ? 'Retry ending exam' : 'End exam'}
+  </button>;
   const answerForm = <form className="exam-answer-form" onSubmit={event => { event.preventDefault(); void handleNext(); }} style={{ fontSize: textSize }}>
     <p className="exam-question-number">{sampleQuestion ? "Sample question" : `Question ${questionNumber}`}</p>
     {!avatarOn || spokenFor === questionNumber || questionTextShown
@@ -974,17 +1040,21 @@ export default function StudentExam() {
         </div>}
     {!developerMinimal && <SpeechDraft sessionId={sessionId} token={sessionToken.current}
       sequence={questionNumber} stream={mediaStream.current}
-      disabled={submitting || assisting || questionAudioBusy || expired || (!demoAttempt && (!recordingActive || Boolean(recordingError)))}
+      disabled={endRequested || submitting || assisting || questionAudioBusy || expired || (!demoAttempt && (!recordingActive || Boolean(recordingError)))}
       onBusyChange={setSpeechBusy} onDraftConfirmed={(text, metadata) => {
         setAnswer(text); answerMetadata.current = metadata; answerRequest.current = null; setConfirmedSpeechUsed(true);
       }} />}
     <label className="student-answer-label" htmlFor="student-exam-answer">{demoAttempt ? "Test answer" : "Your answer"}</label>
     <textarea id="student-exam-answer" className="student-answer-input" value={answer}
       onChange={event => { setAnswer(event.target.value); answerRequest.current = null; }} placeholder={demoAttempt ? "Type your test answer here…" : "Type your response…"}
-      disabled={submitting || (expired && !assisting)} />
+      disabled={endRequested || interruptedRecording || submitting || (expired && !assisting)} />
+    {confirmedSpeechUsed && <p role="status">Answer source: reviewed speech draft. Further edits preserve the original draft provenance.{' '}
+      <button type="button" disabled={submitting || expired} onClick={() => {
+        answerMetadata.current = { input_source: 'typed' }; answerRequest.current = null; setConfirmedSpeechUsed(false);
+      }}>Use typed answer</button></p>}
     {avatarOn && <AnswerRecorder sessionId={sessionId} token={sessionToken.current}
       sharedStream={recordingActive ? mediaStream.current : null}
-      disabled={submitting || (expired && !assisting)} onRecordingChange={setRecording}
+      disabled={endRequested || submitting || (expired && !assisting)} onRecordingChange={setRecording}
       listenSignal={listenSignal} handsFree={handsFree} onTranscript={heardAnswer} />}
     {avatarOn && voiceNotice && <p className="answer-recorder-note" role="status">{voiceNotice}</p>}
     {avatarOn && <label className="hands-free-toggle">
@@ -1035,13 +1105,14 @@ export default function StudentExam() {
       <p role="status">Exam interaction is paused until recording is active.</p>
     )}
     <div className="exam-question-footer">
+      {endExamButton}
       <span role="status">
         {submitting ? "Saving response…" : recordingActive ? "Recording video and audio…" : ""}
       </span>
       <button
         type="submit"
         className="exam-next-button"
-        disabled={(!answer.trim() && !expired) || submitting || assisting || speechBusy || questionAudioBusy
+        disabled={endRequested || (!answer.trim() && !expired) || submitting || assisting || speechBusy || questionAudioBusy
           || (!demoAttempt && (!recordingActive || Boolean(recordingError)))}
       >
         {submitting ? "Saving…" : expired ? "Retry submission →" : demoAttempt ? "Submit test answer →" : "Submit answer →"}
@@ -1049,7 +1120,7 @@ export default function StudentExam() {
     </div>
   </form>;
 
-  return <div className="student-exam-page">
+  return <div className="student-exam-page student-exam-active">
     <header className="student-exam-header">
       <div className="student-exam-logo"><span aria-hidden="true"><OralExamMark size={40} /></span><strong>OralExam AI</strong></div>
       {examTitle && <p className="student-exam-title">{examTitle}</p>}
@@ -1073,18 +1144,53 @@ export default function StudentExam() {
       </div>
     </header>
     <main className={`student-exam-content student-exam-stage-content${avatarOn ? " is-two-column" : ""}`}>
+      {identityReviewRequired && <p className="exam-identity-notice" role="status">Developer photo-check bypass · identity is unverified and requires professor review.</p>}
       <h1 className="exam-screen-reader">Oral examination · Question {questionNumber}</h1>
-      {!interruptedRecording && <LiveExamPresentation sessionId={sessionId}
+      {!interruptedRecording && !developerMinimal && !keyboardMode && <AutomaticOralExam
+        sessionId={sessionId} token={sessionToken.current} sequence={questionNumber} question={questionText}
+        disabled={endRequested || submitting || expired || (!demoAttempt && (!recordingActive || Boolean(recordingError)))}
+        flashhead={avatarOn} poster={poster} stream={recordingActive ? mediaStream.current : null}
+        preferences={environmentPreferences} onTiming={updateClock} onMediaElement={examinerElement}
+        onResumeAudio={() => recordingMix.current?.resume() ?? Promise.resolve()}
+        onAnswer={(text, metadata) => {
+          if (endRequestedRef.current || recordingInterrupted.current || submittingRequest.current) return;
+          answerMetadata.current = metadata; answerRequest.current = null;
+          oralSubmission.current = questionNumber; setAnswer(text);
+        }} />}
+      {!demoAttempt && <details className="exam-response-panel exam-capture-panel">
+        <summary>Camera, microphone and live viewing</summary>
+        <video muted playsInline autoPlay aria-label="Your camera preview"
+          ref={element => { if (element && element.srcObject !== mediaStream.current) element.srcObject = mediaStream.current; }}
+          style={{ width: '100%', maxWidth: 320, background: '#172033', borderRadius: 8 }} />
+        <p role="status">Recording: {recordingActive ? 'active' : 'inactive'}. Live viewing: {liveStatus}. {liveMessage}</p>
+        {timelineWarning && <p role="status">{timelineWarning}</p>}
+      </details>}
+      {!developerMinimal && !interruptedRecording && <details className="exam-response-panel exam-recovery-panel">
+        <summary>Accessibility and recovery</summary>
+        <p>The examiner asks, listens, and continues automatically. You can say “repeat the question”, “can you clarify”, or “move on”.
+          After two retries without an intelligible response, the examiner moves on and records the question as unanswered.</p>
+        <button type="button" disabled={endRequested || submitting || recording || speechBusy || questionAudioBusy} onClick={() => setKeyboardMode(value => !value)}>
+          {keyboardMode ? 'Return to spoken exam' : 'Use keyboard controls'}
+        </button>
+      </details>}
+      {!keyboardMode && !developerMinimal && !recordingError && <div className="exam-end-actions">{endExamButton}</div>}
+      {!keyboardMode && !developerMinimal && error && <div role="alert" className="exam-error">
+        <p>{error}</p>{!endRequested && <button type="button" disabled={submitting} onClick={() => void handleNext()}>Retry saving answer</button>}
+      </div>}
+      {!keyboardMode && !developerMinimal && recordingError && <div role="alert" className="exam-error">
+        <p>{recordingError}</p>{answerForm}
+      </div>}
+      {!interruptedRecording && (keyboardMode || developerMinimal) && <LiveExamPresentation sessionId={sessionId}
         stage={avatarOn ? <AvatarVideoStage sessionId={sessionId} token={sessionToken.current} text={questionText}
           sequence={questionNumber} hold={recording || submitting} onFinished={examinerFinished}
           announce={examinerSpeech} onVideoElement={examinerElement} poster={poster} lead={reaction}
           startDelayMs={questionNumber <= 1 ? 2500 : 700} /> : null}
         examinerSpeaks={avatarOn ? examinerSays : undefined} assistRequest={assistRequest} token={sessionToken.current} question={question}
         developerDemo={demoAttempt} developerMinimal={developerMinimal} settingsTarget={settingsTarget}
-        sequence={questionNumber} answer={answer} expired={expired && !assisting} submitting={submitting || speechBusy}
+        sequence={questionNumber} answer={answer} expired={expired && !assisting} submitting={endRequested || submitting || speechBusy}
         onTiming={updateClock} onBusyChange={setAssisting} onTextSizeChange={setTextSize}
         onQuestionAudioBusy={setQuestionAudioBusy} onMediaObservation={recordMediaObservation} />}
-      {demoAttempt ? <section className="developer-exam-panel" aria-labelledby="developer-exam-heading">
+      {(keyboardMode || developerMinimal) && (demoAttempt ? <section className="developer-exam-panel" aria-labelledby="developer-exam-heading">
         <div className="developer-exam-heading"><h2 id="developer-exam-heading">Developer mode</h2><strong className="developer-exam-badge">Test attempt · no grading</strong></div>
         <p className="developer-exam-services">{developerMinimal ? "AI, FlashHead, voice, microphone and camera are off." : "Developer test attempt. Optional service availability follows this server’s configuration."}</p>
         {answerForm}
@@ -1092,9 +1198,22 @@ export default function StudentExam() {
         <summary>Question and answer</summary>
         <p>{avatarOn ? (handsFree
           ? "After the examiner asks, start talking. Pause for 3 seconds when you are finished, check the transcript, then select Submit answer. To hear the question again, say “repeat the question”."
-          : "Speak your answer or type it. Check the transcript before you submit.") : "Microphone transcription is not connected. Your typed answer is saved when you submit."}</p>
+          : "Speak your answer or type it. Check the transcript before you submit.") : "Type an answer or use an available speech draft. Review your answer and submit when ready."}</p>
         {answerForm}
-      </details>}
+      </details>)}
+      <dialog className="exam-end-dialog" ref={endDialog} aria-labelledby="end-exam-title"
+        onCancel={event => { if (endingExam) event.preventDefault(); else setEndConfirmation(false); }}>
+        <h2 id="end-exam-title">End this exam?</h2>
+        <p>Your submitted answers and available recording will be saved for professor review.
+          Any answer you are still speaking or typing will not be submitted. You cannot resume this attempt after ending it.</p>
+        <p>The exam continues until you confirm.</p>
+        <div className="exam-end-dialog-actions">
+          <button type="button" autoFocus disabled={endingExam || submitting} onClick={() => setEndConfirmation(false)}>Continue exam</button>
+          <button type="button" className="exam-end-button" disabled={endingExam || submitting} onClick={() => void endExamNow()}>
+            {endingExam ? 'Ending exam…' : 'End exam and save'}
+          </button>
+        </div>
+      </dialog>
     </main>
   </div>;
 }

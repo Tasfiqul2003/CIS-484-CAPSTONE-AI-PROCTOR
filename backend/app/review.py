@@ -83,7 +83,10 @@ def confirm_grades(
     if not rows:
         # A professor may assess without an AI provider. Only an explicit complete
         # set of manually supplied scores can create these initial grade rows.
-        criteria=rubric_criteria(session["rubric"])
+        from .grading import DEFAULT_CRITERIA, rubric_criteria as main_rubric_criteria
+        # Main supplies a default rubric when no named criteria are saved.
+        # Keep strict bounded validation for an explicitly supplied rubric.
+        criteria = rubric_criteria(session["rubric"]) if main_rubric_criteria(session["rubric"]) else [dict(item) for item in DEFAULT_CRITERIA]
         by_name={value["name"].casefold():value for value in criteria}
         if {value.rubric_criterion.casefold() for value in req.grades} != set(by_name):
             raise HTTPException(422,"Manual assessment must explicitly score every saved rubric criterion exactly once.")
@@ -147,7 +150,8 @@ def get_submission_review(
         raise HTTPException(403, "Professor account required.")
 
     session = db.execute(
-        text("""SELECT s.status, s.developer_demo, s.exam_template_id, st.name AS student_name,
+        text("""SELECT s.status, s.developer_demo, s.exam_template_id, s.identity_check_completed,
+                       s.identity_review_required, st.name AS student_name,
                        st.eid, t.title AS exam_title, t.course, t.professor_id,
                        v.status AS video_status, v.expires_at
                 FROM exam_sessions AS s
@@ -200,6 +204,8 @@ def get_submission_review(
         "exam_title": session["exam_title"],
         "course": session["course"],
         "status": session["status"],
+        "identity_check_completed": bool(session.get("identity_check_completed", True)),
+        "identity_review_required": bool(session.get("identity_review_required", False)),
         "recording_expires_at": session["expires_at"].isoformat(),
         "exam_template_id": str(session["exam_template_id"]) if session.get("exam_template_id") else None,
         "video_url": f"/api/exam/sessions/{session_id}/video",

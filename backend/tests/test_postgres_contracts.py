@@ -920,3 +920,186 @@ def test_actual_postgres_optional_ollama_evaluation_stays_private_and_requires_p
         with attempt.engine.begin() as db:
             db.execute(text("DELETE FROM user_accounts WHERE id=:id AND professor_id=:pid"),
                        {"id": account_id, "pid": attempt.professor})
+
+
+@pytest.mark.parametrize("source", ["confirmed_transcript", "automatic_transcript", "unanswered_voice"])
+def test_actual_postgres_automatic_oral_provenance_and_replay(attempt, source):
+    from backend.app.transcript_receipts import issue_transcript_receipt
+    request = attempt.request()
+    values = {**request.model_dump(), "input_source": source}
+    if source == "unanswered_voice":
+        values["answer_transcript"] = "[System: No intelligible spoken answer captured.]"
+    else:
+        draft_id = uuid4()
+        draft = request.answer_transcript
+        values.update(transcript_draft_id=draft_id, machine_draft=draft,
+            transcript_receipt=issue_transcript_receipt(student_id=attempt.student, session_id=attempt.session_id,
+                interaction_id=attempt.interaction_id, sequence_num=1, draft_id=draft_id, machine_draft=draft,
+                student_token_exp=(datetime.now(timezone.utc) + timedelta(minutes=5)).timestamp()))
+    request = exam.AnswerRequest.model_validate(values)
+    result = _submit(attempt, request)
+    assert not result["done"]
+    assert _submit(attempt, request) == result
+    with attempt.engine.connect() as db:
+        row = db.execute(text("SELECT answer_input_source, student_answer_transcript, machine_transcript_draft FROM interactions WHERE id=:id"),
+            {"id": attempt.interaction_id}).mappings().one()
+        assert row["answer_input_source"] == source
+        assert row["student_answer_transcript"] == request.answer_transcript
+        assert row["machine_transcript_draft"] == (None if source == "unanswered_voice" else request.answer_transcript)
+    assert _counts(attempt)["answers"] == 1
+    assert _counts(attempt)["receipts"] == 1
+
+
+@pytest.mark.parametrize("authorized", [False, True])
+def test_actual_postgres_technical_restart_is_explicit_and_preserves_attempt(attempt, authorized):
+    import jwt
+    from backend.app.auth import get_secret
+    claims = jwt.decode(attempt.authorization.removeprefix("Bearer "), get_secret(), algorithms=["HS256"])
+    with attempt.engine.begin() as db:
+        db.execute(text("UPDATE exam_sessions SET status='flagged',ended_at=clock_timestamp() WHERE id=:id"), {"id": attempt.session_id})
+        if authorized:
+            db.execute(text("INSERT INTO integrity_events(session_id,event_type,severity,notes) VALUES (:id,'authorized_technical_restart',1,'Synthetic authorized technical restart')"), {"id": attempt.session_id})
+    with Session(attempt.engine) as db:
+        state = exam.read_session_state(db, str(attempt.session_id), claims)
+        assert state["status"] == "flagged"
+        assert state["technical_restart_allowed"] is authorized
+        available = exam.get_student_available_exams(
+            exam.StudentAvailableExamsRequest(eid=f"validation-{attempt.student.hex}"), db=db)
+        item = next(item for item in available["exams"] if item["id"] == str(attempt.exam_id))
+        assert (item["completed_at"] is None) is authorized
+    assert _counts(attempt)["interactions"] == 1
+
+
+@pytest.mark.skipif(os.environ.get("CYBROS_NATIVE_ORAL_CHECK") != "1", reason="Explicit generated-audio native provider check")
+def test_actual_native_placeholder_speech_http_without_avatar(attempt):
+    """Real SQL/auth/native TTS, but seeded attempt/recording metadata and no devices."""
+    import io
+    import wave
+    from array import array
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from backend.app import exam_speech
+    from backend.app.db import get_db
+    app = FastAPI()
+    app.include_router(exam_speech.router)
+    def database():
+        with Session(attempt.engine) as db: yield db
+    app.dependency_overrides[get_db] = database
+    with TestClient(app) as client:
+        response = client.post(f"/exam/sessions/{attempt.session_id}/speech/utterance",
+            headers={"Authorization":attempt.authorization},
+            json={"sequence_num":1,"request_id":str(uuid4()),"kind":"question"})
+        assert response.status_code == 200, response.text[:200] if response.status_code != 200 else ""
+        assert response.headers["content-type"].startswith("audio/wav")
+        with wave.open(io.BytesIO(response.content),"rb") as audio:
+            assert audio.getnframes()>0
+            assert audio.getsampwidth()==2
+            samples=array('h',audio.readframes(audio.getnframes()))
+            assert max(abs(sample) for sample in samples)>128
+
+
+@pytest.mark.parametrize("identity_status", ["matched", "developer_bypass"])
+@pytest.mark.parametrize("with_preferences", [False, True])
+def test_actual_postgres_start_http_executes_snapshot_insert(attempt, monkeypatch, tmp_path, identity_status, with_preferences):
+    """Execute real start SQL/auth/snapshot/opening question. Only identity capture is stubbed."""
+    from backend.app.avatar_session import default_preferences
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from backend.app.db import get_db
+    monkeypatch.setenv("DEVELOPER_DEMO_MODE", "0")
+    monkeypatch.setenv("EXAM_VIDEO_DIR", str(tmp_path / "synthetic-recording-root"))
+    monkeypatch.setenv("EXAM_VIDEO_RETENTION_UNTIL", (datetime.now(timezone.utc)+timedelta(days=1)).isoformat())
+    monkeypatch.setattr(exam, "_require_face_authorization",
+        lambda *_: {"status":identity_status,"attempt_count":0})
+    app = FastAPI()
+    app.include_router(exam.router)
+    def database():
+        with Session(attempt.engine) as db: yield db
+    app.dependency_overrides[get_db] = database
+    token = issue_student_token(student_id=str(attempt.student), exam_template_id=str(attempt.exam_id), purpose="student_exam")
+    try:
+        with TestClient(app) as client:
+            result=client.post("/exam/start",json={"student_id":str(attempt.student),
+                "exam_template_id":str(attempt.exam_id),"student_token":token,
+                **({"presentation_preferences": default_preferences(default_settings()).model_dump()} if with_preferences else {})})
+        assert result.status_code==200, result.text
+        state=result.json()
+        assert state["status"]=="in_progress" and state["sequence_num"]==1
+        assert state["question"]=="Synthetic approved first question"
+        assert state["session_id"]!=str(attempt.session_id)
+        assert state["identity_check_completed"] is (identity_status=="matched")
+        assert state["identity_review_required"] is (identity_status=="developer_bypass")
+        assert state["technical_restart_allowed"] is False
+        with attempt.engine.connect() as db:
+            row=db.execute(text("SELECT identity_check_completed,identity_review_required,avatar_preferences FROM exam_sessions WHERE id=CAST(:id AS uuid)"),
+                {"id":state["session_id"]}).mappings().one()
+            assert row["identity_review_required"] is (identity_status=="developer_bypass")
+            assert isinstance(row["avatar_preferences"],dict)
+    finally:
+        # Include any committed session even if later response serialization failed.
+        with attempt.engine.connect() as db:
+            ids=db.execute(text("SELECT id FROM exam_sessions WHERE student_id=:student AND exam_template_id=:exam"),
+                {"student":attempt.student,"exam":attempt.exam_id}).scalars().all()
+        attempt.sessions.extend(identifier for identifier in ids if identifier not in attempt.sessions)
+
+
+@pytest.mark.parametrize("review_required", [False, True])
+def test_actual_postgres_end_exam_http_is_idempotent_and_preserves_unfinished_answer(attempt, review_required):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from backend.app.db import get_db
+    with attempt.engine.begin() as db:
+        db.execute(text("UPDATE exam_sessions SET identity_review_required=:review WHERE id=:id"),
+            {"review":review_required,"id":attempt.session_id})
+    app=FastAPI();app.include_router(exam.router)
+    def database():
+        with Session(attempt.engine) as db:yield db
+    app.dependency_overrides[get_db]=database
+    endpoint=f"/exam/sessions/{attempt.session_id}/end"
+    with TestClient(app) as client:
+        assert client.post(endpoint,json={}).status_code==401
+        other=issue_student_token(student_id=str(uuid4()),exam_template_id=str(attempt.exam_id),
+            purpose="student_session",session_id=str(attempt.session_id))
+        assert client.post(endpoint,headers={"Authorization":f"Bearer {other}"},json={}).status_code==403
+        headers={"Authorization":attempt.authorization}
+        first=client.post(endpoint,headers=headers,json={})
+        assert first.status_code==200,first.text
+        assert first.json()["done"] is True
+        assert first.json()["status"]==("flagged" if review_required else "pending_grading")
+        repeated=client.post(endpoint,headers=headers,json={})
+        assert repeated.status_code==200 and repeated.json()["done"] is True
+    with attempt.engine.connect() as db:
+        assert db.execute(text("SELECT count(*) FROM integrity_events WHERE session_id=:sid AND event_type='student_ended_exam'"),{"sid":attempt.session_id}).scalar_one()==1
+        assert db.execute(text("SELECT student_answer_transcript FROM interactions WHERE id=:id"),{"id":attempt.interaction_id}).scalar_one() is None
+        video=db.execute(text("SELECT status,total_bytes,next_chunk_index FROM exam_session_videos WHERE session_id=:sid"),{"sid":attempt.session_id}).mappings().one()
+        assert video["status"]=="recording" and video["total_bytes"]==1 and video["next_chunk_index"]==1
+        assert db.execute(text("SELECT ended_at FROM exam_sessions WHERE id=:id"),{"id":attempt.session_id}).scalar_one() is not None
+    assert _counts(attempt)["answers"]==0
+    with pytest.raises(HTTPException) as failure:_submit(attempt,attempt.request())
+    assert failure.value.status_code==409
+
+
+def test_actual_postgres_end_exam_requires_retained_active_recording(attempt):
+    with attempt.engine.begin() as db:
+        db.execute(text("UPDATE exam_session_videos SET expires_at=:expiry WHERE session_id=:id"),
+            {"expiry":datetime.now(timezone.utc)-timedelta(seconds=1),"id":attempt.session_id})
+    with Session(attempt.engine) as db:
+        with pytest.raises(HTTPException) as failure:
+            exam.end_exam_early(attempt.session_id,authorization=attempt.authorization,db=db)
+        assert failure.value.status_code==410
+        db.rollback()
+    with attempt.engine.connect() as db:
+        assert db.execute(text("SELECT status FROM exam_sessions WHERE id=:id"),{"id":attempt.session_id}).scalar_one()=="in_progress"
+        assert db.execute(text("SELECT count(*) FROM integrity_events WHERE session_id=:sid"),{"sid":attempt.session_id}).scalar_one()==0
+
+
+def test_actual_postgres_concurrent_end_requests_record_one_boundary(attempt):
+    def finish():
+        with Session(attempt.engine) as db:
+            return exam.end_exam_early(attempt.session_id,authorization=attempt.authorization,db=db)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results=list(pool.map(lambda _:finish(),range(2)))
+    assert all(result["done"] for result in results)
+    assert {result["reason"] for result in results}=={"Student ended exam","Attempt already ended"}
+    with attempt.engine.connect() as db:
+        assert db.execute(text("SELECT count(*) FROM integrity_events WHERE session_id=:id AND event_type='student_ended_exam'"),{"id":attempt.session_id}).scalar_one()==1

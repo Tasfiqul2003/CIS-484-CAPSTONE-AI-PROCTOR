@@ -4,7 +4,7 @@ import json
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import Field, ValidationError
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
@@ -24,7 +24,7 @@ class SaveEnvironmentPreferences(StrictModel):
     preferences: StudentPreferences
 
 
-def authorized_settings(db, exam_id, authorization):
+def authorized_settings(db, exam_id, authorization, request: Request = None):
     claims = read_student_token(authorization, expected_purpose="student_exam")
     if claims["exam_template_id"] != exam_id:
         raise HTTPException(403, "Student token does not match this exam.")
@@ -35,9 +35,12 @@ def authorized_settings(db, exam_id, authorization):
         {"student": claims["sub"], "exam": exam_id}).first()
     if row is None:
         raise HTTPException(403, "This student is not authorized for this published exam.")
-    # Reuse the existing identity gate; preview does not acquire a camera or refresh it.
+    # The signed developer grant is revalidated against its server allowlist on every
+    # request. Ordinary students retain the existing recent-photo identity gate.
+    from . import developer_face_bypass
     from .exam import _require_recent_face_check
-    _require_recent_face_check(db, claims["sub"])
+    if developer_face_bypass.authorized_bypass(db, claims["sub"], request) is None:
+        _require_recent_face_check(db, claims["sub"])
     settings, revision, _ = snapshot_for_exam(db, exam_id)
     return claims["sub"], settings, revision
 
@@ -50,9 +53,9 @@ def response(exam_id, settings, revision, preferences, notice=None):
 
 @router.get("/{exam_id}/student-presentation")
 def get_environment_preview(exam_id: UUID, authorization: str | None = Header(default=None),
-                            db: Session = Depends(get_db)):
+                            db: Session = Depends(get_db), request: Request = None):
     try:
-        student_id, settings, revision = authorized_settings(db, str(exam_id), authorization)
+        student_id, settings, revision = authorized_settings(db, str(exam_id), authorization, request)
         row = db.execute(text("""SELECT preferences FROM student_environment_preferences
             WHERE exam_template_id = :exam AND student_id = :student"""),
             {"exam": str(exam_id), "student": student_id}).mappings().first()
@@ -74,9 +77,9 @@ def get_environment_preview(exam_id: UUID, authorization: str | None = Header(de
 @router.put("/{exam_id}/student-presentation")
 def save_environment_preferences(exam_id: UUID, body: SaveEnvironmentPreferences,
                                  authorization: str | None = Header(default=None),
-                                 db: Session = Depends(get_db)):
+                                 db: Session = Depends(get_db), request: Request = None):
     try:
-        student_id, settings, revision = authorized_settings(db, str(exam_id), authorization)
+        student_id, settings, revision = authorized_settings(db, str(exam_id), authorization, request)
         if body.expected_revision != revision:
             raise HTTPException(409, "The professor changed presentation policy. Reload the preview before saving.")
         _validate_preferences(body.preferences, settings)

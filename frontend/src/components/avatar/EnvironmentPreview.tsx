@@ -3,6 +3,7 @@ import ExamStageAvatar from "./ExamStageAvatar";
 import { environmentPresentation, type EnvironmentPresentation } from "./environmentPresentation";
 import type { StudentPreferences } from "../student-settings/studentSettings";
 import "./environment-preview.css";
+import { hasStudentFaceAccess, readDeveloperFaceBypass } from '../../pages/student/studentIdentity';
 
 /** Pre-attempt settings only: no devices, clocks, questions or attempt creation. */
 export default function EnvironmentPreview({ onContinue }: { onContinue: (preferences: StudentPreferences) => void }) {
@@ -18,7 +19,7 @@ export default function EnvironmentPreview({ onContinue }: { onContinue: (prefer
     const studentId = params.get("studentId") ?? "";
     const token = sessionStorage.getItem(`oralexam_exam_token:${examId}:${studentId}`) ?? "";
     const valid = !!examId && !!studentId && sessionStorage.getItem("oralexam_student_id") === studentId
-      && sessionStorage.getItem("oralexam_face_check_passed") === "true";
+      && hasStudentFaceAccess(studentId);
     return { examId, token: valid ? token : "" };
   });
   useEffect(() => {
@@ -47,6 +48,9 @@ export default function EnvironmentPreview({ onContinue }: { onContinue: (prefer
     <section className="exam-question-card environment-preview" aria-labelledby="environment-preview-heading">
       <h1 id="environment-preview-heading">Choose your examiner environment</h1>
       <p>Preview the examiner's background before your exam begins. This preview does not start the timer or use your camera or microphone.</p>
+      {readDeveloperFaceBypass(sessionStorage.getItem('oralexam_student_id') ?? '') && <p role="status">
+        Developer photo-check bypass · identity remains unverified. Your exam's recording requirements are unchanged.
+      </p>}
       {loading && <p role="status">Loading permitted environments…</p>}
       {!loading && presentation && preferences && <>
         {presentation.notice && <p role="status">{presentation.notice}</p>}

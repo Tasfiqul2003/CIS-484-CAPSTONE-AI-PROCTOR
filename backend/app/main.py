@@ -28,6 +28,7 @@ from .media_timeline import router as media_timeline_router
 from .question_drafts import router as question_drafts_router
 from .avatar_bridge import router as avatar_bridge_router
 from .presence import router as presence_router
+from .developer_face_bypass import router as developer_face_bypass_router
 
 app = FastAPI(title="AI Oral Exam Proctor")
 
@@ -50,6 +51,7 @@ def validate_auth_configuration() -> None:
 
 
 app.include_router(exam_router)
+app.include_router(developer_face_bypass_router)
 app.include_router(grading_router)
 app.include_router(review_router)
 app.include_router(stream_router)
@@ -116,11 +118,15 @@ def readiness(db: Session = Depends(get_db)):
             to_regclass('exam_question_audio') IS NOT NULL AS question_audio,
             to_regclass('exam_question_audio_requests') IS NOT NULL AS audio_requests,
             to_regclass('question_drafts') IS NOT NULL AS question_drafts,
-            to_regclass('question_generation_requests') IS NOT NULL AS question_generation
+            to_regclass('question_generation_requests') IS NOT NULL AS question_generation,
+            EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = to_regclass('interactions')
+                AND conname = 'interactions_answer_input_source_check' AND convalidated
+                AND pg_get_constraintdef(oid) LIKE '%automatic_transcript%'
+                AND pg_get_constraintdef(oid) LIKE '%unanswered_voice%') AS automatic_oral_transcripts
             """)).mappings().first()
     except SQLAlchemyError:
         raise HTTPException(503, "The local database is unavailable. Check the stopped services and private logs.") from None
-    if not row or not all(bool(row.get(key)) for key in ("answer_contracts", "environments", "transcripts", "media_timeline", "question_audio", "audio_requests", "question_drafts", "question_generation")):
+    if not row or not all(bool(row.get(key)) for key in ("answer_contracts", "environments", "transcripts", "media_timeline", "question_audio", "audio_requests", "question_drafts", "question_generation", "automatic_oral_transcripts")):
         raise HTTPException(503, "The local database needs the reviewed exam/media migrations before use.")
     return {"status": "ready", "database": "reachable", "schema": "present",
             "optional_providers": "Check authenticated attempt speech capabilities separately."}

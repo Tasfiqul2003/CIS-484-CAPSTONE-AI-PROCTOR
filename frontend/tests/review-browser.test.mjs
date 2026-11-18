@@ -56,7 +56,7 @@ try {
   });
   await page.goto(`http://cybros-synthetic.invalid/professor/exam-sessions/${session}/review`);
   await page.addScriptTag({ content: bundle.outputFiles[0].text });
-  await page.getByRole('heading', { name: 'Recorded exam', exact: true }).waitFor();
+  await page.getByRole('heading', { name: 'Recording', exact: true }).waitFor();
   assert(requested.includes(reviewPath));
   assert(!requested.some(value => value.includes('/sessions/review/')));
   assert.equal(await page.getByText('Original delivered-question audio unavailable.', { exact: false }).count(), 2);

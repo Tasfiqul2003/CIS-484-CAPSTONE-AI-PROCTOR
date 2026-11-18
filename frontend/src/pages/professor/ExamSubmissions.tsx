@@ -340,7 +340,9 @@ export default function ExamSubmissions() {
                               ? `${student.face_check_attempt_count} attempt${student.face_check_attempt_count === 1 ? "" : "s"} · not verified`
                               : "Not checked"
                           : student.identity_review_required
-                            ? `Review required · ${student.identity_verification_attempts ?? 3} failed matches`
+                            ? student.identity_check_completed === false
+                              ? 'Identity unverified · professor review required'
+                              : `Review required · ${student.identity_verification_attempts ?? 3} failed matches`
                             : student.identity_check_completed
                               ? "No exception flagged"
                               : "No photo-check record"}

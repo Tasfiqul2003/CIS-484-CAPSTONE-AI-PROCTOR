@@ -71,7 +71,7 @@ class Reply:
         pass
 
     def json(self):
-        return {"message": {"content": json.dumps(self.content)}}
+        return {"done": True, "done_reason": "stop", "message": {"content": json.dumps(self.content)}}
 
 
 def test_assessment_saves_scores_and_an_evaluation_for_each_answer(monkeypatch):
@@ -105,7 +105,7 @@ def test_custom_rubric_descriptions_reach_the_model(monkeypatch):
 
     def post(url, json, timeout):
         seen["payload"] = json["messages"][1]["content"]
-        return Reply({"scores": [], "questions": []})
+        return Reply({"scores": [{"criterion": "Terminology", "score": 3, "rationale": "Uses terms."}], "questions": []})
 
     monkeypatch.setattr(grading.httpx, "post", post)
     grading.assess_session(AssessDB({"criteria": [{"name": "Terminology", "max_score": 5, "description": "Uses PK/FK"}]}), SID)

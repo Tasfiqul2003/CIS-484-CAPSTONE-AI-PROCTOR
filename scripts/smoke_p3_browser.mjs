@@ -190,8 +190,28 @@ try {
       // The Generate action remains unclicked; no model/provider request occurs.
     }
   });
+  await check('current_main_sidebar_and_tabs', async () => {
+    await page.goto(`${origin}/professor/exams/${targetId}`);
+    const nav = page.getByRole('navigation', { name: 'Exam sections', exact: true });
+    await nav.waitFor();
+    for (const [slug, title] of [
+      ['avatar-interaction','Avatar & Interaction Settings'], ['time-scheduling','Time & Scheduling'],
+      ['ods-accommodations','ODS Accommodations'], ['ai-questioning','AI Questioning'],
+      ['recording-transcript','Recording & Transcript'], ['ai-results','AI Results']]) {
+      const href = `/professor/exams/${targetId}/settings/${slug}`;
+      requireCheck(await nav.locator(`a[href="${href}"]`).count() === 1, 'CURRENT_SIDEBAR_DESTINATION');
+      await nav.locator(`a[href="${href}"]`).click();
+      await page.getByRole('heading', {name:title, exact:true}).first().waitFor();
+    }
+    await page.goto(`${origin}/professor/exams/${targetId}/settings/avatar-interaction`);
+    for (const label of ['Talking avatar','Built-in examiner','Student controls','Assistance','Exam behavior','Student preview','Saving and sharing']) {
+      const tab = page.getByRole('button',{name:label,exact:true});
+      await tab.click(); requireCheck(await tab.getAttribute('aria-pressed') === 'true','CURRENT_AVATAR_TAB');
+    }
+  });
   await check('five_shared_renderer_backgrounds', async () => {
     await page.goto(`${origin}/professor/exams/${targetId}/settings/avatar-interaction`);
+    await page.getByRole('button', { name: 'Built-in examiner', exact: true }).click();
     const background = page.getByLabel('Default background', { exact: true });
     await background.waitFor();
     const expected = ['neutral', 'library', 'classroom', 'office', 'nature'];
@@ -200,22 +220,23 @@ try {
     const styles = new Set();
     for (const id of expected) {
       await background.selectOption(id);
-      await page.getByRole('button', { name: 'Preview as Student', exact: true }).click();
-      const preview = page.getByRole('region', { name: 'Preview as Student', exact: true });
+      await page.getByRole('button', { name: 'Student preview', exact: true }).click();
+      const preview = page.getByRole('region', { name: 'Student preview', exact: true });
       const stage = preview.locator('.exam-stage-viewport');
       requireCheck(await stage.getAttribute('data-background') === id, 'PREVIEW_BACKGROUND_MISMATCH');
       styles.add(await stage.evaluate(element => getComputedStyle(element).backgroundImage));
-      await preview.getByRole('button', { name: 'Close Student Preview', exact: true }).click();
+      await page.getByRole('button', { name: 'Built-in examiner', exact: true }).click();
     }
     requireCheck(styles.size === 5, 'PREVIEW_BACKGROUNDS_NOT_VISUALLY_DISTINCT');
     // All edits above remain in this mounted synthetic preview; never save policy/draft.
   });
   await check('narrow_viewport', async () => {
     await page.setViewportSize({ width: 390, height: 844 });
-    requireCheck(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), 'NARROW_LAYOUT_OVERFLOW');
-    await page.getByRole('button', { name: 'Preview as Student', exact: true }).click();
+    report.narrow_metrics = await page.evaluate(() => ({width:innerWidth,scroll:document.documentElement.scrollWidth,overflow:[...document.querySelectorAll('main *')].filter(e=>e.getBoundingClientRect().right>innerWidth+1).slice(0,12).map(e=>({tag:e.tagName,cls:e.className,width:e.getBoundingClientRect().width,right:e.getBoundingClientRect().right}))}));
+    requireCheck(report.narrow_metrics.scroll <= report.narrow_metrics.width, 'NARROW_LAYOUT_OVERFLOW');
+    await page.getByRole('button', { name: 'Student preview', exact: true }).click();
     requireCheck(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), 'NARROW_PREVIEW_OVERFLOW');
-    await page.getByRole('button', { name: 'Close Student Preview', exact: true }).click();
+    await page.getByRole('button', { name: 'Built-in examiner', exact: true }).click();
   });
   await check('no_unexpected_requests_or_capture', async () => {
     requireCheck(mediaCalls === 0 && report.provider_requests === 0, 'UNEXPECTED_MEDIA_OR_PROVIDER_REQUEST');

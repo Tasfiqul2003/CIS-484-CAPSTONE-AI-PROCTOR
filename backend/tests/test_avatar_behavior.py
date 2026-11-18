@@ -127,9 +127,15 @@ def test_allowed_generated_followup_retains_root_and_increments_index(monkeypatc
 
 
 @pytest.mark.parametrize('streaming', [False, True])
-def test_assessed_attempt_never_inserts_unapproved_live_generated_followups(monkeypatch, streaming):
+def test_assessed_followup_policy_preserves_main_http_and_local_stream_behavior(monkeypatch, streaming):
     db = BehaviorDB(followups=5, current_followup=0, bank=False)
     prepare_turn(monkeypatch, db)
+    if not streaming:
+        monkeypatch.setattr(exam, 'ask_follow_up', lambda *a: ('Main synthetic follow-up?', 'Saved policy'))
+        result = exam.submit_answer(answer_request(), authorization='synthetic', db=db)
+        assert result['done'] is False and db.inserted['src'] == 'generated'
+        assert db.inserted['followup'] == 1
+        return
     monkeypatch.setattr(exam, 'ask_model', lambda *a: pytest.fail('Unapproved live questions are not assessed content'))
     monkeypatch.setattr(stream, 'decide', lambda *a: pytest.fail('Unapproved live questions are not assessed content'))
     if streaming:

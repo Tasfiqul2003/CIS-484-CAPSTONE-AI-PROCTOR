@@ -1,5 +1,5 @@
 export type AnswerMetadata = {
-  input_source?: 'typed' | 'confirmed_transcript';
+  input_source?: 'typed' | 'confirmed_transcript' | 'automatic_transcript' | 'unanswered_voice';
   transcript_draft_id?: string;
   machine_draft?: string;
   transcript_receipt?: string;

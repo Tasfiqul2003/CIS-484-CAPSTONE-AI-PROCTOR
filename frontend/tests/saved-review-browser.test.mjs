@@ -24,7 +24,7 @@ function pcm(seconds,frequency=440){
 }
 const recording=pcm(2),questionOne=pcm(2,440),questionTwo=pcm(2,660);
 const bundle=await build({stdin:{contents:`import React from 'react';import{createRoot}from'react-dom/client';
-  import './src/index.css';import './src/styles/exam-ui-tokens.css';
+  import './src/index.css';import './src/styles/exam-ui-tokens.css';import './src/styles/review-polish.css';
   import Review from './src/pages/professor/ExamSessionReview';
   const root=createRoot(document.getElementById('root'));window.unmountReview=()=>root.unmount();root.render(<Review/>);`,resolveDir:frontend,loader:'tsx'},
   bundle:true,write:false,outdir:'saved-review-browser-memory',jsx:'automatic',define:{'process.env.NODE_ENV':'"test"'},logLevel:'silent'});
@@ -87,7 +87,7 @@ await page.route('**/*',async route=>{
 });
 async function reset(next='ordinary'){
   mode=next;calls=[];await page.goto(`http://127.0.0.1:52393/professor/exam-sessions/${session}/review?case=${++caseId}`);
-  await page.getByRole('heading',{name:'Exam recording and transcript',exact:true}).waitFor();
+  await page.getByText('Professor review',{exact:true}).waitFor({state:'attached'});
   if(next==='denied')await page.getByRole('alert').waitFor();
   else await page.getByRole('heading',{name:'Synthetic question 1',exact:true}).waitFor();
 }

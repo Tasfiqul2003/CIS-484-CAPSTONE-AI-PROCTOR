@@ -10,7 +10,7 @@ from math import ceil
 from datetime import timedelta, datetime, timezone
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, File, Form, UploadFile, Header
+from fastapi import APIRouter, Depends, HTTPException, File, Form, UploadFile, Header, Request
 from pydantic import BaseModel, Field, ConfigDict, model_validator
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -188,6 +188,21 @@ def _require_recent_face_check(db: Session, student_id: str):
     return verification
 
 
+def _require_face_authorization(db: Session, student_id: str, request: Request | None = None):
+    # A real recent match takes precedence. The developer grant is a distinct,
+    # expiring exception for three synthetic identities, never a matched row.
+    try:
+        return _require_recent_face_check(db, student_id)
+    except HTTPException as error:
+        if error.status_code != 403:
+            raise
+        from .developer_face_bypass import authorized_bypass
+        bypass = authorized_bypass(db, student_id, request)
+        if bypass is None:
+            raise
+        return bypass
+
+
 def require_active_video_recording(db: Session, session_id: str, developer_demo: bool):
     if developer_demo:
         return
@@ -215,7 +230,7 @@ class AnswerRequest(BaseModel):
     session_id: UUID
     answer_transcript: str = Field(max_length=20000)
     request_id: UUID | None = None
-    input_source: Literal["typed", "confirmed_transcript"] = "typed"
+    input_source: Literal["typed", "confirmed_transcript", "automatic_transcript", "unanswered_voice"] = "typed"
     transcript_draft_id: UUID | None = None
     machine_draft: str | None = Field(default=None, max_length=20000)
     transcript_receipt: str | None = Field(default=None, max_length=4096)
@@ -233,10 +248,14 @@ class AnswerRequest(BaseModel):
         if self.answer_timestamp_start is not None and self.answer_timestamp_end < self.answer_timestamp_start:
             raise ValueError("The media end offset precedes its start.")
         draft = (self.transcript_draft_id, self.machine_draft, self.transcript_receipt)
-        if self.input_source == "confirmed_transcript" and any(value is None for value in draft):
+        if self.input_source in ("confirmed_transcript", "automatic_transcript") and any(value is None for value in draft):
             raise ValueError("A confirmed transcript requires its original draft and signed receipt.")
-        if self.input_source == "typed" and any(value is not None for value in draft):
+        if self.input_source in ("typed", "unanswered_voice") and any(value is not None for value in draft):
             raise ValueError("Speech draft metadata must be labeled as a confirmed transcript.")
+        if self.input_source == "automatic_transcript" and self.answer_transcript != self.machine_draft:
+            raise ValueError("An automatic transcript must preserve the original machine draft.")
+        if self.input_source == "unanswered_voice" and self.answer_transcript != "[System: No intelligible spoken answer captured.]":
+            raise ValueError("An unanswered voice response must use the fixed placeholder.")
         return self
 
 
@@ -352,7 +371,7 @@ def ask_model(template, history, bank_remaining, course_material_summaries=None)
 def end_session(db: Session, session_id: str):
     db.execute(
         text("""UPDATE exam_sessions
-                SET status = CASE WHEN EXISTS (SELECT 1 FROM integrity_events WHERE session_id = CAST(:sid AS uuid) AND severity >= 4) THEN 'flagged' ELSE 'pending_grading' END, ended_at = now()
+                SET status = CASE WHEN identity_review_required OR EXISTS (SELECT 1 FROM integrity_events WHERE session_id = CAST(:sid AS uuid) AND severity >= 4) THEN 'flagged' ELSE 'pending_grading' END, ended_at = now()
                 WHERE id = CAST(:sid AS uuid)"""),
         {"sid": session_id},
     )
@@ -373,7 +392,7 @@ def insert_question(db, session_id, seq, question_text, source, source_id, reaso
 
 
 @router.post("/start")
-def start_exam(req: StartRequest, db: Session = Depends(get_db)):
+def start_exam(req: StartRequest, db: Session = Depends(get_db), http_request: Request = None):
     claims = read_student_token(
         f"Bearer {req.student_token}",
         expected_purpose="student_exam",
@@ -411,7 +430,11 @@ def start_exam(req: StartRequest, db: Session = Depends(get_db)):
                    (SELECT max(s.ended_at) FROM exam_sessions AS s
                      WHERE s.student_id = r.student_id AND s.exam_template_id = r.exam_template_id
                        AND NOT COALESCE(s.developer_demo, FALSE)
-                       AND s.status IN ('pending_grading', 'graded', 'flagged')) AS completed_at
+                       AND s.status IN ('pending_grading', 'graded', 'flagged')
+                       AND NOT (s.status = 'flagged' AND EXISTS (
+                           SELECT 1 FROM integrity_events restart_event
+                           WHERE restart_event.session_id = s.id
+                             AND restart_event.event_type = 'authorized_technical_restart'))) AS completed_at
             FROM exam_roster AS r
             WHERE r.student_id = CAST(:student_id AS uuid)
               AND r.exam_template_id = CAST(:exam_id AS uuid)
@@ -432,7 +455,8 @@ def start_exam(req: StartRequest, db: Session = Depends(get_db)):
     if not demo_enabled() and roster_match.get("completed_at"):
         raise HTTPException(409, "You have already completed this exam.")
 
-    face_check = _require_recent_face_check(db, str(req.student_id))
+    face_check = _require_face_authorization(db, str(req.student_id), http_request)
+    developer_bypass = face_check.get('status') == 'developer_bypass'
     if not demo_enabled():
         _retention_deadline()
         _recording_root(require_space=True)
@@ -448,7 +472,7 @@ def start_exam(req: StartRequest, db: Session = Depends(get_db)):
                 SELECT CAST(:s AS uuid), t.id, t.time_limit_minutes, t.question_time_limit_minutes,
                        COALESCE(r.extended_time_multiplier, 1),
                        CAST(:avatar_policy AS jsonb), :avatar_revision, :avatar_mode, :developer_demo, CAST(:preferences AS jsonb),
-                       TRUE, :identity_review_required, :identity_verification_attempts
+                       :identity_check_completed, :identity_review_required, :identity_verification_attempts
                 FROM exam_templates t JOIN exam_roster r ON r.exam_template_id = t.id
                     AND r.student_id = CAST(:s AS uuid)
                 WHERE t.id = CAST(:t AS uuid) AND t.status = 'published'
@@ -457,8 +481,9 @@ def start_exam(req: StartRequest, db: Session = Depends(get_db)):
          "avatar_policy": json.dumps(avatar_settings.model_dump()),
          "avatar_revision": avatar_revision, "avatar_mode": avatar_mode,
          "developer_demo": demo_enabled(),
-         "preferences": req.presentation_preferences.model_dump_json() if req.presentation_preferences else None,
-         "identity_review_required": False,
+         "preferences": req.presentation_preferences.model_dump_json() if req.presentation_preferences else "{}",
+         "identity_check_completed": not developer_bypass,
+         "identity_review_required": developer_bypass,
          "identity_verification_attempts": int(face_check["attempt_count"])},
     ).mappings().first()
     if not snapshot:
@@ -529,6 +554,31 @@ def get_session_state(session_id: UUID, authorization: str | None = Header(defau
     return read_session_state(db, str(session_id), claims)
 
 
+@router.post("/sessions/{session_id}/end")
+def end_exam_early(session_id: UUID, authorization: str | None = Header(default=None),
+                   db: Session = Depends(get_db)):
+    """End this student's attempt without fabricating an unfinished answer; safe to retry."""
+    from .media_timeline import _student_attempt
+    sid = str(session_id)
+    claims = read_student_token(authorization, expected_purpose="student_session")
+    attempt = _student_attempt(db, session_id, claims)
+    # Recheck after the attempt lock: a concurrent answer/provider may have held it.
+    read_student_token(authorization, expected_purpose="student_session")
+    if attempt["status"] in ("pending_grading", "flagged", "graded"):
+        db.rollback()
+        return {"done": True, "status": attempt["status"], "reason": "Attempt already ended"}
+    if attempt["status"] != "in_progress":
+        raise HTTPException(409, "This attempt cannot be ended from the student exam.")
+    require_active_video_recording(db, sid, bool(attempt.get("developer_demo", False)))
+    db.execute(text("""INSERT INTO integrity_events(session_id,event_type,severity,notes)
+        VALUES (CAST(:sid AS uuid),'student_ended_exam',1,:note)"""),
+        {"sid":sid,"note":"Student chose End exam. Any unfinished response was not submitted."})
+    end_session(db, sid)
+    status = db.execute(text("SELECT status FROM exam_sessions WHERE id=CAST(:sid AS uuid)"), {"sid":sid}).scalar_one()
+    db.commit()
+    return {"done": True, "status": status, "reason": "Student ended exam"}
+
+
 def read_session_state(db, session_id: str, claims: dict):
     """Read persisted question and attempt deadlines without resetting either clock."""
     if claims.get("session_id") != session_id:
@@ -537,6 +587,10 @@ def read_session_state(db, session_id: str, claims: dict):
         time_limit_minutes, question_time_limit_minutes, extended_time_multiplier,
         avatar_policy_snapshot, avatar_policy_revision, avatar_exam_mode, developer_demo,
         (SELECT title FROM exam_templates WHERE id = exam_sessions.exam_template_id) AS exam_title,
+        identity_check_completed, identity_review_required,
+        (status = 'flagged' AND EXISTS (SELECT 1 FROM integrity_events restart_event
+            WHERE restart_event.session_id = exam_sessions.id
+              AND restart_event.event_type = 'authorized_technical_restart')) AS technical_restart_allowed,
         {pause_sum_sql('exam_sessions.id')} AS avatar_pause_seconds,
         {active_pause_until_sql('exam_sessions.id')} AS pause_until,
         clock_timestamp() AS server_now FROM exam_sessions
@@ -557,8 +611,11 @@ def read_session_state(db, session_id: str, claims: dict):
                          if question and question_seconds is not None else None)
     return {"session_id": session_id, "status": row["status"],
             "developer_demo": bool(row.get("developer_demo", False)),
+            "technical_restart_allowed": bool(row.get("technical_restart_allowed", False)),
             "exam_title": row.get("exam_title") or "",
             "started_at": row["started_at"].isoformat() if row.get("started_at") else None,
+            "identity_check_completed": bool(row.get("identity_check_completed", True)),
+            "identity_review_required": bool(row.get("identity_review_required", False)),
             "server_now": row["server_now"].isoformat(),
             "deadline": deadline.isoformat() if deadline else None,
             "question_deadline": question_deadline.isoformat() if question_deadline else None,
@@ -627,7 +684,7 @@ def submit_answer(
         raise HTTPException(409, "No question is waiting for an answer")
 
     avatar_settings = session_policy(session)
-    if req.input_source == "confirmed_transcript":
+    if req.input_source in ("confirmed_transcript", "automatic_transcript"):
         verify_transcript_receipt(req.transcript_receipt, student_id=str(session["student_id"]),
             session_id=sid, interaction_id=str(pending["id"]), sequence_num=pending["sequence_num"],
             draft_id=str(req.transcript_draft_id), machine_draft=req.machine_draft)
@@ -690,7 +747,8 @@ def submit_answer(
     summaries = load_exam_material_summaries(
         db, session["exam_template_id"]
     )
-    can_follow_up = pending.get("avatar_followup_index", 0) < avatar_settings.behavior.followUps
+    can_follow_up = (pending.get("avatar_followup_index", 0) < avatar_settings.behavior.followUps
+                     and req.input_source != "unanswered_voice" and answer != QUESTION_TIMEOUT_ANSWER)
 
     # First decide whether this answer needs a follow-up, up to the professor's per-question limit.
     # Without this step a bank question always won while any remained, so follow-ups never happened.
@@ -965,7 +1023,11 @@ def get_student_available_exams(
                 (SELECT max(s.ended_at) FROM exam_sessions AS s
                   WHERE s.exam_template_id = t.id AND s.student_id = r.student_id
                     AND NOT COALESCE(s.developer_demo, FALSE)
-                    AND s.status IN ('pending_grading', 'graded', 'flagged')) AS completed_at
+                    AND s.status IN ('pending_grading', 'graded', 'flagged')
+                       AND NOT (s.status = 'flagged' AND EXISTS (
+                           SELECT 1 FROM integrity_events restart_event
+                           WHERE restart_event.session_id = s.id
+                             AND restart_event.event_type = 'authorized_technical_restart'))) AS completed_at
             FROM exam_roster AS r
             JOIN exam_templates AS t
               ON t.id = r.exam_template_id
@@ -2362,6 +2424,7 @@ async def upload_exam_roster(
 def verify_exam_eid(
     request: VerifyEIDRequest,
     db: Session = Depends(get_db),
+    http_request: Request = None,
 ):
     eid = request.eid.strip()
 
@@ -2390,7 +2453,7 @@ def verify_exam_eid(
             "This EID is not on the roster for this published exam.",
         )
 
-    _require_recent_face_check(db, str(student["id"]))
+    face_check = _require_face_authorization(db, str(student["id"]), http_request)
     student_token = issue_student_token(
         student_id=str(student["id"]),
         exam_template_id=str(request.exam_template_id),
@@ -2405,6 +2468,8 @@ def verify_exam_eid(
         "eid": student["eid"],
         "exam_template_id": str(request.exam_template_id),
         "student_token": student_token,
+        "identity_check_completed": face_check.get('status') != 'developer_bypass',
+        "identity_review_required": face_check.get('status') == 'developer_bypass',
     }
 
 

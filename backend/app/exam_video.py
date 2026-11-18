@@ -10,7 +10,7 @@ from pathlib import Path
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, PlainTextResponse
 from fastapi.routing import APIRoute
 from fastapi.exceptions import RequestValidationError
 from fastapi.encoders import jsonable_encoder
@@ -137,6 +137,17 @@ def _chunks(root, session_id):
     return directory
 
 
+def _sync_directory(root):
+    # On Linux (including the recording-volume container), persist the final
+    # rename before committing metadata and releasing the recovery chunks.
+    if hasattr(os, 'O_DIRECTORY'):
+        fd = os.open(_safe_path(root), os.O_RDONLY | os.O_DIRECTORY | getattr(os, 'O_NOFOLLOW', 0))
+        try:
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+
+
 def _student(db, session_id, authorization):
     claims = read_student_token(authorization, expected_purpose='student_session')
     if claims.get('session_id') != str(session_id):
@@ -220,14 +231,21 @@ def recording_summary(session, video):
         'expires_at': video['expires_at'].isoformat() if video and video.get('expires_at') else None,
         'playable': status == 'completed' and session['status'] in SUBMITTED,
         'transcript_status': transcript_status,
-        'generated_transcript': video.get('generated_transcript') if video and status != 'expired' else None,
+        'generated_transcript': video.get('generated_transcript') if video and status == 'completed'
+            and transcript_status == 'completed' and session['status'] in SUBMITTED else None,
+        'transcript_error': video.get('transcript_error') if video and status != 'expired' else None,
+        'transcript_attempts': int(video.get('transcript_attempts', 0)) if video else 0,
     }
 
 
 @router.get('/sessions/{session_id}/video-recording')
 def student_recording_status(session_id: UUID, authorization: str | None = Header(default=None), db: Session = Depends(get_db)):
     session = _student(db, session_id, authorization)
-    return recording_summary(session, _video(db, session_id))
+    summary = recording_summary(session, _video(db, session_id))
+    # Generated recording evidence is exposed through the professor review API.
+    summary.pop('generated_transcript', None)
+    summary.pop('transcript_error', None)
+    return summary
 
 
 @router.post('/sessions/{session_id}/video-recording/preflight')
@@ -388,12 +406,13 @@ def complete(session_id: UUID, body: CompleteRequest, authorization: str | None 
                 if target.tell() != video['total_bytes']:
                     raise OSError('assembly size mismatch')
             os.replace(temp, final)
-        # No speech engine or model is bundled with the web backend. Never
-        # substitute typed answers or silently call an external API.
+        _sync_directory(root)
+        # The separate offline worker picks up this durable queue state only
+        # after submission. No speech decoding happens inside the web request.
         db.execute(text('''UPDATE exam_session_videos SET status = 'completed',
             completed_at = now(), updated_at = now(), transcript_status = :transcript_status
             WHERE session_id = CAST(:sid AS uuid)'''),
-            {'sid': str(session_id), 'transcript_status': 'unavailable' if session['generate_transcript'] else 'not_requested'})
+            {'sid': str(session_id), 'transcript_status': 'queued' if session['generate_transcript'] else 'not_requested'})
         db.commit()
     except OSError as error:
         db.rollback()
@@ -402,8 +421,22 @@ def complete(session_id: UUID, body: CompleteRequest, authorization: str | None 
     except Exception:
         db.rollback()
         raise
-    # Keep chunks until retention cleanup, so a lost completion response or
-    # failed DB transaction never destroys successfully uploaded evidence.
+    # Once both the assembled media and completed DB row are durable, retries
+    # use that completed row. Releasing duplicate chunks avoids keeping two
+    # copies of every recording on a small disk. Failed commits keep all chunks.
+    try:
+        for index in range(video['next_chunk_index']):
+            path = _safe_path(directory / f'{index:08d}.chunk')
+            if path.exists():
+                with _private_open(path, os.O_RDONLY):
+                    pass
+                path.unlink()
+        directory.rmdir()
+        directory.parent.rmdir()
+    except (OSError, HTTPException):
+        # Cleanup is optional; a saved exam/recording must not become a failure.
+        # Retention cleanup can remove any remaining duplicate files later.
+        pass
     return {'status': 'completed', 'bytes': video['total_bytes']}
 
 
@@ -481,3 +514,19 @@ def playback(session_id: UUID, range_header: str | None = Header(default=None, a
     return StreamingResponse(stream(), status_code=206 if range_header else 200,
                              media_type='video/webm', headers=headers,
                              background=BackgroundTask(source.close))
+
+
+@router.get('/sessions/{session_id}/speech-transcript')
+def download_speech_transcript(session_id: UUID, account: dict = Depends(require_professor),
+                               db: Session = Depends(get_db)):
+    session = _professor_session(db, session_id, account)
+    if session['status'] not in SUBMITTED:
+        raise HTTPException(409, 'Speech transcripts are available after exam submission.')
+    summary = recording_summary(session, _video(db, session_id, lock=False))
+    if summary['status'] == 'expired':
+        raise HTTPException(410, 'Recording and transcript retention has expired.')
+    if summary['transcript_status'] != 'completed' or summary['generated_transcript'] is None:
+        raise HTTPException(409, 'A generated speech transcript is not available yet.')
+    return PlainTextResponse(summary['generated_transcript'], headers={
+        'Content-Disposition': f'attachment; filename="exam-{session_id}-speech-transcript.txt"',
+    })

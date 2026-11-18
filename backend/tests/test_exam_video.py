@@ -161,8 +161,9 @@ def test_completion_after_submission_and_authenticated_range_playback(api):
     db.session['status'] = 'pending_grading'
     response = client.post(BASE + '/complete', json={'expected_chunk_count': 2})
     assert response.status_code == 200
-    assert db.video['transcript_status'] == 'unavailable'
+    assert db.video['transcript_status'] == 'queued'
     assert (root / f'{SID}.webm').read_bytes() == WEBM + b'last'
+    assert not (root / SID).exists()
     assert client.post(BASE + '/complete', json={'expected_chunk_count': 2}).status_code == 200
     response = client.get(f'/exam/sessions/{SID}/video')
     assert response.content == WEBM + b'last'
@@ -273,6 +274,46 @@ def test_failed_commit_is_retryable_without_duplicate_bytes(api):
     assert db.video['total_bytes'] == len(WEBM)
 
 
+def test_failed_completion_commit_keeps_recovery_chunks_until_successful_retry(api):
+    client, db, _, root = api
+    start(client); chunk(client)
+    db.fail_commit = True
+    assert client.post(BASE + '/complete', json={'expected_chunk_count': 1}).status_code == 500
+    assert db.video['status'] == 'recording'
+    assert (root / SID / 'chunks' / '00000000.chunk').read_bytes() == WEBM
+    assert (root / f'{SID}.webm').read_bytes() == WEBM
+    assert client.post(BASE + '/complete', json={'expected_chunk_count': 1}).status_code == 200
+    assert not (root / SID).exists()
+    assert (root / f'{SID}.webm').read_bytes() == WEBM
+
+
+def test_duplicate_chunk_cleanup_failure_does_not_lose_completed_recording(api, monkeypatch):
+    from pathlib import Path
+    client, db, _, root = api
+    start(client); chunk(client)
+    unlink = Path.unlink
+    def fail_chunk_cleanup(path, *args, **kwargs):
+        if path.suffix == '.chunk':
+            raise PermissionError('synthetic cleanup failure')
+        return unlink(path, *args, **kwargs)
+    monkeypatch.setattr(Path, 'unlink', fail_chunk_cleanup)
+    assert client.post(BASE + '/complete', json={'expected_chunk_count': 1}).status_code == 200
+    assert db.video['status'] == 'completed'
+    assert (root / f'{SID}.webm').read_bytes() == WEBM
+    assert (root / SID / 'chunks' / '00000000.chunk').read_bytes() == WEBM
+
+
+def test_directory_sync_failure_preserves_recovery_chunks(api, monkeypatch):
+    client, db, _, root = api
+    start(client); chunk(client)
+    def fail_sync(_):
+        raise OSError('synthetic directory sync failure')
+    monkeypatch.setattr(video, '_sync_directory', fail_sync)
+    assert client.post(BASE + '/complete', json={'expected_chunk_count': 1}).status_code == 507
+    assert db.video['status'] == 'upload_failed'
+    assert (root / SID / 'chunks' / '00000000.chunk').read_bytes() == WEBM
+
+
 def test_hardlinked_chunk_and_path_traversal_rejected(api, tmp_path):
     client, db, _, root = api
     start(client)
@@ -333,3 +374,59 @@ def test_cleanup_preserves_unrelated_files_and_only_targets_media(api, tmp_path)
     assert unrelated.read_text() == 'keep'
     assert not directory.parent.exists()
     assert not (root / f'{SID}.webm').exists()
+
+
+def completed_transcript(api):
+    client, db, _, _ = api
+    start(client); chunk(client)
+    client.post(BASE + '/complete', json={'expected_chunk_count': 1})
+    db.session['status'] = 'graded'
+    db.video.update(transcript_status='completed', generated_transcript='[00:00:01] Synthetic speech.')
+    return client, db
+
+
+def test_owner_can_download_generated_speech_separately_from_typed_answers(api):
+    client, _ = completed_transcript(api)
+    result = client.get(f'/exam/sessions/{SID}/speech-transcript')
+    assert result.status_code == 200
+    assert result.text == '[00:00:01] Synthetic speech.'
+    assert result.headers['cache-control'] == 'private, no-store'
+    assert 'attachment;' in result.headers['content-disposition']
+    assert client.get(BASE).json().get('generated_transcript') is None
+
+
+def test_transcript_download_rejects_other_professor_and_anonymous(api):
+    client, _ = completed_transcript(api)
+    app = api[2]
+    app.dependency_overrides[require_professor] = lambda: {'professor_id': STUDENT}
+    assert client.get(f'/exam/sessions/{SID}/speech-transcript').status_code == 404
+    app.dependency_overrides.pop(require_professor)
+    assert client.get(f'/exam/sessions/{SID}/speech-transcript').status_code == 401
+
+
+@pytest.mark.parametrize('state', ['queued', 'processing', 'failed', 'not_requested'])
+def test_unready_transcripts_cannot_be_downloaded(api, state):
+    client, db = completed_transcript(api)
+    db.video['transcript_status'] = state
+    assert client.get(f'/exam/sessions/{SID}/speech-transcript').status_code == 409
+
+
+def test_transcript_expiry_hides_text_and_refuses_download_even_before_purge(api):
+    client, db = completed_transcript(api)
+    db.video['expires_at'] = datetime.now(timezone.utc) - timedelta(seconds=1)
+    assert client.get(f'/exam/sessions/{SID}/speech-transcript').status_code == 410
+    assert client.get(f'/exam/sessions/{SID}/recording-review').json()['generated_transcript'] is None
+
+
+@pytest.mark.parametrize('field,value', [('developer_demo', True), ('status', 'in_progress')])
+def test_demo_or_unsubmitted_transcript_is_not_downloadable(api, field, value):
+    client, db = completed_transcript(api)
+    db.session[field] = value
+    assert client.get(f'/exam/sessions/{SID}/speech-transcript').status_code in (404, 409)
+
+
+def test_silence_is_a_valid_empty_transcript_download(api):
+    client, db = completed_transcript(api)
+    db.video['generated_transcript'] = ''
+    assert client.get(f'/exam/sessions/{SID}/speech-transcript').status_code == 200
+    assert client.get(f'/exam/sessions/{SID}/speech-transcript').text == ''

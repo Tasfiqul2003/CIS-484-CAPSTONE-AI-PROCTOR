@@ -24,7 +24,9 @@ function environment({ existing = 'awaiting_recording', ready = true, denied = f
   Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { mediaDevices: {
     getUserMedia: async constraints => {
       permissions++;
-      assert.deepEqual(constraints, { audio: true, video: true });
+      assert.equal(constraints.audio, true);
+      assert.ok(constraints.video.width.max <= 640 && constraints.video.height.max <= 480);
+      assert.ok(constraints.video.frameRate.max <= 15);
       if (denied) throw new DOMException('synthetic', 'NotAllowedError');
       return stream;
     },
@@ -33,7 +35,11 @@ function environment({ existing = 'awaiting_recording', ready = true, denied = f
   globalThis.MediaRecorder = class {
     static isTypeSupported(type) { return type.includes('webm'); }
     state = 'inactive';
-    constructor(combinedStream) { assert.equal(combinedStream, expectedRecordingStream); recorders.push(this); }
+    constructor(combinedStream, settings) {
+      assert.equal(combinedStream, expectedRecordingStream);
+      this.settings = settings;
+      recorders.push(this);
+    }
     start(timeslice) { assert.equal(timeslice, 5000); this.state = 'recording'; }
     emit(data) { this.ondataavailable({ data: new Blob([data]) }); }
     stop() {
@@ -91,6 +97,7 @@ test('combined recording uploads retry at the same index and flush on completion
   await env.controller.start(attempt, 'synthetic-token');
   await env.controller.start(attempt, 'synthetic-token');
   assert.equal(env.permissions(), 1);
+  assert.equal(env.recorders[0].settings.mimeType, 'video/webm;codecs=vp8,opus');
   assert.equal(env.states.at(-1), 'recording');
   env.recorders[0].emit('first');
   const completion = env.controller.finish();
@@ -100,6 +107,25 @@ test('combined recording uploads retry at the same index and flush on completion
   const urls = env.requests.filter(item => item.url.includes('/chunks/')).map(item => item.url.split('/').at(-1));
   assert.deepEqual(urls, ['0', '0', '1']);
   assert.equal(JSON.parse(env.requests.find(item => item.url.endsWith('/complete')).init.body).expected_chunk_count, 2);
+});
+
+test('browsers without VP8 can still use an available WebM encoder', async () => {
+  const env = environment();
+  MediaRecorder.isTypeSupported = type => type === 'video/webm;codecs=vp9,opus';
+  await env.controller.start(attempt, 'synthetic-token');
+  assert.equal(env.recorders[0].settings.mimeType, 'video/webm;codecs=vp9,opus');
+  await env.controller.finish();
+  assert.equal(env.states.at(-1), 'completed');
+});
+
+test('excessive upload backlog stops capture while the exam can continue', async () => {
+  const env = environment();
+  await env.controller.start(attempt, 'synthetic-token');
+  env.recorders[0].emit(new Uint8Array(17 * 1024 * 1024));
+  await turn();
+  assert.equal(env.states.at(-1), 'upload_failed');
+  assert.ok(env.tracks.every(track => track.stopped));
+  assert.ok(!env.requests.some(item => item.url.endsWith('/complete')));
 });
 
 test('upload failure during finalization never becomes completed', async () => {

@@ -44,6 +44,7 @@ def purge_expired_videos():
             _remove_media(root, sid)
             db.execute(text('''UPDATE exam_session_videos SET status = 'expired',
                 generated_transcript = NULL,
+                transcript_error = NULL, transcript_job_token = NULL, transcript_lease_until = NULL,
                 transcript_status = CASE WHEN transcript_status = 'not_requested'
                     THEN 'not_requested' ELSE 'expired' END, updated_at = now()
                 WHERE session_id = CAST(:sid AS uuid)'''), {'sid': str(sid)})

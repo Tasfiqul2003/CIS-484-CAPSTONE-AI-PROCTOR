@@ -1,0 +1,9 @@
+# Worker imports the private media helpers; document parsers and OpenCV are not needed.
+fastapi
+sqlalchemy
+psycopg2-binary
+pwdlib[argon2]
+PyJWT
+faster-whisper==1.2.1
+# PyAV 19 removes metadata_errors used by faster-whisper 1.2.1.
+av==18.1.0

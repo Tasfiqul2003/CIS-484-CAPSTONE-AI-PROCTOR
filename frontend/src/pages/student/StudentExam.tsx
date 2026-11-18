@@ -587,6 +587,11 @@ export default function StudentExam() {
               recorded together for your professor to review. Your choice
               will be saved before the browser requests device permissions.
             </p>
+              <p>
+                When your professor enables speech transcription, a machine-generated
+                transcript of the recorded audio will also be saved for your professor
+                to review. Declining recording also prevents this speech transcript.
+              </p>
 
             <p>
               You may continue with your examination whether you allow

@@ -16,7 +16,7 @@ type Failure = 'permission_denied' | 'unavailable' | 'upload_failed' | 'interrup
 type Attempt = { session_id: string; status: string; developer_demo?: boolean;
   record_examination?: boolean; recording_consent_status?: string };
 const MAX_CHUNK = 5 * 1024 * 1024;
-const MAX_BUFFER = 64 * 1024 * 1024;
+const MAX_BUFFER = 16 * 1024 * 1024;
 
 export class ExamRecording {
   private sid = '';
@@ -129,10 +129,13 @@ export class ExamRecording {
       if (!ready.ready || !globalThis.isSecureContext || !navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
         await this.fail('unavailable'); return;
       }
-      const mimeType = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm']
+      const mimeType = ['video/webm;codecs=vp8,opus', 'video/webm', 'video/webm;codecs=vp9,opus']
         .find(value => MediaRecorder.isTypeSupported(value));
       if (!mimeType) { await this.fail('unavailable'); return; }
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: {
+        width: { ideal: 640, max: 640 }, height: { ideal: 480, max: 480 },
+        frameRate: { ideal: 15, max: 15 },
+      } });
       if (generation !== this.generation) { stream.getTracks().forEach(track => track.stop()); return; }
       this.stream = stream;
       if (!stream.getAudioTracks().length || !stream.getVideoTracks().length) {

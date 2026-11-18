@@ -77,7 +77,11 @@ def capabilities():
         return {"enabled": False}
     minimal = minimal_enabled()
     available = False if minimal else ai_available()
+    # FlashHead controls presentation only. Native speech and Ollama remain independent.
+    from .exam_speech import get_speech_service
+    speech = {} if minimal else get_speech_service().capabilities()
     return {"enabled": True, "minimal": minimal, "ai_available": available,
-            "services": {"ai": available, "flashhead": False, "voice": False,
-                         "microphone": False, "camera": False},
+            "services": {"ai": available, "flashhead": False,
+                         "voice": bool(speech.get("synthesis", {}).get("available")),
+                         "microphone": bool(speech.get("transcription", {}).get("available")), "camera": False},
             "substitutes": {"questions": True, "assistance": True, "material_summary": True}}

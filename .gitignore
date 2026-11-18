@@ -14,6 +14,9 @@ hosts.yml
 .developer-settings.json
 .developer-settings-*.tmp
 .developer-session.lock
+.developer-performance.json
+.developer-performance.tmp
+.developer-reports/
 
 # Local environments and caches
 .venv/
@@ -68,3 +71,7 @@ oralexam-airgap-images.tar
 # New raw results are local until reviewed as synthetic; preserve known evidence
 /tests/results/*
 !/tests/results/20260917T192156856386Z/
+
+# Frontend media orchestration is source code, not private recording data.
+!/frontend/src/components/media/
+!/frontend/src/components/media/*.ts

@@ -340,7 +340,9 @@ export default function ExamSubmissions() {
                               ? `${student.face_check_attempt_count} attempt${student.face_check_attempt_count === 1 ? "" : "s"} · not verified`
                               : "Not checked"
                           : student.identity_review_required
-                            ? `Review required · ${student.identity_verification_attempts ?? 3} failed matches`
+                            ? student.identity_check_completed === false
+                              ? 'Identity unverified · professor review required'
+                              : `Review required · ${student.identity_verification_attempts ?? 3} failed matches`
                             : student.identity_check_completed
                               ? "No exception flagged"
                               : "No photo-check record"}
@@ -348,6 +350,10 @@ export default function ExamSubmissions() {
                       <td>{formatDate(student.started_at)}</td>
                       <td>{formatDate(student.ended_at)}</td>
                       <td>
+                        {student.session_id && student.status === "in_progress" && !student.developer_demo
+                          && student.video_recording_status === "recording" && (
+                            <a href={`/professor/exam-sessions/${encodeURIComponent(student.session_id)}/live`}>View live video</a>
+                          )}
                         {student.session_id
                           && ["pending_grading", "flagged", "graded"].includes(student.status || "")
                           && !student.developer_demo
@@ -363,7 +369,8 @@ export default function ExamSubmissions() {
                             ? student.video_recording_status === "expired"
                               ? "Recording expired"
                               : "Recording incomplete"
-                          : "—"}
+                          : student.session_id && student.status === "in_progress" && !student.developer_demo
+                              && student.video_recording_status === "recording" ? null : "—"}
                       </td>
                     </tr>
                   ))}

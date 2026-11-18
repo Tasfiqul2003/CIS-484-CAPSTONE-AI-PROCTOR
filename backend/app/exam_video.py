@@ -36,6 +36,22 @@ class RecordingCompleteRequest(BaseModel):
     expected_chunk_count: int = Field(ge=1)
 
 
+def _require_unexpired_video(video) -> None:
+    deadline = video.get("expires_at")
+    if deadline is None:
+        raise HTTPException(409, "The recording retention deadline is missing.")
+    if deadline <= datetime.now(timezone.utc):
+        raise HTTPException(410, "The exam video has passed its retention deadline.")
+
+
+def _safe_recording_file(directory: Path, name: str) -> Path:
+    """Only accept a regular leaf in an already validated recording directory."""
+    path = directory / name
+    if path.is_symlink() or path.resolve().parent != directory.resolve() or path.is_dir():
+        raise HTTPException(500, "Invalid exam recording storage path.")
+    return path
+
+
 def _retention_deadline() -> datetime:
     value = os.getenv("EXAM_VIDEO_RETENTION_UNTIL", "").strip()
     if not value:
@@ -79,7 +95,8 @@ def _recording_root(
         )
     root = Path(configured).expanduser().resolve()
     try:
-        root.mkdir(parents=True, exist_ok=True, mode=0o700)
+        if write_required:
+            root.mkdir(parents=True, exist_ok=True, mode=0o700)
         if not root.is_dir():
             raise OSError("The configured video path is not a directory.")
         if write_required:
@@ -89,7 +106,7 @@ def _recording_root(
     except OSError as error:
         raise HTTPException(
             503,
-            "Exam video storage is not writable. Contact the administrator.",
+            "Exam video storage is unavailable. Contact the administrator.",
         ) from error
     if require_space and shutil.disk_usage(root).free < MAX_RECORDING_BYTES:
         raise HTTPException(
@@ -104,6 +121,7 @@ def _session_for_student(
     session_id: UUID,
     authorization: str | None,
     allowed_statuses: tuple[str, ...],
+    *, lock_session: bool = False,
 ):
     sid = str(session_id)
     claims = read_student_token(
@@ -112,15 +130,19 @@ def _session_for_student(
     )
     if claims.get("session_id") != sid:
         raise HTTPException(403, "Student token does not match this session.")
+    get_bind = getattr(db, "get_bind", None)
+    suffix = " FOR UPDATE" if lock_session and get_bind and get_bind().dialect.name == "postgresql" else ""
     session = db.execute(
         text("""SELECT id, student_id, exam_template_id, status, developer_demo
-                FROM exam_sessions WHERE id = CAST(:sid AS uuid)"""),
+                FROM exam_sessions WHERE id = CAST(:sid AS uuid)""" + suffix),
         {"sid": sid},
     ).mappings().first()
     if not session:
         raise HTTPException(404, "Session not found.")
+    claims = read_student_token(authorization, expected_purpose="student_session")
     if (
-        claims.get("sub") != str(session["student_id"])
+        claims.get("session_id") != sid
+        or claims.get("sub") != str(session["student_id"])
         or claims.get("exam_template_id") != str(session["exam_template_id"])
     ):
         raise HTTPException(403, "Student token does not match this exam session.")
@@ -135,6 +157,13 @@ def _session_video_dir(root: Path, session_id: UUID) -> Path:
     session_dir = root / str(session_id)
     chunks_dir = session_dir / "chunks"
     if session_dir.is_symlink() or chunks_dir.is_symlink():
+        raise HTTPException(500, "Invalid exam recording storage path.")
+    # Resolve before mkdir as well as after: Windows junctions can redirect a
+    # directory without being reported as symbolic links.
+    if (
+        session_dir.resolve().parent != root.resolve()
+        or chunks_dir.resolve().parent != session_dir.resolve()
+    ):
         raise HTTPException(500, "Invalid exam recording storage path.")
     chunks_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
     if (
@@ -160,9 +189,9 @@ def preflight_video_recording(
         raise HTTPException(403, "Student token does not match this exam.")
     if demo_enabled():
         return {"ready": True, "recording_required": False}
-    _retention_deadline()
+    deadline = _retention_deadline()
     _recording_root(require_space=True)
-    return {"ready": True, "recording_required": True}
+    return {"ready": True, "recording_required": True, "retention_until": deadline.isoformat()}
 
 
 @router.post("/sessions/{session_id}/video-recording/start")
@@ -173,7 +202,7 @@ def start_video_recording(
     db: Session = Depends(get_db),
 ):
     session = _session_for_student(
-        db, session_id, authorization, ("in_progress",)
+        db, session_id, authorization, ("in_progress",), lock_session=True
     )
     if body.content_type.split(";", 1)[0].strip().lower() != "video/webm":
         raise HTTPException(415, "The browser must support WebM video recording.")
@@ -232,7 +261,7 @@ async def upload_video_chunk(
         raise HTTPException(413, "A recording chunk exceeds the 10 MB limit.")
 
     video = db.execute(
-        text("""SELECT status, next_chunk_index, total_bytes
+        text("""SELECT status, next_chunk_index, total_bytes, expires_at
                 FROM exam_session_videos
                 WHERE session_id = CAST(:sid AS uuid)
                 FOR UPDATE"""),
@@ -240,10 +269,12 @@ async def upload_video_chunk(
     ).mappings().first()
     if not video or video["status"] != "recording":
         raise HTTPException(409, "The exam recording is not accepting chunks.")
+    _session_for_student(db, session_id, authorization, ("in_progress", "pending_grading", "flagged"))
+    _require_unexpired_video(video)
 
     root = _recording_root()
     chunks_dir = _session_video_dir(root, session_id)
-    chunk_path = chunks_dir / f"{index:08d}.chunk"
+    chunk_path = _safe_recording_file(chunks_dir, f"{index:08d}.chunk")
     if index < int(video["next_chunk_index"]):
         try:
             same_chunk = chunk_path.read_bytes() == data
@@ -256,6 +287,8 @@ async def upload_video_chunk(
         raise HTTPException(409, "Recording chunks must be uploaded in order.")
     if int(video["total_bytes"]) + len(data) > MAX_RECORDING_BYTES:
         raise HTTPException(413, "The exam recording exceeds the 512 MB limit.")
+    if shutil.disk_usage(root).free < len(data):
+        raise HTTPException(507, "Exam video storage is full.")
 
     try:
         if chunk_path.exists():
@@ -299,7 +332,7 @@ def complete_video_recording(
         ("pending_grading", "flagged", "graded"),
     )
     video = db.execute(
-        text("""SELECT status, content_type, next_chunk_index, total_bytes
+        text("""SELECT status, content_type, next_chunk_index, total_bytes, expires_at
                 FROM exam_session_videos
                 WHERE session_id = CAST(:sid AS uuid)
                 FOR UPDATE"""),
@@ -307,6 +340,8 @@ def complete_video_recording(
     ).mappings().first()
     if not video:
         raise HTTPException(409, "No exam recording was initialized.")
+    _session_for_student(db, session_id, authorization, ("pending_grading", "flagged", "graded"))
+    _require_unexpired_video(video)
     if body.expected_chunk_count != int(video["next_chunk_index"]):
         raise HTTPException(409, "Not all exam recording chunks have been uploaded.")
     if video["status"] == "completed":
@@ -316,13 +351,15 @@ def complete_video_recording(
 
     root = _recording_root()
     chunks_dir = _session_video_dir(root, session_id)
-    final_path = root / f"{session_id}.webm"
-    temp_path = root / f".{session_id}.webm.tmp"
+    final_path = _safe_recording_file(root, f"{session_id}.webm")
+    temp_path = _safe_recording_file(root, f".{session_id}.webm.tmp")
     try:
         if not final_path.is_file():
+            if shutil.disk_usage(root).free < int(video["total_bytes"]):
+                raise HTTPException(507, "Exam video storage has insufficient space to finalize the recording.")
             with temp_path.open("wb") as target:
                 for index in range(int(video["next_chunk_index"])):
-                    chunk_path = chunks_dir / f"{index:08d}.chunk"
+                    chunk_path = _safe_recording_file(chunks_dir, f"{index:08d}.chunk")
                     with chunk_path.open("rb") as source:
                         while True:
                             data = source.read(1024 * 1024)
@@ -337,8 +374,9 @@ def complete_video_recording(
             raise OSError("Final video size does not match uploaded chunks.")
         if chunks_dir.is_dir():
             for chunk_path in chunks_dir.iterdir():
-                if chunk_path.is_file():
-                    chunk_path.unlink()
+                if not chunk_path.is_file() or chunk_path.is_symlink():
+                    raise OSError("Unexpected item in the recording chunk directory.")
+                chunk_path.unlink()
             chunks_dir.rmdir()
             chunks_dir.parent.rmdir()
     except OSError as error:
@@ -370,7 +408,8 @@ def get_professor_video(
         raise HTTPException(403, "Professor account required.")
     session = db.execute(
         text("""SELECT s.status, s.developer_demo, t.professor_id,
-                       v.status AS video_status, v.content_type, v.expires_at
+                       v.status AS video_status, v.content_type, v.expires_at,
+                       v.total_bytes AS video_bytes
                 FROM exam_sessions AS s
                 JOIN exam_templates AS t ON t.id = s.exam_template_id
                 LEFT JOIN exam_session_videos AS v ON v.session_id = s.id
@@ -385,6 +424,8 @@ def get_professor_video(
         raise HTTPException(409, "Exam video is available only after submission.")
     if session.get("video_status") == "expired":
         raise HTTPException(410, "The exam video has passed its retention deadline.")
+    if session.get("expires_at") is not None:
+        _require_unexpired_video(session)
     if (
         session.get("video_status") != "completed"
         or session.get("expires_at") is None
@@ -393,11 +434,16 @@ def get_professor_video(
         raise HTTPException(404, "A completed exam video is not available.")
 
     root = _recording_root(write_required=False)
-    video_path = root / f"{session_id}.webm"
-    if video_path.is_symlink() or not video_path.is_file():
+    video_path = _safe_recording_file(root, f"{session_id}.webm")
+    if not video_path.is_file():
         raise HTTPException(410, "The exam video file is missing from local storage.")
+    try:
+        if int(session.get("video_bytes") or 0) < 1 or video_path.stat().st_size != int(session["video_bytes"]):
+            raise HTTPException(409, "The exam video is incomplete or failed its stored size check.")
+    except OSError:
+        raise HTTPException(503, "Exam video storage is unavailable.") from None
     return FileResponse(
         video_path,
         media_type=session["content_type"],
-        headers={"Cache-Control": "private, no-store"},
+        headers={"Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff"},
     )

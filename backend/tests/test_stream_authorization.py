@@ -1,3 +1,4 @@
+from datetime import datetime, timezone, timedelta
 """Regression tests for student authorization on the streaming answer endpoint."""
 
 from fastapi import FastAPI
@@ -43,7 +44,7 @@ class FakeDB:
             })
 
         if "FROM exam_session_videos" in sql:
-            return FakeResult({"status": "recording", "next_chunk_index": 1})
+            return FakeResult({"status": "recording", "next_chunk_index": 1, "expires_at": datetime.now(timezone.utc) + timedelta(days=1)})
 
         if "FROM interactions" in sql:
             return FakeResult(None)

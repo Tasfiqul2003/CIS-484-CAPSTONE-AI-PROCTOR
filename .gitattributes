@@ -17,3 +17,15 @@ tests/development/manual_*.py -text
 
 # Windows launchers need CRLF line endings.
 *.bat text eol=crlf
+
+# Preserve exact bytes of new hashed migrations across Windows/Linux checkouts.
+database/migrations/016_exam_media_contracts.sql -text
+database/migrations/017_student_environment_preferences.sql -text
+database/migrations/018_media_delivery_timeline.sql -text
+database/migrations/019_question_audio_assets.sql -text
+database/migrations/020_question_drafts.sql -text
+database/migrations/021_automatic_oral_transcripts.sql -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+
+database/migrations/022_attempt_rubric_snapshot.sql -text
+database/migrations/023_attempt_avatar_profile.sql -text
+database/migrations/024_retained_avatar_segments.sql -text

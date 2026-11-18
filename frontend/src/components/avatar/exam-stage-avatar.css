@@ -14,7 +14,16 @@
 }
 .exam-stage-portrait, .exam-stage-photo { grid-area: viewport; justify-self: center; align-self: end; display: block; width: min(100%, 580px); height: 100%; min-height: 0; object-fit: contain; object-position: center bottom; }
 .exam-stage-portrait { fill: none; }
+.exam-environment-photo { grid-area: viewport; align-self: stretch; width: 100%; height: 100%; min-height: 0; object-fit: cover; }
+.exam-stage-portrait, .exam-stage-photo { position: relative; }
+.exam-environment-fallback { grid-area: viewport; align-self: start; z-index: 2; margin: 12px; padding: 8px; color: #302044; background: #fff; border-radius: 8px; }
+.exam-stage-background-classroom { background-color: #e8eee7; background-image: linear-gradient(0deg, #c9b291 0 16%, transparent 16%), linear-gradient(90deg, transparent 15%, #577363 15% 85%, transparent 85%); }
+.exam-stage-background-office { background-color: #e3e9f1; background-image: linear-gradient(0deg, #d4bd9e 0 18%, transparent 18%), repeating-linear-gradient(90deg, transparent 0 22%, #bacddc 22% 24%, transparent 24% 30%); }
+.exam-stage-background-nature { background-color: #e7f2ee; background-image: radial-gradient(ellipse at 12% 80%, #a6c6af 0 28%, transparent 29%), radial-gradient(ellipse at 90% 84%, #9cbaa5 0 32%, transparent 33%), linear-gradient(#cde6ef, #e2eed9); }
 .exam-stage-background-library { background-color: #ded4eb; background-image: repeating-linear-gradient(90deg, #d6c6e4 0 6%, #c1b3d2 6% 7%, #e4dbe9 7% 13%); }
 .exam-stage-static-label, .exam-stage-substitute { grid-area: viewport; align-self: end; justify-self: start; z-index: 1; max-width: calc(100% - 24px); margin: 0 12px 12px; padding: 4px 10px; border-radius: 20px; background: #fff; color: #482b78; font-size: .875rem; line-height: 1.5; font-weight: 650; }
 .exam-stage-substitute { background: #1d4ed8; color: #fff; border: 1px solid #fff; }
 @media (max-width: 480px) { .exam-stage-viewport { border-radius: 10px; height: 300px; } .exam-stage-substitute, .exam-stage-static-label { margin: 0 8px 8px; font-size: .875rem; } }
+
+.exam-environment-content { grid-area: viewport; position: relative; align-self: stretch; min-width: 0; min-height: 0; z-index: 1; display: grid; place-items: center; padding: 24px; }
+.exam-environment-content .avatar-video-stage { max-width: min(420px, 82%); }

@@ -1,3 +1,4 @@
+import type { RetainedAsset } from './retainedAudio';
 // Client for the backend's /avatar bridge (backend/app/avatar_bridge.py).
 // The talking avatar and spoken answers are optional: when the server has no avatar
 // service, every exam still works with the built-in examiner and typed answers.
@@ -13,6 +14,7 @@ export interface AvatarClip {
   url: string;
   text: string;
   audio_s?: number;
+  asset?: RetainedAsset;
 }
 
 export async function fetchAvatarStatus(signal?: AbortSignal): Promise<AvatarStatus> {
@@ -40,12 +42,13 @@ export function ndjsonLines(buffer: string): { events: unknown[]; rest: string }
 
 /** Asks the avatar to speak `text`; calls onClip for each sentence clip as soon as it is rendered.
  *  `lead` is a short stock line from the server ("Thank you.") said before the text. */
-export async function streamAvatarSpeech(sessionId: string, token: string, text: string,
-  onClip: (clip: AvatarClip) => void, signal?: AbortSignal, lead = ""): Promise<void> {
+export async function streamAvatarSpeech(sessionId: string, token: string, _text: string,
+  onClip: (clip: AvatarClip) => void | Promise<void>, signal?: AbortSignal, _lead = "",
+  delivery?: { sequence_num: number; request_id: string; kind: string; assistance_operation_id?: string }): Promise<void> {
   const response = await fetch(`/api/avatar/sessions/${encodeURIComponent(sessionId)}/speak`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-    body: JSON.stringify(lead ? { text, lead } : { text }),
+    body: JSON.stringify(delivery ?? { sequence_num: 0, request_id: crypto.randomUUID(), kind: 'question' }),
     signal,
   });
   if (!response.ok || !response.body) {
@@ -56,15 +59,15 @@ export async function streamAvatarSpeech(sessionId: string, token: string, text:
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
-  for (;;) {
+  try { for (;;) {
     const { value, done } = await reader.read();
     buffer += done ? decoder.decode() : decoder.decode(value, { stream: true });
     const { events, rest } = ndjsonLines(done ? buffer + "\n" : buffer);
     buffer = rest;
     for (const raw of events) {
-      const event = raw as { type?: string; url?: string; text?: string; audio_s?: number; message?: string };
-      if (event.type === "clip" && typeof event.url === "string" && event.url.startsWith("/api/avatar/media/")) {
-        onClip({ url: event.url, text: event.text ?? "", audio_s: event.audio_s });
+      const event = raw as { type?: string; url?: string; text?: string; audio_s?: number; message?: string; asset?: RetainedAsset };
+      if (event.type === "clip" && typeof event.url === "string" && (event.url.startsWith("/api/avatar/media/") || event.url.startsWith(`/api/exam/sessions/${encodeURIComponent(sessionId)}/question-audio/`))) {
+        await onClip({ url: event.url, text: event.text ?? "", audio_s: event.audio_s, asset: event.asset });
       } else if (event.type === "error") {
         throw new Error(event.message || "The avatar could not finish this clip.");
       } else if (event.type === "done") {
@@ -73,6 +76,7 @@ export async function streamAvatarSpeech(sessionId: string, token: string, text:
     }
     if (done) return;
   }
+  } finally { await reader.cancel().catch(() => undefined); reader.releaseLock(); }
 }
 
 /** Sends a recorded answer for transcription; resolves to the text for the student to review. */

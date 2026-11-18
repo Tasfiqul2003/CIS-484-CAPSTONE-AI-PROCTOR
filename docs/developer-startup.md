@@ -1,6 +1,12 @@
-# Windows developer startup
+# Windows application startup (separate from tool controls)
 
-Open the repository's **Developer Mode** folder in Windows File Explorer and double-click `Start_Developer.bat`. The launcher starts the **core-only minimal developer workspace**: React/Vite, FastAPI, migrations and the isolated PostgreSQL database. AI, FlashHead, voice, microphone and camera services stay off. The launcher resolves paths from its own location and does not require virtual-environment activation. Keep the folder inside the repository.
+`Start_Developer.bat` now opens [optional tool controls](../Developer%20Mode/README.md) only. It does not run the application startup described below. Start the preserved application launcher explicitly from the repository root:
+
+```powershell
+.\.venv\Scripts\python.exe -B scripts/developer_start.py
+```
+
+This separate command starts the **core-only minimal developer workspace**: React/Vite, FastAPI, migrations and the isolated PostgreSQL database. AI, FlashHead, voice, microphone and camera services stay off. The requirements and credentials below apply to this application command, not the BAT tool menu.
 
 A file link inside Codex opens a viewer; execute the BAT in File Explorer or a terminal. The root `Start_Developer.bat` remains a forwarding entry point. The [Word guide](../Developer%20Mode/developer-mode-guide.docx) is preserved but describes earlier startup behavior. This reference and the [Developer Mode README](../Developer%20Mode/README.md) describe the current runtime. Dated verification sections below retain their historical results.
 
@@ -30,7 +36,7 @@ Minimal mode shows a microphone-off status and keeps voice and media controls in
 
 ## Normal and nonminimal behavior
 
-The dedicated BAT/launcher has **no minimal-mode opt-out switch**. Its Compose file sets both flags directly, so setting `DEVELOPER_MINIMAL_MODE=0` in the caller's shell alone does not override that stack.
+The application launcher has **no minimal-mode opt-out switch**. Its Compose file sets both flags directly, so setting `DEVELOPER_MINIMAL_MODE=0` in the caller's shell alone does not override that stack. Starting Ollama in the separate tool menu does not override these flags either.
 
 For a separately configured backend, leave `DEVELOPER_MINIMAL_MODE` unset or set it to `0` to retain nonminimal behavior. With `DEVELOPER_DEMO_MODE=1`, that runtime prefers available real providers and uses labeled fallbacks when optional AI or content is unavailable. Without the demo flag, normal runtime behavior is unchanged. Use the existing [setup workflow](setup.md) for a separately configured application rather than expecting the core-only launcher to activate providers.
 
@@ -45,11 +51,13 @@ Demo status is saved on every attempt created while demo mode is enabled. A mark
 
 The launcher checks Docker's Linux engine and these ports before requesting credentials. It can find Node and Docker in standard Windows installation folders when the inherited PATH is stale. Discovered tool directories are added only to child-process PATH values, including Docker's credential helper; the launcher does not modify system or user PATH.
 
-If `.venv` does not exist, create it with installed Python as described in [setup](setup.md). The launcher uses Python's standard library; the backend runs in its existing Docker image. Ollama, audio packages, FlashHead and model weights are not prerequisites for minimal startup. Original Foundation/GUI launchers and Modelfiles are preserved.
+If `.venv` does not exist, create it with installed Python as described in [setup](setup.md). Core startup uses Python's standard library; optional performance tracking uses `psutil` for host/process measurements and Tkinter for its monitor. Install the optional dependency with `.\.venv\Scripts\python.exe -m pip install -r scripts/requirements-developer.txt`. The backend runs in its existing Docker image. Ollama, audio packages, FlashHead and model weights are not prerequisites for minimal startup. Original Foundation/GUI launchers and Modelfiles are preserved.
 
 ## Local settings and credentials
 
 The older settings format contains only the five boolean provider choices and a version. Minimal startup reads but does not rewrite it. Invalid or unsupported saved settings still stop startup and remain unchanged; fix or rename that file to return to defaults.
+
+Performance tracking has a separate Y/N startup choice and ignored `.developer-performance.json` default, initially off. `--performance-tracking on` or `off` selects it for one run without saving that override. This does not activate optional media or AI providers. The [performance tracking reference](developer-performance-tracking.md) explains live measurements, dependencies and attribution limits.
 
 For actual startup, the launcher requests a developer database password and an admin bootstrap token using hidden input. Reuse the database password on subsequent starts because PostgreSQL retains the original password in its persistent volume. The bootstrap token must contain at least 16 characters. Values go into child-process environment variables; the launcher does not print them or write credential files. Docker Desktop administrators can inspect container configuration, so use development credentials and synthetic records only.
 
@@ -81,16 +89,18 @@ The developer database uses its own named volume; the team's existing Compose co
 
 Keep the launcher window open. Ctrl+C stops the Vite process and developer Compose services started by this run. Minimal startup owns no Ollama process, and pre-existing providers remain untouched. Database contents are retained. If Windows or a forced console close prevents cleanup, stop the `oralexam-developer` project through Docker Desktop. A session lock prevents simultaneous launches in the same checkout, and a second launcher refuses to take over a running developer project. The ignored `.developer-session.lock` file can remain after exit; its OS lock is released when the process exits. Metadata and cleanup commands time out after 30 seconds; initial Docker builds can take longer and remain cancellable with Ctrl+C.
 
+With tracking enabled, normal Ctrl+C shutdown also saves a uniquely named JSON/text summary in ignored `.developer-reports/` and displays a report popup after cleanup. A startup failure after tracking begins can also produce a report. Reports stay local and exclude exam content, credentials, environment variables and command arguments. A forced console close, process kill or power loss cannot guarantee a final report. Tracking off creates no monitor or report. Closing the browser or submitting an exam does not stop the launcher run.
+
 ## Inspect without starting anything
 
 From the repository root:
 
 ```powershell
-& '.\Developer Mode\Start_Developer.bat' --show-menu
-& '.\Developer Mode\Start_Developer.bat' --dry-run
+.\.venv\Scripts\python.exe -B scripts/developer_start.py --show-menu
+.\.venv\Scripts\python.exe -B scripts/developer_start.py --dry-run
 ```
 
-`--show-menu` displays the core-only minimal notice. `--dry-run` prints that launch plan without asking optional-provider or save-default questions. Neither command saves settings, requests credentials, starts services, probes optional providers, downloads models, performs inference or opens media devices.
+`--show-menu` displays the core-only minimal notice and effective performance-tracking choice. `--dry-run` prints that launch plan without asking optional-provider, performance-tracking or save-default questions. Both accept `--performance-tracking on` or `off` for inspection. Neither command saves settings, requests credentials, starts services, collects performance measurements, opens a monitor, probes optional providers, downloads models, performs inference or opens media devices.
 
 Offline regression checks:
 

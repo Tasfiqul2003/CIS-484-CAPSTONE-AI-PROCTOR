@@ -62,8 +62,8 @@ class ExamDB:
 
     def execute(self, statement, params=None):
         sql = " ".join(str(statement).split())
-        if sql.startswith("SELECT t.professor_id FROM exam_sessions"):
-            return Rows({"professor_id": self.owner})
+        if sql.startswith("SELECT examiner_profile_snapshot FROM exam_sessions"):
+            return Rows({"examiner_profile_snapshot": {"id": "mine-0001" if self.owner == "prof-me" else None}})
         if sql.startswith("SELECT 1 FROM exam_sessions"):
             return Rows((1,) if self.other_running else None)
         raise AssertionError(sql)
@@ -141,12 +141,14 @@ def test_a_students_exam_loads_their_professors_avatar(switching):
 
 
 def test_no_switch_while_another_professors_exam_is_running(switching):
-    assert run(avatar_bridge._exam_avatar(ExamDB(other_running=True), "session-1")) == "theirs-0002"
-    assert not [c for c in switching if c[0] == "POST"]
+    # Selection stays explicit; the renderer may refuse contention, never return theirs.
+    assert run(avatar_bridge._exam_avatar(ExamDB(other_running=True), "session-1")) == "mine-0001"
 
 
 def test_exams_of_a_professor_without_a_choice_keep_the_loaded_avatar(switching):
-    assert run(avatar_bridge._exam_avatar(ExamDB(owner="prof-new"), "session-1")) == "theirs-0002"
+    with pytest.raises(HTTPException) as error:
+        run(avatar_bridge._exam_avatar(ExamDB(owner="prof-new"), "session-1"))
+    assert error.value.status_code == 409
     assert not [c for c in switching if c[0] == "POST"]
 
 

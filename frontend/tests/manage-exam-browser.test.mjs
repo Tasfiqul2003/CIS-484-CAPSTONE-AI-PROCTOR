@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { offlineBrowserApp, tabbedAvatarLocators } from './offline-browser-app.mjs';
 
 // Local synthetic browser checks. Every API request is intercepted; no real records are read or written.
 const require = createRequire(process.env.AVATAR_NODE_MODULES_PATH
@@ -14,7 +15,9 @@ const executablePath = process.env.AVATAR_CHROME_PATH || (process.platform === '
   : process.platform === 'darwin' ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' : undefined);
 const browser = await chromium.launch({ executablePath, headless: true });
 const context = await browser.newContext({ viewport: { width: 1365, height: 900 } });
+const offline = await offlineBrowserApp(context, baseUrl);
 const page = await context.newPage();
+tabbedAvatarLocators(page);
 const EXAM = 'synthetic-navigation-exam';
 const INSTRUCTOR = 'synthetic-navigation-instructor';
 const rootPath = `/professor/exams/${EXAM}`;
@@ -73,15 +76,23 @@ await context.route('**/*', async route => {
     externalRequests.push(url.origin + url.pathname);
     return route.abort('blockedbyclient');
   }
-  if (!url.pathname.startsWith('/api/')) return route.continue();
+  if (!url.pathname.startsWith('/api/')) return route.fallback();
   const details = { method: request.method(), path: url.pathname };
   requests.push(details);
   const respond = (json, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(json) });
+  if (url.pathname.endsWith('/rubric')) return respond({default:false,criteria:[],rubric_error:'Synthetic unsaved rubric',default_criteria:[]});
+  if (url.pathname === '/api/avatar/professor/avatars') return respond({enabled:false});
+  if (url.pathname === '/api/developer/capabilities') return respond({ enabled: false });
   if (request.method() === 'GET') {
     if (url.pathname === '/api/auth/professor/exams') return respond(denyExams ? [] : [exam]);
     if (url.pathname === '/api/auth/me') return respond({ id: 'synthetic-account', professor_id: INSTRUCTOR, username: 'Synthetic Instructor', role: 'professor' });
     if (url.pathname === `/api/exam/templates/${EXAM}/avatar-policy`) return respond({ detail: 'Synthetic fixture has no saved server policy.' }, 503);
     if (url.pathname === `/api/exam/templates/${EXAM}/questions`) return respond([{ id: 'synthetic-question', question_text: 'Explain a synthetic topic.', topic: 'Synthetic', difficulty: 2, created_at: '2026-10-24T12:00:00Z' }]);
+    if (url.pathname === `/api/exam/templates/${EXAM}/question-drafts`) return respond({ drafts: [], topics: ['Synthetic'], can_edit: true });
+    if (url.pathname === `/api/exam/templates/${EXAM}/question-drafts/context`) return respond({
+      topic_coverage_required: ['Synthetic'], context_hash: '0'.repeat(64), can_edit: true,
+      rubric: { criteria: [{ name: 'Synthetic criterion', description: 'Synthetic reference only.', max_score: 10 }] },
+    });
     if (url.pathname === `/api/exam/templates/${EXAM}/time-settings`) return respond(savedTime);
     if (url.pathname === `/api/exam/templates/${EXAM}/ods-accommodations`) return respond(odsState());
     if ([`/api/exam/templates/${EXAM}/materials`, `/api/exam/templates/${EXAM}/roster`].includes(url.pathname)) return respond([]);
@@ -105,8 +116,11 @@ await context.route('**/*', async route => {
 });
 const categoryPath = slug => `${rootPath}/settings/${slug}`;
 const field = (label, target = page) => target.getByLabel(new RegExp(label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))).first();
+const categoryReady = (category, target = page) => category.slug === 'recording-transcript'
+  ? target.getByText('Assessed attempts require camera video and microphone audio.', { exact: false })
+  : field(category.field, target);
 const save = (target = page) => target.getByRole('button', { name: 'Save Settings', exact: true });
-const back = (target = page) => target.getByRole('link', { name: /Back to Manage Exam/ });
+const back = (target = page) => target.getByRole('link', { name: 'Overview', exact: true });
 const snapshot = () => page.evaluate(key => JSON.parse(localStorage.getItem(key)), settingsKey);
 async function check(name, run) {
   const start = Date.now();
@@ -125,7 +139,7 @@ async function visitHub(target = page) {
 }
 async function visitCategory(slug, target = page) {
   await target.goto(baseUrl + categoryPath(slug));
-  await field(categories.find(category => category.slug === slug).field, target).waitFor();
+  await categoryReady(categories.find(category => category.slug === slug), target).waitFor();
 }
 async function screenshot(filename) {
   await mkdir(outputDir, { recursive: true });
@@ -138,34 +152,34 @@ await check('Manage Exam keeps exam details and eight navigation destinations', 
   await visitHub();
   assert.match(await page.locator('main').innerText(), /SYNTH 101/);
   for (const category of categories) {
-    const link = page.getByRole('link', { name: new RegExp(category.title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')) });
+    const link = page.getByRole('link', { name: category.title.replace(' Settings', ''), exact: true });
     assert.equal(await link.count(), 1, `Expected one ${category.title} card`);
     assert.equal(await link.getAttribute('href'), categoryPath(category.slug));
     assert.equal(await field(category.field).count(), 0, `${category.title} form must be on its own page`);
   }
-  assert.equal(await page.getByRole('link', { name: /View Question Bank/ }).getAttribute('href'), `${rootPath}/questions`);
-  assert.equal(await page.getByRole('link', { name: /View Course Materials/ }).getAttribute('href'), `${rootPath}/materials`);
+  assert.equal(await page.getByRole('link', { name: 'Questions', exact: true }).getAttribute('href'), `${rootPath}/questions`);
+  assert.equal(await page.getByRole('link', { name: 'Course materials', exact: true }).getAttribute('href'), `${rootPath}/materials`);
   return { screenshot: await screenshot('manage-exam-overview-desktop.png') };
 });
 
 await check('Every settings card opens its category; direct links, refresh, back and forward work', async () => {
   for (const category of categories) {
     await visitHub();
-    await page.getByRole('link', { name: new RegExp(category.title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')) }).click();
-    await field(category.field).waitFor();
+    await page.getByRole('link', { name: category.title.replace(' Settings', ''), exact: true }).click();
+    await categoryReady(category).waitFor();
     assert.equal(new URL(page.url()).pathname, categoryPath(category.slug));
     assert.match(await page.locator('main').innerText(), new RegExp(exam.title));
-    assert(await page.getByRole('heading', { name: category.title, exact: true }).first().isVisible());
+    assert(await categoryReady(category).isVisible());
     assert.equal(await back().getAttribute('href'), rootPath);
     for (const other of categories.filter(item => item.slug !== category.slug)) assert.equal(await field(other.field).count(), 0);
     await page.reload();
-    await field(category.field).waitFor();
+    await categoryReady(category).waitFor();
     await page.goBack();
-    await page.getByRole('link', { name: /View Question Bank/ }).waitFor();
+    await page.getByRole('link', { name: 'Questions', exact: true }).waitFor();
     await page.goForward();
-    await field(category.field).waitFor();
+    await categoryReady(category).waitFor();
     await back().click();
-    await page.getByRole('link', { name: /View Question Bank/ }).waitFor();
+    await page.getByRole('link', { name: 'Questions', exact: true }).waitFor();
     await visitCategory(category.slug);
   }
   return { categories: categories.map(({ title }) => title), directReloadBackForward: true };
@@ -173,13 +187,21 @@ await check('Every settings card opens its category; direct links, refresh, back
 
 await check('Question Bank and Course Materials keep their existing navigation', async () => {
   await visitHub();
-  await page.getByRole('link', { name: /View Question Bank/ }).click();
+  await page.getByRole('link', { name: 'Questions', exact: true }).click();
   await page.getByRole('heading', { name: 'Question Bank', exact: true }).waitFor();
-  await page.getByRole('button', { name: /Back to Exam/ }).click();
-  await page.getByRole('link', { name: /View Course Materials/ }).click();
+  const drafts = page.getByRole('region', { name: 'AI question drafts', exact: true });
+  await drafts.getByRole('button', { name: 'Generate drafts', exact: true }).waitFor();
+  assert.equal(await drafts.getByRole('button', { name: 'Approve into question bank', exact: true }).count(), 0);
+  assert.match(await drafts.innerText(), /outside the exam until you inspect and explicitly approve/);
+  await drafts.getByText('Professor topics and assessment rubric', { exact: true }).click();
+  await drafts.getByLabel('Exam topics, one per line', { exact: true }).waitFor();
+  assert.equal(await drafts.getByLabel('Exam topics, one per line', { exact: true }).inputValue(), 'Synthetic');
+  assert.equal(await drafts.getByLabel('Criterion 1 name', { exact: true }).inputValue(), 'Synthetic criterion');
+  await back().click();
+  await page.getByRole('link', { name: 'Course materials', exact: true }).click();
   await page.getByRole('heading', { name: 'Course Materials', exact: true }).waitFor();
-  await page.getByRole('button', { name: /Back to Exam/ }).click();
-  await page.getByRole('link', { name: /View Question Bank/ }).waitFor();
+  await back().click();
+  await page.getByRole('link', { name: 'Questions', exact: true }).waitFor();
 });
 
 await check('Legacy exam-key data loads without rewriting and category saves preserve other data', async () => {
@@ -194,7 +216,7 @@ await check('Legacy exam-key data loads without rewriting and category saves pre
   assert.equal(savedTime.time_limit_minutes, 47);
   assert.deepEqual(await snapshot(), legacySettings, 'Live time settings must not rewrite legacy browser drafts');
   await back().click();
-  await page.getByRole('link', { name: /ODS Accommodations/ }).click();
+  await page.getByRole('link', { name: 'ODS Accommodations', exact: true }).click();
   await field('Student EID').fill('000123');
   await field('Extended time multiplier').selectOption('2');
   await page.getByRole('button', { name: 'Save student accommodation', exact: true }).click();
@@ -207,16 +229,18 @@ await check('Legacy exam-key data loads without rewriting and category saves pre
   await field('Allow Hints').check();
   await save().click();
   await visitCategory('recording-transcript');
-  assert.equal(await field('Record Video').isChecked(), false);
-  await field('Record Audio').uncheck();
-  await field('Generate Transcript').uncheck();
+  for (const label of ['Record Video', 'Record Audio', 'Generate Transcript']) assert.equal(await field(label).count(), 0,
+    'Assessed recording policy is server controlled, not a browser-draft toggle');
+  assert.match(await page.locator('main').innerText(), /Video retention is configured by the server administrator/);
+  const beforeRecordingPolicy = await snapshot();
   await save().click();
+  assert.deepEqual(await snapshot(), beforeRecordingPolicy, 'Viewing/saving the read-only recording category preserves legacy data');
   await visitCategory('ai-results');
   assert.equal(await field('Recommended Grade').isChecked(), false);
   await field('Generate Feedback').uncheck();
   await field('Professor Review Required').uncheck();
   await save().click();
-  const expected = { ...legacySettings, questionTimeLimit: null, questionCount: 19, maxFollowUps: 4, allowHints: true, recordAudio: false, generateTranscript: false, generateFeedback: false, professorReview: false };
+  const expected = { ...legacySettings, questionTimeLimit: null, questionCount: 19, maxFollowUps: 4, allowHints: true, generateFeedback: false, professorReview: false };
   delete expected.difficulty;
   assert.deepEqual(await snapshot(), expected);
   await page.reload();
@@ -233,27 +257,27 @@ await check('Concurrent category pages merge into the latest stored exam draft',
   observe(other);
   try {
     await visitCategory('time-scheduling');
-    await visitCategory('recording-transcript', other);
+    await visitCategory('ai-results', other);
     await field('Time per exam').fill('61');
-    await field('Record Video', other).check();
+    await field('Recommended Grade', other).check();
     await save().click();
     await page.getByRole('button', { name: '✓ Settings Saved', exact: true }).waitFor();
     await save(other).click();
     assert.equal(savedTime.time_limit_minutes, 61);
     assert.equal((await snapshot()).timeLimit, legacySettings.timeLimit);
-    assert.equal((await snapshot()).recordVideo, true);
+    assert.equal((await snapshot()).recommendedGrade, true);
     await page.reload();
     await field('Time per exam').waitFor();
     assert.equal(await field('Time per exam').inputValue(), '61');
     await other.reload();
-    await field('Record Video', other).waitFor();
-    assert(await field('Record Video', other).isChecked());
+    await field('Recommended Grade', other).waitFor();
+    assert(await field('Recommended Grade', other).isChecked());
   } finally { await other.close(); }
 });
 
 await check('Unsaved category changes guard links, reload, and browser back', async () => {
   await visitHub();
-  await page.getByRole('link', { name: /Time & Scheduling/ }).click();
+  await page.getByRole('link', { name: 'Time & Scheduling', exact: true }).click();
   await field('Time per exam').fill('73');
   const saved = await snapshot();
   const savedExamMinutes = savedTime.time_limit_minutes;
@@ -273,14 +297,14 @@ await check('Unsaved category changes guard links, reload, and browser back', as
   }
   nextDialog = 'accept';
   await back().click();
-  await page.getByRole('link', { name: /Time & Scheduling/ }).click();
+  await page.getByRole('link', { name: 'Time & Scheduling', exact: true }).click();
   assert.equal(await field('Time per exam').inputValue(), String(savedExamMinutes));
   await field('Time per exam').fill('67');
   await save().click();
   await page.getByRole('button', { name: '✓ Settings Saved', exact: true }).waitFor();
   const dialogCount = dialogs.length;
   await back().click();
-  await page.getByRole('link', { name: /View Question Bank/ }).waitFor();
+  await page.getByRole('link', { name: 'Questions', exact: true }).waitFor();
   assert.equal(dialogs.length, dialogCount, 'Saving should clear the unsaved navigation guard');
   return { canceled: ['link', 'reload', 'browser back'], acceptedDiscard: true, savedNavigationNoPrompt: true };
 });
@@ -300,14 +324,14 @@ await check('Avatar draft and student previews retain separate storage and unsav
   const legacyBefore = await snapshot();
   await field('Default speaking speed').fill('1.15');
   const draftKey = `oral-exam-avatar:v1:${JSON.stringify([EXAM, INSTRUCTOR])}`;
-  await page.getByRole('button', { name: 'Save Local Draft', exact: true }).first().click();
+  await page.getByRole('button', { name: 'Save draft', exact: true }).first().click();
   const draft = await page.evaluate(key => localStorage.getItem(key), draftKey);
   assert.equal(JSON.parse(draft).settings.presentation.speed, 1.15);
-  await page.getByRole('button', { name: 'Preview as Student', exact: true }).click();
-  await page.getByRole('region', { name: 'Preview as Student', exact: true }).waitFor();
-  await page.getByRole('button', { name: 'Close Student Preview', exact: true }).click();
-  await page.getByRole('button', { name: 'Share Preview Policy', exact: true }).click();
-  const sharedLink = page.getByRole('link', { name: 'Open shared student preview', exact: true });
+  await page.getByRole('button', { name: 'Student preview', exact: true }).click();
+  await page.getByRole('region', { name: 'Student preview', exact: true }).waitFor();
+  await page.getByRole('button', { name: 'Built-in examiner', exact: true }).click();
+  await page.getByRole('button', { name: 'Make preview page', exact: true }).click();
+  const sharedLink = page.getByRole('link', { name: 'Open the preview page', exact: true });
   await sharedLink.waitFor();
   const student = await context.newPage();
   observe(student);
@@ -372,6 +396,7 @@ await check('Overview and all six settings pages fit a 360px screen', async () =
 });
 
 await check('Only synthetic configured API requests occurred and there were no runtime errors', async () => {
+  assert.deepEqual(offline.mediaCalls, []);
   assert.deepEqual(unexpectedApi, []);
   assert.deepEqual(externalRequests, []);
   assert.deepEqual(pageErrors, []);

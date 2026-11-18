@@ -49,7 +49,7 @@ export function readSessionPresentation(value: unknown, expectedSession: string)
     return result;
   };
   const avatarChoices = choices(raw.avatarChoices, ["guide", "geometric", ...(d.customAvatar ? ["custom"] : [])]);
-  const backgroundChoices = choices(raw.backgroundChoices, ["neutral", "library", ...(d.customBackground ? ["custom"] : [])]);
+  const backgroundChoices = choices(raw.backgroundChoices, ["neutral", "library", "classroom", "office", "nature", ...(d.customBackground ? ["custom"] : [])]);
   if (typeof d.avatar !== "string" || !avatarChoices.some(choice => choice.id === d.avatar) ||
       typeof d.background !== "string" || !backgroundChoices.some(choice => choice.id === d.background)) throw invalid();
   const policy: PresentationPolicy = {

@@ -217,7 +217,7 @@ export default function MaterialUpload() {
     <ExamManagementLayout examId={examId ?? ""} section="materials">{() => (
       <div className="material-upload-content in-manage-layout">
         <div className="material-heading">
-          
+
                     <h1>Course Materials</h1>
           <p>
             Upload textbooks, lecture notes, slides, study guides,

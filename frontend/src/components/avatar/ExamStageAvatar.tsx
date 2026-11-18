@@ -1,21 +1,28 @@
-import { useId } from "react";
-import { isValidPreviewImage } from "./settings";
+import { useId, useState, type ReactNode } from "react";
+import { BACKGROUNDS, isValidPreviewImage } from "./settings";
 import type { AIAvatarState } from "../AIAvatar";
 import "./exam-stage-avatar.css";
 
-/** Static presentation only. A future FlashHead adapter can supply video in this viewport. */
+/** Shared environment for the static examiner and optional FlashHead media. */
 export default function ExamStageAvatar({ avatar = "guide", background = "neutral", customAvatar = null,
-  customBackground = null, developerMinimal = false,
+  customBackground = null, developerMinimal = false, children,
 }: {
+  children?: ReactNode;
   avatar?: string; background?: string; customAvatar?: string | null; customBackground?: string | null;
   animation?: boolean; reducedMotion?: boolean; state?: AIAvatarState; developerMinimal?: boolean;
 }) {
+  const hasStage = children != null && children !== false;
   const id = useId().replaceAll(":", "");
+  const [failedBackdrop, setFailedBackdrop] = useState<string | null>(null);
   const photo = avatar === "custom" && isValidPreviewImage(customAvatar) ? customAvatar : null;
   const backdrop = background === "custom" && isValidPreviewImage(customBackground) ? customBackground : null;
-  return <div className={`exam-stage-viewport exam-stage-background-${background}`}
-    style={backdrop ? { backgroundImage: `url("${backdrop}")` } : undefined}>
-    {photo ? <img className="exam-stage-photo" src={photo} alt="Professor-selected examiner image" />
+  const builtIn = BACKGROUNDS.some(choice => choice.id === background);
+  const unavailable = (!builtIn && !backdrop) || (!!backdrop && failedBackdrop === backdrop);
+  const shownBackground = unavailable ? "neutral" : background;
+  return <div className={`exam-stage-viewport exam-stage-background-${shownBackground}`} data-background={shownBackground}>
+    {backdrop && !unavailable && <img className="exam-environment-photo" src={backdrop} alt="" onError={() => setFailedBackdrop(backdrop)} />}
+    {unavailable && <p className="exam-environment-fallback" role="status">Background unavailable. Showing the neutral environment.</p>}
+    {hasStage ? <div className="exam-environment-content">{children}</div> : photo ? <img className="exam-stage-photo" src={photo} alt="Professor-selected examiner image" />
       : avatar === "geometric" ? <svg className="exam-stage-portrait" viewBox="0 0 480 480" role="img" aria-label="Geometric examiner">
         <path d="M240 50 410 240 240 430 70 240Z" fill="#eee8f7" stroke="#5b3a91" strokeWidth="8" />
       </svg> : <svg className="exam-stage-portrait" viewBox="0 0 480 480" preserveAspectRatio="xMidYMax meet" role="img" aria-label="Static faceless examiner">
@@ -37,8 +44,8 @@ export default function ExamStageAvatar({ avatar = "guide", background = "neutra
         <path d="M153 143c9-49 54-77 88-79 42 2 77 32 85 79v58c0 61-40 107-86 107s-87-46-87-107Z" fill={`url(#${id}-skin)`} />
         <path d="M146 159c48-10 114-41 133-82 20 35 39 55 55 67-3-58-39-91-89-91-57-1-100 41-99 106Z" fill={`url(#${id}-hair)`} />
       </svg>}
-    <span className={developerMinimal ? "exam-stage-substitute" : "exam-stage-static-label"}>
+    {!hasStage && <span className={developerMinimal ? "exam-stage-substitute" : "exam-stage-static-label"}>
       {developerMinimal ? "Static avatar · developer substitute" : "Static examiner"}
-    </span>
+    </span>}
   </div>;
 }

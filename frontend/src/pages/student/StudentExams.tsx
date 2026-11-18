@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { CheckCircle2, Clock, ListChecks, LogOut, Timer } from "lucide-react";
 import OralExamMark from "../../components/brand/OralExamMark";
+import { hasStudentFaceAccess, readDeveloperFaceBypass } from './studentIdentity';
 
 type Student = {
   id: string;
@@ -42,7 +43,7 @@ export default function StudentExams() {
   useEffect(() => {
     const eid = sessionStorage.getItem("oralexam_student_eid") || "";
     const studentId = sessionStorage.getItem("oralexam_student_id") || "";
-    const faceCheckPassed = sessionStorage.getItem("oralexam_face_check_passed") === "true";
+    const faceCheckPassed = hasStudentFaceAccess(studentId, eid);
 
     if (!eid || !studentId || !faceCheckPassed) {
       window.location.href = "/student/verification";
@@ -127,6 +128,7 @@ export default function StudentExams() {
       "oralexam_student_id",
       "oralexam_student_name",
       "oralexam_face_check_passed",
+      "oralexam_developer_face_bypass",
       "oralexam_exam_session_id",
       "oralexam_exam_session_token",
       "oralexam_developer_demo",
@@ -151,6 +153,9 @@ export default function StudentExams() {
         <div className="student-exams-heading">
           <p className="eyebrow">STUDENT PORTAL</p>
           <h1 id="student-exams-heading">Your exams</h1>
+          {student && readDeveloperFaceBypass(student.id, student.eid) && <p role="status">
+            Developer photo-check bypass · identity remains unverified. Roster and recording requirements still apply.
+          </p>}
         </div>
 
         {loading ? (

@@ -1,3 +1,4 @@
+from datetime import datetime, timezone, timedelta
 """Synthetic SQLite API checks; never use the application database."""
 import pytest
 from fastapi import FastAPI
@@ -89,7 +90,7 @@ def test_expiry_uses_attempt_limit_even_when_template_was_extended(monkeypatch, 
                                "avatar_policy_snapshot": None, "avatar_policy_revision": 0,
                                "developer_demo": False})
             if "FROM exam_session_videos" in sql:
-                return Result({"status": "recording", "next_chunk_index": 1})
+                return Result({"status": "recording", "next_chunk_index": 1, "expires_at": datetime.now(timezone.utc) + timedelta(days=1)})
             if "student_answer_transcript IS NULL" in sql:
                 return Result({"id": "synthetic-question", "sequence_num": 1})
             if "SELECT * FROM exam_templates" in sql:
@@ -100,8 +101,9 @@ def test_expiry_uses_attempt_limit_even_when_template_was_extended(monkeypatch, 
         def commit(self): self.committed = True
         def close(self): pass
 
+    monkeypatch.setattr(exam, "record_response_submitted", lambda *a, **k: None)
     db = DB()
-    req = exam.AnswerRequest(session_id=UUID(sid), answer_transcript="Synthetic answer")
+    req = exam.AnswerRequest(session_id=UUID(sid), answer_transcript="Synthetic answer", question_sequence_num=1)
     if streaming:
         monkeypatch.setattr(stream, "open_session", lambda: db)
         monkeypatch.setattr(stream, "load_exam_material_summaries", lambda *args: [])

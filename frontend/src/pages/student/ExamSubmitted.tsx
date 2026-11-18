@@ -47,6 +47,7 @@ export default function ExamSubmitted() {
       "oralexam_student_id",
       "oralexam_student_name",
       "oralexam_face_check_passed",
+      "oralexam_developer_face_bypass",
       "oralexam_exam_session_id",
       "oralexam_exam_session_token",
       "oralexam_developer_demo",

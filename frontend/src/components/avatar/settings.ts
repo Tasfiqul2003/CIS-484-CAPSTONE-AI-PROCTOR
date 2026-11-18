@@ -7,6 +7,9 @@ export const AVATARS = [
 export const BACKGROUNDS = [
   { id: 'neutral', label: 'Neutral background' },
   { id: 'library', label: 'Library background' },
+  { id: 'classroom', label: 'Classroom background' },
+  { id: 'office', label: 'Office background' },
+  { id: 'nature', label: 'Nature background' },
 ] as const
 
 export const VOICES = [

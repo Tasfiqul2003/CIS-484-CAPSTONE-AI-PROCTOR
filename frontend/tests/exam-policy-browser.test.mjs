@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { offlineBrowserApp, clickInView, tabbedAvatarLocators } from './offline-browser-app.mjs';
 
 // All API traffic is intercepted with synthetic owned exams. No real backend writes occur.
 const require = createRequire(process.env.AVATAR_NODE_MODULES_PATH
@@ -15,7 +16,9 @@ const executablePath = process.env.AVATAR_CHROME_PATH || (process.platform === '
 const keepOpen = process.argv.includes('--keep-open');
 const browser = await chromium.launch({ executablePath, headless: !keepOpen });
 const context = await browser.newContext({ viewport: { width: 1365, height: 900 } });
+const offline = await offlineBrowserApp(context, baseUrl);
 const page = await context.newPage();
+tabbedAvatarLocators(page);
 const student = await context.newPage();
 const EXAM_A = 'synthetic-policy-exam-a';
 const EXAM_B = 'synthetic-policy-exam-b';
@@ -52,7 +55,7 @@ const defaultSettings = () => ({
 });
 const envelope = (examId, revision = 0, settings = defaultSettings()) => ({
   exam_id: examId, revision, settings: clone(settings), effective_for: 'new_attempts',
-  assistance_scope: 'per_question', updated_at: revision ? '2026-10-15T12:00:00Z' : null,
+  assistance_scope: 'per_question', exam_mode: 'assessed', updated_at: revision ? '2026-10-15T12:00:00Z' : null,
 });
 const serverPolicies = new Map([[EXAM_A, envelope(EXAM_A)], [EXAM_B, envelope(EXAM_B)]]);
 const owner = new Map([[EXAM_A, INSTRUCTOR_A], [EXAM_B, INSTRUCTOR_B]]);
@@ -87,10 +90,12 @@ await context.route('**/*', async (route) => {
     return route.abort('blockedbyclient');
   }
   const api = url.pathname.startsWith('/api/');
-  if (!api && ['GET', 'HEAD'].includes(request.method()) && !['fetch', 'xhr'].includes(request.resourceType())) return route.continue();
+  if (!api && ['GET', 'HEAD'].includes(request.method()) && !['fetch', 'xhr'].includes(request.resourceType())) return route.fallback();
   const details = { method: request.method(), path: url.pathname, instructor, body: request.postData() };
   requests.push(details);
   const respond = (json, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(json) });
+  if (url.pathname === '/api/avatar/professor/avatars') return respond({enabled:false});
+  if (url.pathname === '/api/developer/capabilities') return respond({ enabled: false });
   if (request.method() === 'GET' && url.pathname === '/api/auth/me') {
     return respond({ id: 'synthetic-policy-account', professor_id: instructor, username: 'Synthetic Instructor', role: 'professor' });
   }
@@ -110,16 +115,25 @@ await context.route('**/*', async (route) => {
     if (request.method() === 'PUT') {
       if (failPolicyPut) return respond({ detail: 'Synthetic policy write failure.' }, 503);
       const body = request.postDataJSON();
-      assert.deepEqual(Object.keys(body).sort(), ['expected_revision', 'settings']);
+      assert.deepEqual(Object.keys(body).sort(), ['exam_mode', 'expected_revision', 'settings']);
+      assert(['practice', 'assessed'].includes(body.exam_mode));
       const current = serverPolicies.get(examId);
       if (body.expected_revision !== current.revision) return respond({ detail: 'Synthetic stale revision.' }, 409);
       const next = envelope(examId, current.revision + 1, body.settings);
+      next.exam_mode = body.exam_mode;
       serverPolicies.set(examId, next);
       return respond(next);
     }
   }
   if (request.method() === 'GET' && /^\/api\/exam\/templates\/[^/]+\/questions$/.test(url.pathname)) {
     return respond([{ id: 'synthetic-policy-question', question_text: 'Synthetic topic?', topic: 'Synthetic', difficulty: 2, created_at: '2026-10-15T12:00:00Z' }]);
+  }
+  if (request.method() === 'GET' && /^\/api\/exam\/templates\/[^/]+\/question-drafts$/.test(url.pathname)) {
+    return respond({ drafts: [], topics: ['Synthetic'], can_edit: true });
+  }
+  if (request.method() === 'GET' && /^\/api\/exam\/templates\/[^/]+\/question-drafts\/context$/.test(url.pathname)) {
+    return respond({ topic_coverage_required: ['Synthetic'], context_hash: '0'.repeat(64), can_edit: true,
+      rubric: { criteria: [{ name: 'Synthetic criterion', description: 'Synthetic reference only.', max_score: 10 }] } });
   }
   if (request.method() === 'GET' && /^\/api\/exam\/templates\/[^/]+\/materials$/.test(url.pathname)) return respond([]);
   if (request.method() === 'GET' && /^\/api\/exam\/templates\/[^/]+\/roster$/.test(url.pathname)) return respond([]);
@@ -149,9 +163,9 @@ async function check(name, run) {
 async function openInstructor(examId = EXAM_A) {
   await page.goto(`${baseUrl}/professor/exams/${examId}#avatar-settings`, { waitUntil: 'domcontentloaded' });
   await field('Default avatar').waitFor({ timeout: 30000 });
-  await button('Save Exam Policy').waitFor();
-  await button('Save Exam Policy').waitFor({ state: 'visible' });
-  await page.waitForFunction(() => ![...document.querySelectorAll('button')].find((item) => item.textContent?.trim() === 'Save Exam Policy')?.disabled);
+  await button('Save to exam').waitFor();
+  await button('Save to exam').waitFor({ state: 'visible' });
+  await page.waitForFunction(() => ![...document.querySelectorAll('button')].find((item) => item.textContent?.trim() === 'Save to exam')?.disabled);
 }
 async function visitStudent(url = localUrl()) {
   await student.goto(url, { waitUntil: 'domcontentloaded' });
@@ -207,7 +221,7 @@ await check('Exam policy loading is read only and local drafts do not publish ru
   await field('Hints limit per question').fill('2');
   await field('Default speaking speed').fill('1.1');
   await field('Exact question repeats limit per question').fill('3');
-  await button('Save Local Draft').click();
+  await clickInView(button('Save draft'));
   assert(Object.keys(await values(DRAFT_PREFIX)).some((key) => key.includes(EXAM_A) && key.includes(INSTRUCTOR_A)));
   assert.deepEqual(await values(SHARED_PREFIX), beforeShared);
   assert.deepEqual(serverPolicies.get(EXAM_A), before);
@@ -216,13 +230,13 @@ await check('Exam policy loading is read only and local drafts do not publish ru
 });
 
 await check('Explicit sharing connects instructor choices to the scoped student preview', async () => {
-  await button('Share Preview Policy').click();
+  await clickInView(button('Make preview page'));
   const saved = await shared();
   assert(saved);
   assert.equal(saved.revision, 1);
   assert.equal(saved.effective_for, 'new_attempts');
   assert.equal(saved.assistance_scope, 'per_question');
-  const link = page.getByRole('link', { name: 'Open shared student preview', exact: true });
+  const link = page.getByRole('link', { name: 'Open the preview page', exact: true });
   const url = new URL(await link.getAttribute('href'), baseUrl);
   assert.equal(url.searchParams.get('examId'), EXAM_A);
   assert.equal(url.searchParams.get('instructorId'), INSTRUCTOR_A);
@@ -249,7 +263,7 @@ await check('Unsaved edits and saved local drafts cannot change the shared polic
   const current = await shared();
   await field('Default speaking speed').fill('0.9');
   assert.deepEqual(await shared(), current);
-  await button('Save Local Draft').click();
+  await clickInView(button('Save draft'));
   assert.deepEqual(await shared(), current);
   await refreshAvailablePolicy();
   assert.match(await student.locator('.student-demo-speed').innerText(), /1\.10/);
@@ -263,16 +277,16 @@ await check('An active preview pins its revision and new starts reconcile newly 
   await field('Allow students to choose speaking speed').uncheck();
   await field('Hints').uncheck();
   await field('Exact question repeats limit per question').fill('1');
-  await button('Share Preview Policy').click();
+  await clickInView(button('Make preview page'));
   assert.equal((await shared()).revision, 2);
   await refreshAvailablePolicy();
   await student.locator('.student-policy-update').waitFor();
-  assert.match(await student.locator('.student-policy-context').innerText(), /revision\s*1/i);
+  assert.match(await student.locator('.student-policy-context').innerText(), /(?:revision|version)\s*1/i);
   assert.equal(await student.locator('.student-demo-stage').getAttribute('data-avatar'), 'geometric');
   assert.match(await student.locator('#student-assistance-repeat-help').innerText(), /2 of 3 remaining/);
   assert.equal(await button('Request hint', student).count(), 1);
   await button('Restart preview', student).click();
-  await student.waitForFunction(() => /revision\s*2/i.test(document.querySelector('.student-policy-context')?.textContent ?? ''));
+  await student.waitForFunction(() => /(?:revision|version)\s*2/i.test(document.querySelector('.student-policy-context')?.textContent ?? ''));
   assert.equal(await student.locator('.student-demo-stage').getAttribute('data-avatar'), 'guide');
   assert.equal(await student.locator('.student-demo-stage').getAttribute('data-background'), 'neutral');
   assert.equal(await button('Request hint', student).count(), 0);
@@ -297,7 +311,7 @@ await check('Local preview namespaces isolate exams and instructors without fixe
   instructor = INSTRUCTOR_B;
   await openInstructor(EXAM_B);
   assert.equal(await field('Default speaking speed').inputValue(), '1');
-  await button('Share Preview Policy').click();
+  await clickInView(button('Make preview page'));
   assert.equal((await shared(EXAM_B, INSTRUCTOR_B)).revision, 1);
   assert.equal((await shared()).revision, 2);
   assert.equal(await shared(EXAM_A, INSTRUCTOR_B), null);
@@ -311,11 +325,11 @@ await check('Practice and assessed availability follow the professor preview mod
   await field('Allow students to choose speaking speed').uncheck();
   await field('Hints').check();
   await field('Hints availability').selectOption('practice');
-  await button('Share Preview Policy').click();
+  await clickInView(button('Make preview page'));
   const saved = await shared();
   for (const key of ['avatar', 'background', 'speed']) assert.equal(saved.settings.student[key], false, `The synthetic ${key} choice must be restricted for the accessibility exercise`);
-  await field('Preview exam mode').selectOption('assessed');
-  const assessed = new URL(await page.getByRole('link', { name: 'Open shared student preview', exact: true }).getAttribute('href'), baseUrl);
+  await field('Show the preview as').selectOption('assessed');
+  const assessed = new URL(await page.getByRole('link', { name: 'Open the preview page', exact: true }).getAttribute('href'), baseUrl);
   assert.equal(assessed.searchParams.get('mode'), 'assessed');
   await visitStudent(assessed.href);
   assert.equal(await button('Request hint', student).count(), 0);
@@ -331,20 +345,20 @@ await check('Explicit server policy saves round trip revisions separately from d
   await openInstructor();
   const localBefore = await values(SHARED_PREFIX);
   await field('Default speaking speed').fill('1.2');
-  await button('Save Exam Policy').click();
-  await page.waitForFunction(() => /revision\s*1/i.test(document.querySelector('.avatar-settings')?.textContent ?? ''));
+  await button('Save to exam').click();
+  await page.waitForFunction(() => /(?:revision|version)\s*1/i.test(document.querySelector('.avatar-settings')?.textContent ?? ''));
   assert.equal(serverPolicies.get(EXAM_A).revision, 1);
   assert.equal(serverPolicies.get(EXAM_A).settings.presentation.speed, 1.2);
   assert.deepEqual(await values(SHARED_PREFIX), localBefore);
   assert.equal(serverPolicies.get(EXAM_B).revision, 0);
-  const savedLink = new URL(await page.getByRole('link', { name: 'Open saved policy preview', exact: true }).getAttribute('href'), baseUrl);
+  const savedLink = new URL(await page.getByRole('link', { name: 'Open a preview of the saved settings', exact: true }).getAttribute('href'), baseUrl);
   assert.equal(savedLink.searchParams.get('policySource'), 'server');
   assert.equal(savedLink.searchParams.get('instructorId'), null);
   await visitStudent(savedLink.href);
-  assert.match(await student.locator('.student-policy-context').innerText(), /revision\s*1/i);
+  assert.match(await student.locator('.student-policy-context').innerText(), /(?:revision|version)\s*1/i);
   await field('Default speaking speed').fill('0.8');
-  await button('Save Exam Policy').click();
-  await page.waitForFunction(() => /revision\s*2/i.test(document.querySelector('.avatar-settings')?.textContent ?? ''));
+  await button('Save to exam').click();
+  await page.waitForFunction(() => /(?:revision|version)\s*2/i.test(document.querySelector('.avatar-settings')?.textContent ?? ''));
   assert.equal(serverPolicies.get(EXAM_A).revision, 2);
   const puts = requests.filter(({ method }) => method === 'PUT').map(({ body }) => JSON.parse(body));
   assert.deepEqual(puts.slice(-2).map(({ expected_revision }) => expected_revision), [0, 1]);
@@ -358,15 +372,15 @@ await check('Conflicts and failed writes preserve the saved policy and do not si
   const savedBefore = clone(serverPolicies.get(EXAM_A));
   const sharedBefore = await values(SHARED_PREFIX);
   await field('Default speaking speed').fill('1.1');
-  await button('Save Exam Policy').click();
+  await button('Save to exam').click();
   await page.getByText(/changed in another view|reload.*before saving/i).first().waitFor();
   assert.deepEqual(serverPolicies.get(EXAM_A), savedBefore);
   assert.deepEqual(await values(SHARED_PREFIX), sharedBefore);
-  await button('Load Saved Exam Policy').click();
+  await button('Undo my changes').click();
   await page.waitForFunction(() => document.querySelector('#avatar-default-speed')?.value === '0.8');
   failPolicyPut = true;
   await field('Default speaking speed').fill('1');
-  await button('Save Exam Policy').click();
+  await button('Save to exam').click();
   await page.getByText(/HTTP 503|unable to.*policy/i).first().waitFor();
   assert.deepEqual(serverPolicies.get(EXAM_A), savedBefore);
   assert.deepEqual(await values(SHARED_PREFIX), sharedBefore);
@@ -424,31 +438,31 @@ await check('Late initial policy loads preserve edits typed while the server is 
     await page.goto(`${baseUrl}/professor/exams/${EXAM_B}#avatar-settings`, { waitUntil: 'domcontentloaded' });
     await field('Default speaking speed').waitFor({ timeout: 30000 });
     await gate.entered;
-    assert(await button('Save Exam Policy').isDisabled());
+    assert(await button('Save to exam').isDisabled());
     await field('Default speaking speed').fill('1.15');
     gate.release();
-    await page.waitForFunction(() => ![...document.querySelectorAll('button')].find((item) => item.textContent?.trim() === 'Save Exam Policy')?.disabled);
+    await page.waitForFunction(() => ![...document.querySelectorAll('button')].find((item) => item.textContent?.trim() === 'Save to exam')?.disabled);
     assert.equal(await field('Default speaking speed').inputValue(), '1.15');
-    assert.match(await page.locator('.avatar-policy-context').innerText(), /revision\s*1/i);
+    assert.match(await page.locator('.avatar-policy-context').innerText(), /(?:revision|version)\s*1/i);
     assert.equal(serverPolicies.get(EXAM_B).settings.presentation.speed, 0.85);
-    assert.match(await page.locator('.avatar-status').innerText(), /unsaved changes/i);
+    assert.match(await page.locator('.avatar-status').innerText(), /changes not saved/i);
   } finally { gate.release(); instructor = INSTRUCTOR_A; }
   return { delayedSavedSpeed: 0.85, preservedTypedSpeed: 1.15 };
 });
 
-await check('Load Saved Exam Policy preserves newer edits made during its pending request', async () => {
+await check('Undo my changes preserves newer edits made during its pending request', async () => {
   instructor = INSTRUCTOR_B;
   const gate = holdPolicyReads(EXAM_B);
   try {
-    await button('Load Saved Exam Policy').click();
+    await button('Undo my changes').click();
     await gate.entered;
     await field('Default speaking speed').fill('1.05');
     gate.release();
-    await page.waitForFunction(() => ![...document.querySelectorAll('button')].find((item) => item.textContent?.trim() === 'Load Saved Exam Policy')?.disabled);
+    await page.waitForFunction(() => ![...document.querySelectorAll('button')].find((item) => item.textContent?.trim() === 'Undo my changes')?.disabled);
     assert.equal(await field('Default speaking speed').inputValue(), '1.05');
     await page.getByText(/newer editor changes have been kept/i).first().waitFor();
     assert.equal(serverPolicies.get(EXAM_B).settings.presentation.speed, 0.85);
-    assert.match(await page.locator('.avatar-status').innerText(), /unsaved changes/i);
+    assert.match(await page.locator('.avatar-status').innerText(), /changes not saved/i);
   } finally { gate.release(); instructor = INSTRUCTOR_A; }
   return { delayedSavedSpeed: 0.85, preservedTypedSpeed: 1.05 };
 });
@@ -458,25 +472,26 @@ await check('Stale shared-preview saves preserve newer rules and explicit reload
   const starting = await shared();
   await field('Default speaking speed').fill('1.1');
   const other = await context.newPage();
+    tabbedAvatarLocators(other);
   other.on('pageerror', (error) => pageErrors.push(error.message));
   other.on('dialog', (dialog) => dialog.type() === 'beforeunload' ? dialog.accept() : dialog.dismiss());
   try {
     await other.goto(`${baseUrl}/professor/exams/${EXAM_A}#avatar-settings`, { waitUntil: 'domcontentloaded' });
     await other.getByLabel('Default speaking speed', { exact: true }).waitFor({ timeout: 30000 });
-    await other.waitForFunction(() => ![...document.querySelectorAll('button')].find((item) => item.textContent?.trim() === 'Save Exam Policy')?.disabled);
+    await other.waitForFunction(() => ![...document.querySelectorAll('button')].find((item) => item.textContent?.trim() === 'Save to exam')?.disabled);
     await other.getByLabel('Default speaking speed', { exact: true }).fill('1.05');
-    await other.getByRole('button', { name: 'Share Preview Policy', exact: true }).click();
+    await clickInView(other.getByRole('button', { name: 'Make preview page', exact: true }));
     const newer = await shared();
     assert.equal(newer.revision, starting.revision + 1);
     assert.equal(newer.settings.presentation.speed, 1.05);
-    await button('Share Preview Policy').click();
+    await clickInView(button('Make preview page'));
     await page.getByText(/changed in another view|reload.*before saving/i).first().waitFor();
     assert.deepEqual(await shared(), newer);
     assert.equal(await field('Default speaking speed').inputValue(), '1.1');
-    await button('Load Shared Preview Policy').click();
+    await button("Load the preview\'s settings here").click();
     assert.equal(await field('Default speaking speed').inputValue(), '1.05');
     await field('Default speaking speed').fill('1.15');
-    await button('Share Preview Policy').click();
+    await clickInView(button('Make preview page'));
     const recovered = await shared();
     assert.equal(recovered.revision, newer.revision + 1);
     assert.equal(recovered.settings.presentation.speed, 1.15);
@@ -486,6 +501,7 @@ await check('Stale shared-preview saves preserve newer rules and explicit reload
 });
 
 await check('Integration exercise made only mocked policy requests and never started a live exam', async () => {
+  assert.deepEqual(offline.mediaCalls, []);
   assert.deepEqual(unexpectedApi, []);
   assert.deepEqual(externalRequests, []);
   assert.deepEqual(mediaCalls, []);

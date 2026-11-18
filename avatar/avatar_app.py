@@ -378,10 +378,14 @@ def transcribe(data):
             print(f"[transcribe] recording too small ({len(data)} bytes), treating as silence", flush=True)
             return ""
         r = subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", src, "-ar", "16000", "-ac", "1", wav],
-                           capture_output=True, text=True)
+                           capture_output=True, text=True, timeout=30)
         if r.returncode != 0:                      # bad or truncated recording: ask the student to repeat
             print(f"[transcribe] ffmpeg failed on {len(data)} bytes: {r.stderr.strip()[:300]}", flush=True)
             return ""
+        import wave
+        with wave.open(wav, "rb") as decoded:
+            if decoded.getnframes() / decoded.getframerate() > 120:
+                raise ValueError("Recording duration exceeds limit")
         t = time.perf_counter()
         segs, _ = whisper.transcribe(wav, language="en", vad_filter=True)
         heard = " ".join(s.text.strip() for s in segs).strip()
@@ -536,6 +540,11 @@ def create_profile(name, owner=None):
 
 
 def process_photo(pid, data):
+    with PREP_LOCK:
+        return _unlocked_process_photo(pid, data)
+
+
+def _unlocked_process_photo(pid, data):
     """Any phone/camera photo -> upright square JPEG (the video model center-crops to a square anyway)."""
     from PIL import Image, ImageOps
     try:
@@ -555,6 +564,11 @@ def process_photo(pid, data):
 
 
 def process_voice(pid, data):
+    with PREP_LOCK:
+        return _unlocked_process_voice(pid, data)
+
+
+def _unlocked_process_voice(pid, data):
     """Any audio the browser or a file gives us -> clean mono wav, leading silence trimmed, at most 30 s."""
     d = pdir(pid)
     src, out = os.path.join(d, "voice_in.bin"), os.path.join(d, "voice.wav")
@@ -563,7 +577,7 @@ def process_voice(pid, data):
     try:
         r = subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", src, "-vn", "-af",
                             "silenceremove=start_periods=1:start_threshold=-45dB:start_silence=0.15",
-                            "-ar", "24000", "-ac", "1", "-t", "30", out], capture_output=True, text=True)
+                            "-ar", "24000", "-ac", "1", "-t", "30", out], capture_output=True, text=True, timeout=30)
         if r.returncode != 0:
             raise ValueError("That file could not be read as audio. Try a WAV, MP3 or M4A, or record in the browser.")
         try:
@@ -600,6 +614,11 @@ def write_selections(selections):
 
 
 def delete_profile(pid):
+    with PREP_LOCK:
+        return _unlocked_delete_profile(pid)
+
+
+def _unlocked_delete_profile(pid):
     d = pdir(pid)
     selections = read_selections()
     if pid in selections.values():
@@ -684,10 +703,11 @@ def load_models():
             whisper = WhisperModel("small", device=dev, compute_type="float16" if dev == "cuda" else "int8")
             STATE["progress"] = "Loading the voice"
             tts = ChatterboxTTS.from_pretrained(device="cuda")
-            STATE["progress"] = "Loading the language model"
-            requests.post(f"{OLLAMA}/api/generate", json={
-                "model": LLM, "prompt": "hi", "stream": False, "think": False, "keep_alive": "60m",
-                "options": {"num_ctx": 4096}}, timeout=300)
+            if os.environ.get("CYBROS_SPEECH_ONLY") != "1":
+                STATE["progress"] = "Loading the language model"
+                requests.post(f"{OLLAMA}/api/generate", json={
+                    "model": LLM, "prompt": "hi", "stream": False, "think": False, "keep_alive": "60m",
+                    "options": {"num_ctx": 4096}}, timeout=300)
         STATE["progress"] = "Models loaded"
         MODELS_READY.set()
     except Exception as e:                       # shown in the page
@@ -696,6 +716,8 @@ def load_models():
 
 def startup():
     load_models()
+    if os.environ.get("CYBROS_SPEECH_ONLY") == "1":
+        return
     if STATE["error"]:
         return
     try:
@@ -878,8 +900,12 @@ def ndjson(gen):
     try:
         for ev in gen:
             yield json.dumps(ev) + "\n"
-    except Exception as e:
-        yield json.dumps({"type": "error", "message": f"{type(e).__name__}: {e}"}) + "\n"
+    except Exception:
+        yield json.dumps({"type": "error", "message": "The avatar could not complete this turn."}) + "\n"
+    finally:
+        close = getattr(gen, "close", None)
+        if close:
+            close()
 
 
 # ---------------- web ----------------
@@ -1008,6 +1034,22 @@ def avatar_ready():
     return MODELS_READY.is_set() and bool(STATE.get("ready")) and bool(ACTIVE.get("image"))
 
 
+@app.middleware("http")
+async def protected_service_mode(request: Request, call_next):
+    # A configured integration token makes the prototype UI/mutation/media routes
+    # private too. Standalone mode remains available only without a service token.
+    if SERVICE_TOKEN and not request.url.path.startswith("/service/"):
+        return bad("Use the authenticated service API.", 401)
+    return await call_next(request)
+
+
+@app.get("/service/media/{name}")
+def service_media(name: str, request: Request):
+    if not service_ok(request):
+        return bad("Unauthorized.", 401)
+    return media(name)
+
+
 @app.get("/service/status")
 def service_status(request: Request):
     if not service_ok(request):
@@ -1015,6 +1057,58 @@ def service_status(request: Request):
     return JSONResponse({"ready": avatar_ready(), "models_loaded": MODELS_READY.is_set(),
                          "progress": STATE.get("progress"), "error": STATE.get("error"),
                          "build_error": STATE.get("build_error"), "profile": STATE.get("profile")})
+
+
+@app.get("/service/speech/status")
+def speech_status(request: Request):
+    if not service_ok(request):
+        return bad("Unauthorized.", 401)
+    return JSONResponse({"transcription": MODELS_READY.is_set() and (MOCK or whisper is not None),
+        "synthesis": MODELS_READY.is_set() and (MOCK or tts is not None), "voice": "neutral-pretrained"})
+
+
+@app.post("/service/speech/synthesize")
+async def service_synthesize(request: Request):
+    if not service_ok(request):
+        return bad("Unauthorized.", 401)
+    if not MODELS_READY.is_set():
+        return bad("Speech models are unavailable.", 503)
+    raw = bytearray()
+    async for chunk in request.stream():
+        raw.extend(chunk)
+        if len(raw) > 40000:
+            return bad("Request too large.", 413)
+    try:
+        body = json.loads(raw)
+        text = body["text"]
+        speed = body.get("speed", 1)
+        if (not isinstance(text, str) or not 1 <= len(text) <= 8000
+                or body.get("voice") not in ("calm", "clear") or type(speed) not in (int, float)
+                or not 0.5 <= speed <= 2):
+            return bad("Unsupported speech request.", 422)
+    except (ValueError, KeyError, TypeError):
+        return bad("Bad speech request.", 422)
+    def generate():
+        if MOCK:
+            audio, rate = np.zeros(16000, dtype=np.float32), 16000
+        else:
+            with TTS_LOCK:
+                audio = tts.generate(text, audio_prompt_path=None, exaggeration=0.4, cfg_weight=0.5).squeeze().cpu().numpy()
+                rate = tts.sr
+        import librosa
+        audio = librosa.resample(audio, orig_sr=rate, target_sr=16000)
+        if speed != 1:
+            audio = librosa.effects.time_stretch(audio, rate=float(speed))
+        if not 0 < len(audio) <= 16000 * 120:
+            raise ValueError("Unsupported duration")
+        output = io.BytesIO()
+        sf.write(output, audio, 16000, format="WAV", subtype="PCM_16")
+        return output.getvalue()
+    try:
+        data = await run_in_threadpool(generate)
+    except Exception:
+        return bad("Speech generation failed.", 503)
+    return Response(data, media_type="audio/wav", headers={"Cache-Control": "no-store"})
 
 
 @app.post("/service/speak")
@@ -1036,18 +1130,27 @@ async def service_speak(request: Request):
     if not avatar_ready():
         return bad("The avatar is not ready yet.", 503)
 
+    profile = body.get("profile")
+    if not isinstance(profile, str) or not re.fullmatch(r"[a-z0-9-]{1,40}", profile):
+        return bad("Explicit profile required.", 422)
+
     def events():
-        t0, first = time.perf_counter(), None
+        if not PREP_LOCK.acquire(timeout=1):
+            yield {"type": "error", "message": "Renderer busy."}
+            return
         LIVE["speaking"] += 1
         try:
-            for ev in pipeline_events(sentences, t0):
-                if ev.get("type") == "clip" and first is None:
-                    first = time.perf_counter() - t0
-                    log_timing("wait until the examiner starts", first, sentences[0])
-                yield ev
+            if ACTIVE.get("id") != profile or not avatar_ready():
+                yield {"type": "error", "message": "Selected profile is not ready."}
+                return
+            # Service requests use one owned synchronous producer. No detached
+            # TTS/render worker can outlive this profile reservation on cancellation.
+            for sentence in sentences:
+                clip = clip_for(sentence)
+                yield {"type": "clip", **clip, "profile": profile}
         finally:
             LIVE["speaking"] -= 1
-            log_timing("whole spoken turn", time.perf_counter() - t0, f"{len(sentences)} sentence(s)")
+            PREP_LOCK.release()
 
     return StreamingResponse(ndjson(events()), media_type="application/x-ndjson")
 
@@ -1059,7 +1162,15 @@ async def service_idle(request: Request):
         return bad("Unauthorized.", 401)
     if not avatar_ready():
         return bad("The avatar is not ready yet.", 503)
-    clip = await run_in_threadpool(idle_clip)
+    profile = request.query_params.get("profile")
+    def selected_idle():
+        if not PREP_LOCK.acquire(timeout=1):
+            return None
+        try:
+            return idle_clip() if profile and ACTIVE.get("id") == profile and avatar_ready() else None
+        finally:
+            PREP_LOCK.release()
+    clip = await run_in_threadpool(selected_idle)
     if not clip:
         return bad("No idle clip.", 404)
     return JSONResponse(clip)
@@ -1207,9 +1318,14 @@ async def service_transcribe(request: Request):
         return bad("Unauthorized.", 401)
     if not MODELS_READY.is_set():
         return bad("Speech recognition is still loading.", 503)
-    data = await request.body()
-    if not data or len(data) > MAX_UPLOAD:
-        return bad("The recording is empty or larger than 25 MB.", 413 if data else 400)
+    data = bytearray()
+    async for chunk in request.stream():
+        data.extend(chunk)
+        if len(data) > 10 * 1024 * 1024:
+            return bad("Recording too large.", 413)
+    if not data:
+        return bad("The recording is empty.", 400)
+    data = bytes(data)
     LIVE["speaking"] += 1          # advance rendering waits while a student's answer is being transcribed
     try:
         text = await run_in_threadpool(transcribe, data)

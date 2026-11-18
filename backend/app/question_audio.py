@@ -8,7 +8,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
-from uuid import UUID, uuid4
+from uuid import UUID, uuid4, uuid5
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.responses import FileResponse
@@ -49,13 +49,16 @@ def _fingerprint(context, question, voice, speed):
                             'voice': voice, 'speed': speed}, sort_keys=True).encode('utf-8'))
 
 
-def _file(root: Path, session_id, asset_id, *, create=False):
+def _file(root: Path, session_id, asset_id, *, create=False, media_type="audio/wav"):
     # Both names are server UUIDs, never client filenames. Check before mkdir to
     # avoid traversing a malicious directory junction and creating files elsewhere.
     root = root.resolve()
     base = root / 'question-audio'
     directory = base / str(UUID(str(session_id)))
-    target = directory / f'{UUID(str(asset_id))}.wav'
+    if media_type not in ("audio/wav", "video/mp4"):
+        raise HTTPException(503, "Unsupported retained media type.")
+    extension = ".wav" if media_type == "audio/wav" else ".mp4"
+    target = directory / f'{UUID(str(asset_id))}{extension}'
     if (base.is_symlink() or base.resolve().parent != root or directory.is_symlink()
             or directory.resolve().parent != base.resolve() or target.is_symlink()
             or target.resolve().parent != directory.resolve()):
@@ -80,6 +83,9 @@ def _metadata(row):
     return {'asset_id': str(row['id']), 'interaction_id': str(row['interaction_id']),
             'audio_url': f"/api/exam/sessions/{row['session_id']}/question-audio/{row['id']}",
             'content_sha256': row['content_hash'], 'duration_seconds': float(row['duration_seconds']),
+            'byte_count': row.get('byte_count'), 'media_type': row.get('media_type', 'audio/wav'),
+            'profile_id': row.get('profile_id'), 'segment_index': row.get('segment_index', 0),
+            'delivery_kind': row.get('delivery_kind', 'question'),
             'expires_at': _deadline(row['expires_at']).isoformat(),
             'status': 'ready', 'playback_evidence': 'generated_only'}
 
@@ -96,7 +102,7 @@ def _existing(db, context, body, fingerprint, voice, speed):
             raise HTTPException(410, 'Question audio is no longer retained.')
         return row
     row = db.execute(text(f'''SELECT * FROM exam_question_audio WHERE session_id = {_bind(db, 'sid')}
-        AND interaction_id = {_bind(db, 'iid')} AND voice = :voice AND speed = :speed AND status = 'ready' '''),
+        AND interaction_id = {_bind(db, 'iid')} AND voice = :voice AND speed = :speed AND media_type = 'audio/wav' AND status = 'ready' '''),
         {'sid': str(context.attempt_id), 'iid': str(context.interaction_id), 'voice': voice, 'speed': speed}).mappings().first()
     if row and row['input_hash'] != fingerprint:
         raise HTTPException(409, 'The delivered question revision has changed.')
@@ -123,7 +129,7 @@ def _remember_request(db, context, body, fingerprint, asset_id):
 
 def _check_budget(db, context):
     count = db.execute(text(f'''SELECT count(*) FROM exam_question_audio
-        WHERE session_id = {_bind(db, 'sid')} AND interaction_id = {_bind(db, 'iid')}'''),
+        WHERE session_id = {_bind(db, 'sid')} AND interaction_id = {_bind(db, 'iid')} AND media_type = 'audio/wav' '''),
         {'sid': str(context.attempt_id), 'iid': str(context.interaction_id)}).scalar_one()
     if count >= MAX_ASSETS_PER_QUESTION:
         raise HTTPException(429, 'Question audio variation limit reached. Replay an existing version or use the question text.')
@@ -202,7 +208,8 @@ async def generate_question_audio(session_id: UUID, body: GenerateQuestionAudio,
                 :input_hash, :text_hash, :content_hash, :voice, :speed, :duration, :size, 'ready', :expires)'''), params)
         _remember_request(db, context, body, fingerprint, asset_id)
         metadata = _metadata({'id': asset_id, 'session_id': session_id, 'interaction_id': context.interaction_id,
-            'content_hash': params['content_hash'], 'duration_seconds': audio.duration_seconds, 'expires_at': expires})
+            'content_hash': params['content_hash'], 'duration_seconds': audio.duration_seconds, 'expires_at': expires,
+            'byte_count': len(audio.audio)})
         db.commit()
         target = None
         return metadata
@@ -247,13 +254,13 @@ def get_question_audio(session_id: UUID, asset_id: UUID, request: Request,
     _deadline(row['recording_expires_at'])
     if row['status'] != 'ready':
         raise HTTPException(410, 'Question audio is no longer retained.')
-    path = _file(_recording_root(write_required=False), session_id, asset_id)
+    path = _file(_recording_root(write_required=False), session_id, asset_id, media_type=row.get("media_type", "audio/wav"))
     try:
         if not path.is_file() or path.stat().st_size != row['byte_count'] or _hash(path.read_bytes()) != row['content_hash']:
             raise HTTPException(409, 'Question audio is missing or failed its integrity check.')
     except OSError:
         raise HTTPException(503, 'Question audio storage is unavailable.') from None
-    return FileResponse(path, media_type='audio/wav', headers={
+    return FileResponse(path, media_type=row.get('media_type', 'audio/wav'), headers={
         'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff'})
 
 
@@ -265,7 +272,8 @@ def review_assets(db, session_id, events):
     for row in rows:
         observations = [event for event in events if event.get('asset_id') == str(row['id'])]
         started = any(event['kind'] == 'question_audio_started' for event in observations)
-        playback = ('ended_reported' if started and observations[-1]['kind'] == 'question_audio_ended'
+        playback = ('failed_reported' if observations and observations[-1]['kind'] == 'question_audio_failed'
+                    else 'ended_reported' if started and observations[-1]['kind'] == 'question_audio_ended'
                     else 'started_reported' if started else 'not_reported')
         try:
             item = _metadata(row) if row['status'] == 'ready' else {'status': 'expired'}
@@ -275,3 +283,75 @@ def review_assets(db, session_id, events):
                      'playback_status': playback, 'playback_verified': False})
         grouped.setdefault(str(row['interaction_id']), []).append(item)
     return grouped
+
+
+def retain_avatar_segment(db, sid, authorization, body, context, settings, preferences,
+                          profile, segment_index, data, duration, spoken_text):
+    """Persist the exact MP4 delivered by the renderer; never synthesize an approximation."""
+    import math
+    from .speech_adapters import MAX_AUDIO_BYTES
+    if (type(data) is not bytes or not 12 <= len(data) <= MAX_AUDIO_BYTES or data[4:8] != b'ftyp'
+            or type(duration) not in (int, float) or not math.isfinite(duration) or not 0 < duration <= 120
+            or not 0 <= segment_index <= 63):
+        raise HTTPException(502, 'Renderer returned invalid or excessive media.')
+    expires = _lock_current(db, sid, authorization, context, body.sequence_num,
+        settings.presentation.voice, preferences.speed)
+    aid = uuid5(body.request_id, str(segment_index))
+    previous = db.execute(text(f'SELECT * FROM exam_question_audio WHERE id = {_bind(db, "aid")}'),
+        {'aid': str(aid)}).mappings().first()
+    content_hash = _hash(data)
+    if previous:
+        if (str(previous['session_id']) != sid or str(previous['interaction_id']) != str(context.interaction_id)
+                or previous['content_hash'] != content_hash or previous['profile_id'] != profile):
+            raise HTTPException(409, 'Replayed delivery does not match its retained segment.')
+        db.rollback()
+        return _metadata(previous)
+    count = db.execute(text(f'SELECT count(*) FROM exam_question_audio WHERE session_id = {_bind(db, "sid")} AND interaction_id = {_bind(db, "iid")}'),
+        {'sid': sid, 'iid': str(context.interaction_id)}).scalar_one()
+    if count >= 128:
+        raise HTTPException(429, 'Retained delivery budget reached.')
+    target = _file(_recording_root(require_space=True), sid, aid, create=True, media_type='video/mp4')
+    created = False
+    try:
+        with target.open('xb') as output:
+            created = True
+            output.write(data); output.flush(); os.fsync(output.fileno())
+        params = {'aid': str(aid), 'sid': sid, 'iid': str(context.interaction_id), 'rid': str(aid),
+            'hash': content_hash, 'text_hash': _hash(spoken_text.encode()), 'profile': profile,
+            'delivery': str(body.request_id), 'index': segment_index, 'kind': body.kind, 'voice': settings.presentation.voice,
+            'speed': preferences.speed, 'duration': duration, 'size': len(data), 'expires': expires}
+        db.execute(text(f"""INSERT INTO exam_question_audio
+            (id,session_id,interaction_id,request_id,input_hash,text_hash,content_hash,profile_id,
+             segment_index,delivery_kind,voice,speed,duration_seconds,byte_count,status,expires_at,media_type,delivery_id)
+            VALUES ({_bind(db,'aid')},{_bind(db,'sid')},{_bind(db,'iid')},{_bind(db,'rid')},
+                :text_hash,:text_hash,:hash,:profile,:index,:kind,:voice,:speed,:duration,:size,'ready',:expires,'video/mp4',{_bind(db,'delivery')})"""), params)
+        db.commit()
+        return _metadata({'id': aid, 'session_id': sid, 'interaction_id': context.interaction_id,
+            'content_hash': content_hash, 'duration_seconds': duration, 'expires_at': expires,
+            'byte_count': len(data), 'media_type': 'video/mp4', 'profile_id': profile,
+            'segment_index': segment_index, 'delivery_kind': body.kind})
+    except Exception:
+        db.rollback()
+        if created:
+            target.unlink(missing_ok=True)
+        raise
+
+
+def retained_avatar_delivery(db, context, profile, kind, voice, speed):
+    # Only complete primary deliveries can be replayed for a repeat. Assistance
+    # content remains bound to its approved operation and isn't substituted.
+    if kind != 'question':
+        return []
+    rows = db.execute(text(f"""SELECT * FROM exam_question_audio
+        WHERE session_id={_bind(db,'sid')} AND interaction_id={_bind(db,'iid')}
+          AND profile_id=:profile AND delivery_kind='question' AND media_type='video/mp4'
+          AND voice=:voice AND speed=:speed AND delivery_complete=true AND status='ready'
+        ORDER BY created_at, segment_index"""),
+        {'sid':str(context.attempt_id),'iid':str(context.interaction_id),'profile':profile,'voice':voice,'speed':speed}).mappings().all()
+    if not rows:
+        return []
+    delivery = rows[0]['delivery_id']
+    selected = sorted((row for row in rows if row['delivery_id'] == delivery), key=lambda row:row['segment_index'])
+    if [row['segment_index'] for row in selected] != list(range(len(selected))):
+        raise HTTPException(409,'The retained examiner delivery is incomplete.')
+    return [_metadata(row) for row in selected]

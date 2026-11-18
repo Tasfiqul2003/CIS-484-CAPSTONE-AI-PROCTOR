@@ -49,10 +49,16 @@ echo "Starting the FlashHead render worker (about a minute) ..."
 PATH="$FH:$PATH" "$FH/python" "$WORK/render_worker.py" > logs/render_worker.log 2>&1 &
 WORKER=$!
 trap 'kill $WORKER ${OLLAMA_PID:-} 2>/dev/null' EXIT
-for i in $(seq 1 120); do
-  (exec 3<>"/dev/tcp/127.0.0.1/$FH_PORT") 2>/dev/null && break
+worker_ready=false
+for i in $(seq 1 "${WORKER_WAIT_ATTEMPTS:-120}"); do
+  if kill -0 "$WORKER" 2>/dev/null && curl --fail --silent "http://127.0.0.1:$FH_PORT/health" | "$FH/python" -c 'import json,sys; data=json.load(sys.stdin); sys.exit(0 if data.get("ok") is True else 1)'; then
+    worker_ready=true; break
+  fi
   kill -0 $WORKER 2>/dev/null || { echo "Render worker died:" >&2; tail -n 25 logs/render_worker.log >&2; exit 1; }
   sleep 5
 done
+if [ "$worker_ready" != true ] || ! kill -0 "$WORKER" 2>/dev/null; then
+  echo "Render worker readiness timed out or worker exited; app was not started." >&2; exit 1
+fi
 echo "Render worker is up. Web app: http://127.0.0.1:$APP_PORT (tunnel it to your laptop)."
 PATH="$CB:$PATH" "$CB/python" "$WORK/avatar_app.py" 2>&1 | tee logs/app.log

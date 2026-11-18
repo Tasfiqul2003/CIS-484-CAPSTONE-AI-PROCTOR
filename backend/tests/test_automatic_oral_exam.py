@@ -23,6 +23,8 @@ def test_placeholder_speech_does_not_depend_on_avatar_service(api, monkeypatch):
     client, _, provider, _ = api
     monkeypatch.delenv("AVATAR_SERVICE_URL", raising=False)
     response = utterance(client, text="Student-controlled substitute question")
+    assert response.status_code == 422  # client text is forbidden
+    response = utterance(client)
     assert response.status_code == 200
     assert response.content == audio()
     assert provider.requests[-1].text == "Approved synthetic question"

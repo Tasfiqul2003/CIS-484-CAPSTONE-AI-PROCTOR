@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import type { MediaEventKind } from '../media/mediaTimeline';
 
-type Asset = { asset_id: string; interaction_id: string; audio_url: string;
-  content_sha256: string; duration_seconds: number; status: string };
+import { requestQuestionAudio, loadRetainedAudio, type RetainedAsset as Asset } from './retainedAudio';
+
 type Props = { sessionId: string; token: string; sequence: number; disabled: boolean;
   speed: number; volume: number; onBusy: (busy: boolean) => void;
   onState: (state: 'Idle' | 'Speaking' | 'Error') => void;
@@ -95,36 +95,14 @@ export default function QuestionAudioPlayer(props: Props) {
     try {
       if (!asset.current) {
         requestId.current ??= crypto.randomUUID();
-        const response = await fetch(`/api/exam/sessions/${encodeURIComponent(props.sessionId)}/question-audio`, {
-          method: 'POST', headers: { Authorization: `Bearer ${props.token}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ sequence_num: props.sequence, request_id: requestId.current }), signal: controller.signal,
-        });
-        const value = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error(typeof value.detail === 'string' ? value.detail : 'Saved question audio is unavailable. Use the question text.');
-        const prefix = `/api/exam/sessions/${encodeURIComponent(props.sessionId)}/question-audio/`;
-        const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-        if (value.status !== 'ready' || !uuid.test(value.asset_id) || !uuid.test(value.interaction_id)
-            || typeof value.audio_url !== 'string' || value.audio_url !== prefix + value.asset_id
-            || !/^[0-9a-f]{64}$/.test(value.content_sha256) || !(value.duration_seconds > 0 && value.duration_seconds <= 120)) {
-          throw new Error('The saved audio response is invalid. Use the question text.');
-        }
+        const value = await requestQuestionAudio(props.sessionId, props.token, props.sequence, requestId.current, controller.signal);
         if (generation !== active.current) return;
         asset.current = value;
       }
       if (!objectUrl.current) {
-        const currentAsset = asset.current!;
-        const response = await fetch(currentAsset.audio_url, {
-          headers: { Authorization: `Bearer ${props.token}` }, cache: 'no-store', signal: controller.signal,
-        });
-        if (!response.ok) throw new Error('Saved question audio could not be retrieved. Use the question text.');
-        const bytes = await response.arrayBuffer();
-        if (generation !== active.current) return;
-        if (bytes.byteLength < 44 || bytes.byteLength > 10 * 1024 * 1024) throw new Error('Saved question audio has an invalid size.');
-        const hash = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)))
-          .map(value => value.toString(16).padStart(2, '0')).join('');
-        if (generation !== active.current) return;
-        if (hash !== currentAsset.content_sha256) throw new Error('Saved question audio failed its integrity check.');
-        objectUrl.current = URL.createObjectURL(new Blob([bytes], { type: 'audio/wav' }));
+        const url = await loadRetainedAudio(asset.current!, props.sessionId, props.token, controller.signal);
+        if (generation !== active.current) { URL.revokeObjectURL(url); return; }
+        objectUrl.current = url;
       }
       if (generation !== active.current || !player.current) return;
       player.current.src = objectUrl.current;

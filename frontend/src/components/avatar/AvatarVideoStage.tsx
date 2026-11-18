@@ -1,3 +1,4 @@
+import { loadRetainedAudio } from './retainedAudio';
 import { useCallback, useEffect, useRef, useState } from "react";
 import OralExamMark from "../brand/OralExamMark";
 import { fetchExaminerIdle, streamAvatarSpeech } from "./avatarService";
@@ -14,7 +15,7 @@ type Props = {
   /** Called once after the whole question has been spoken (or could not be), e.g. to start listening. */
   onFinished?: () => void;
   /** Extra speech, such as a spoken "repeat" request or an assistance answer. Each new id is spoken once. */
-  announce?: { id: number; text: string } | null;
+  announce?: { id: number; text: string; operationId?: string } | null;
   /** Receives the video element, so the exam recording can include the examiner's voice. */
   onVideoElement?: (element: HTMLVideoElement | null) => void;
   /** The examiner's still photo, shown while getting ready and between questions. */
@@ -39,6 +40,8 @@ export default function AvatarVideoStage({ sessionId, token, text, sequence, hol
   const [idle, setIdle] = useState("");
   const video = useRef<HTMLVideoElement | null>(null);
   const request = useRef<AbortController | null>(null);
+  const retainedUrls = useRef(new Set<string>());
+  const releaseUrls = useCallback(() => { for (const url of retainedUrls.current) URL.revokeObjectURL(url); retainedUrls.current.clear(); }, []);
   // Speaking is finished when the clip stream has ended AND every received clip has played.
   const streamDone = useRef(false);
   const pending = useRef(0);
@@ -52,17 +55,22 @@ export default function AvatarVideoStage({ sessionId, token, text, sequence, hol
     onFinishedRef.current?.();
   }, []);
 
-  const say = useCallback((words: string, before = "") => {
-    request.current?.abort();
+  const say = useCallback((words: string, before = "", operationId?: string) => {
+    request.current?.abort(); releaseUrls();
     const controller = new AbortController();
     request.current = controller;
     setQueue([]); setCaption(""); setMessage(""); setStatus("preparing");
     streamDone.current = false; pending.current = 0; finished.current = false;
-    void streamAvatarSpeech(sessionId, token, words, clip => {
+    void streamAvatarSpeech(sessionId, token, words, async clip => {
       if (controller.signal.aborted) return;
+      if (!clip.asset) throw new Error('The examiner clip was not retained.');
+      const url = await loadRetainedAudio(clip.asset, sessionId, token, controller.signal);
+      if (controller.signal.aborted) { URL.revokeObjectURL(url); return; }
+      retainedUrls.current.add(url);
       pending.current += 1;
-      setQueue(current => [...current, clip]);
-    }, controller.signal, before).then(() => {
+      setQueue(current => [...current, {...clip, url}]);
+    }, controller.signal, before, { sequence_num: sequence, request_id: crypto.randomUUID(),
+      kind: operationId ? 'assistance' : 'question', ...(operationId ? { assistance_operation_id: operationId } : {}) }).then(() => {
       if (controller.signal.aborted) return;
       streamDone.current = true;
       if (pending.current === 0) { setStatus("idle"); finish(); }
@@ -73,7 +81,7 @@ export default function AvatarVideoStage({ sessionId, token, text, sequence, hol
       setMessage(error instanceof Error ? error.message : "The avatar is unavailable. The question is shown below.");
       if (pending.current === 0) finish();
     });
-  }, [sessionId, token, finish]);
+  }, [sessionId, token, sequence, finish, releaseUrls]);
 
   useEffect(() => {
     if (!sessionId || !token) return;
@@ -91,11 +99,11 @@ export default function AvatarVideoStage({ sessionId, token, text, sequence, hol
     if (!sessionId || !token || !text) return;
     // Questions are ready to play at once now, so a short pause gives the student a moment to settle.
     const timer = window.setTimeout(() => say(text, leadLine.current), startDelayMs);
-    return () => { window.clearTimeout(timer); request.current?.abort(); };
+    return () => { window.clearTimeout(timer); request.current?.abort(); releaseUrls(); };
   }, [sessionId, token, text, sequence, say, startDelayMs]);
 
   useEffect(() => {
-    if (announce?.text) say(announce.text);
+    if (announce?.text) say(announce.text, "", announce.operationId);
   // Only a new announcement id should speak; the text alone never re-triggers.
   }, [announce?.id]);
 
@@ -119,6 +127,8 @@ export default function AvatarVideoStage({ sessionId, token, text, sequence, hol
   }, [hold]);
 
   const ended = () => {
+    const url = queue[0]?.url;
+    if (url && retainedUrls.current.delete(url)) URL.revokeObjectURL(url);
     pending.current = Math.max(0, pending.current - 1);
     if (pending.current === 0 && streamDone.current) finish();
     setQueue(current => {

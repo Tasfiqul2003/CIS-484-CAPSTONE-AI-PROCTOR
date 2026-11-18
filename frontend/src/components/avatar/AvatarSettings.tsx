@@ -291,7 +291,8 @@ function SettingsEditor({ examId, instructorId, identityError }: { examId: strin
     </section>
     <div className="avatar-notice" hidden={!["presentation", "students", "assistance", "behavior"].includes(tab)}><strong>Changes reach students when you select Save to exam</strong><p>Students who start the exam after that get the new settings. Students already taking it keep the settings they started with.</p></div>
     <section className="avatar-section avatar-preview-tab" aria-label="Student preview" hidden={tab !== "preview"}>
-      {tab === "preview" && <StudentAvatarPreview simple settings={settings} mode={examMode} onClose={() => setTab("talking")} />}
+      {tab === "preview" && <StudentAvatarPreview simple settings={settings} mode={examMode} onClose={() => { setTab("talking");
+        requestAnimationFrame(() => document.querySelector<HTMLButtonElement>('.avatar-tabs button')?.focus()); }} />}
     </section>
     {identityError && <p role="alert" className="avatar-error">{identityError}</p>}
     <section className="avatar-section avatar-policy-persistence" aria-labelledby="avatar-save-heading" hidden={tab !== "save"}>

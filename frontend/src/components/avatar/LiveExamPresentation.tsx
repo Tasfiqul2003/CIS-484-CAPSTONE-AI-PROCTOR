@@ -32,7 +32,7 @@ export default function LiveExamPresentation({ sessionId, token, question, seque
   /** Replaces the static examiner in the stage, for example the talking avatar video. */
   stage?: ReactNode;
   /** When the talking avatar is on, it speaks questions and assistance instead of browser read-aloud. */
-  examinerSpeaks?: (text: string) => void;
+  examinerSpeaks?: (text: string, operationId?: string) => void;
   /** A spoken request ("repeat the question", "can you clarify"); each new id is handled once. */
   assistRequest?: { id: number; action: AssistanceAction } | null;
   onTiming: (timing: ExamTiming) => void; onBusyChange: (busy: boolean) => void; onTextSizeChange: (size: number) => void;
@@ -279,7 +279,7 @@ export default function LiveExamPresentation({ sessionId, token, question, seque
       const used = result.actions[action];
       setAssistanceNotice(current => ({ id: (current?.id ?? 0) + 1,
         text: `${actionLabels[action]} used${used ? ` · ${used.remaining} left` : ""}` }));
-      if (examinerSpeaks) { examinerSpeaks(result.text); await finishReading(request.id); return; }
+      if (examinerSpeaks) { examinerSpeaks(result.text, request.id); await finishReading(request.id); return; }
       const currentSpeech = latestSpeech.current;
       if (!currentSpeech.developerMinimal && currentSpeech.audioEnabled && currentSpeech.speechSupported && currentSpeech.preferences && currentSpeech.preferences.volume > 0) speak(result.text, () => void finishReading(request.id));
       else await finishReading(request.id);

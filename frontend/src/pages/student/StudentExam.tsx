@@ -170,7 +170,7 @@ export default function StudentExam() {
   const [examTitle, setExamTitle] = useState("");
   const [elapsedSeconds, setElapsedSeconds] = useState<number | null>(null);
   const examStart = useRef<number | null>(null);
-  const [examinerSpeech, setExaminerSpeech] = useState<{ id: number; text: string } | null>(null);
+  const [examinerSpeech, setExaminerSpeech] = useState<{ id: number; text: string; operationId?: string } | null>(null);
   const [voiceNotice, setVoiceNotice] = useState("");
   const [assistRequest, setAssistRequest] = useState<{ id: number; action: AssistanceAction } | null>(null);
   const [poster, setPoster] = useState("");
@@ -1009,7 +1009,7 @@ export default function StudentExam() {
     examinerVideo.current = element;
     if (element) recordingMix.current?.attach(element);
   };
-  const examinerSays = (text: string) => setExaminerSpeech(current => ({ id: (current?.id ?? 0) + 1, text }));
+  const examinerSays = (text: string, operationId?: string) => setExaminerSpeech(current => ({ id: (current?.id ?? 0) + 1, text, operationId }));
   const heardAnswer = (text: string) => {
     // "Can you repeat the question?" or "can you clarify?" asks the examiner; it is not part of the answer.
     const request: AssistanceAction | null = isRepeatRequest(text) ? "repeat" : isClarifyRequest(text) ? "clarification" : null;
@@ -1150,7 +1150,7 @@ export default function StudentExam() {
         sessionId={sessionId} token={sessionToken.current} sequence={questionNumber} question={questionText}
         disabled={endRequested || submitting || expired || (!demoAttempt && (!recordingActive || Boolean(recordingError)))}
         flashhead={avatarOn} poster={poster} stream={recordingActive ? mediaStream.current : null}
-        preferences={environmentPreferences} onTiming={updateClock} onMediaElement={examinerElement}
+        preferences={environmentPreferences} onTiming={updateClock} onMediaElement={examinerElement} onObservation={recordMediaObservation}
         onResumeAudio={() => recordingMix.current?.resume() ?? Promise.resolve()}
         onAnswer={(text, metadata) => {
           if (endRequestedRef.current || recordingInterrupted.current || submittingRequest.current) return;

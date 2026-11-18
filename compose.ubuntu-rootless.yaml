@@ -1,0 +1,40 @@
+# Review-only rootless Podman backend profile. Existing DB/Ollama/speech run elsewhere.
+# No builds, downloads, migrations, persistent restart policy or privileged ports.
+name: cybros-reviewed-ubuntu
+services:
+  backend:
+    image: ${CYBROS_BACKEND_IMAGE:?Set an already imported image built from the corrected commit}
+    pull_policy: never
+    restart: "no"
+    ports:
+      - "127.0.0.1:${CYBROS_BACKEND_PORT:-8101}:8000"
+    environment:
+      DATABASE_URL: ${CYBROS_DATABASE_URL:?Set the existing database address as reachable from this network}
+      AUTH_SECRET_KEY: ${AUTH_SECRET_KEY:?Preserve the existing signing secret}
+      ADMIN_BOOTSTRAP_TOKEN: ${ADMIN_BOOTSTRAP_TOKEN:?Preserve the existing bootstrap token}
+      AUTH_COOKIE_SECURE: ${AUTH_COOKIE_SECURE:-true}
+      OLLAMA_URL: ${CYBROS_OLLAMA_URL:?Set the verified existing Ollama network or approved host address}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:?Preserve the installed model choice}
+      AVATAR_SERVICE_URL: ${CYBROS_AVATAR_SERVICE_URL:?Set reachable internal avatar service URL}
+      AVATAR_SERVICE_TOKEN: ${AVATAR_SERVICE_TOKEN:?Internal server token}
+      CYBROS_SPEECH_PROVIDER: avatar-service
+      CYBROS_SPEECH_SERVICE_URL: ${CYBROS_SPEECH_SERVICE_URL:?Set reachable internal speech URL}
+      CYBROS_SPEECH_SERVICE_TOKEN: ${CYBROS_SPEECH_SERVICE_TOKEN:?Internal server token}
+      DEVELOPER_DEMO_MODE: "0"
+      DEVELOPER_MINIMAL_MODE: "0"
+      EXAM_VIDEO_DIR: /var/lib/cybros/recordings
+      EXAM_VIDEO_RETENTION_UNTIL: ${EXAM_VIDEO_RETENTION_UNTIL:?Preserve the approved deadline}
+      FACE_DETECTOR_MODEL_PATH: /models/face_detection_yunet_2023mar.onnx
+      FACE_RECOGNIZER_MODEL_PATH: /models/face_recognition_sface_2021dec.onnx
+    volumes:
+      - recordings:/var/lib/cybros/recordings
+      - ${FACE_MODELS_DIR:?Existing face models directory}:/models:ro
+    networks: [application]
+volumes:
+  recordings:
+    external: true
+    name: ${CYBROS_RECORDINGS_VOLUME:?Verified existing recording volume name}
+networks:
+  application:
+    external: true
+    name: ${CYBROS_PODMAN_NETWORK:?Verified existing rootless network}

@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 // Synthetic browser state-machine checks: no real devices, model, avatar or database.
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
@@ -19,7 +20,7 @@ return <div className="student-exam-page student-exam-active"><header className=
 <main className="student-exam-content student-exam-stage-content"><AutomaticOralExam sessionId="synthetic-session" token="synthetic-token" sequence={sequence}
 question={'Synthetic question '+sequence} disabled={disabled} flashhead={window.scenario==='flashhead'||window.scenario==='captions-flashhead'}
 stream={null} preferences={{volume:70,avatar:'guide',background:'neutral',speed:1,textSize:16,reducedMotion:false}}
-onTiming={value=>window.events.push('timing')} onMediaElement={()=>{}}
+onObservation={async(kind,sequence,id)=>{window.events.push(kind)}} onTiming={value=>window.events.push('timing')} onMediaElement={()=>{}}
 onAnswer={(text,metadata)=>{window.answers.push({text,metadata});window.events.push('answer:'+sequence);
  if(window.scenario==='followup'&&sequence===1)setSequence(2);else setDisabled(true);}}/>
 <details className="exam-response-panel exam-capture-panel"><summary>Camera, microphone and live viewing</summary><p>Synthetic media preview</p></details>
@@ -63,6 +64,10 @@ await context.addInitScript(()=>{
 });
 const page=await context.newPage();page.setDefaultTimeout(6000);
 const errors=[];page.on('pageerror',error=>errors.push(error.message));
+const mediaBytes=Buffer.from('synthetic-wave');
+const asset={asset_id:'50000000-0000-4000-8000-000000000001',interaction_id:'40000000-0000-4000-8000-000000000001',
+ audio_url:'/api/exam/sessions/synthetic-session/question-audio/50000000-0000-4000-8000-000000000001',
+ content_sha256:createHash('sha256').update(mediaBytes).digest('hex'),duration_seconds:1,byte_count:mediaBytes.length,status:'ready',media_type:'audio/wav'};
 let scenario='clear', utterances=[], assessments=0, completes=0, transcriptions=0;
 const state=(sequence)=>({session_id:'synthetic-session',question_sequence_num:sequence,mode:'assessed',
  server_now:new Date().toISOString(),deadline:null,question_deadline:null,pause_until:null,
@@ -86,12 +91,14 @@ await page.route('**/*',async route=>{
      preferences:{avatar:'guide',background:environmentLocked?'neutral':savedBackground,volume:70,textSize:16,reducedMotion:false,speed:1}});
  }
  if(url.pathname.endsWith('/speech/capabilities'))return json({transcription:{available:true,accepted_mime_types:['audio/webm']},synthesis:{available:true}});
+ if(url.pathname.endsWith('/question-audio')){utterances.push({...request.postDataJSON(),kind:'question'});if(scenario==='hung-generation')return;return json(asset);}
+ if(url.pathname.includes('/question-audio/'))return route.fulfill({contentType:'audio/wav',body:mediaBytes});
  if(url.pathname.endsWith('/speech/utterance')){const body=request.postDataJSON();utterances.push(body);if(scenario==='hung-generation')return;
    assert.equal(request.headers().authorization,'Bearer synthetic-token');
    return route.fulfill({contentType:'audio/wav',body:Buffer.from('synthetic-wave')});}
  if(url.pathname.endsWith('/idle'))return json({url:''});
  if(url.pathname.endsWith('/speak'))return route.fulfill({contentType:'application/x-ndjson',body:
-   JSON.stringify({type:'clip',url:'/api/avatar/media/synthetic.mp4',text:'Synthetic spoken clip'})+'\n'+JSON.stringify({type:'done'})+'\n'});
+   JSON.stringify({type:'clip',url:asset.audio_url,text:'Synthetic spoken clip',asset})+'\n'+JSON.stringify({type:'done'})+'\n'});
  if(url.pathname.endsWith('/speech/transcribe')){transcriptions++;const id=url.searchParams.get('request_id');
    if(scenario==='late')await new Promise(resolve=>setTimeout(resolve,200));
    return json({request_id:id,transcript_draft_id:id,transcript_receipt:'synthetic-receipt',interaction_id:'synthetic-interaction',
@@ -161,7 +168,7 @@ try{
  console.log('PASS bounded silence retries and explicit spoken move-on record unanswered provenance');
  for(const name of ['repeat','clarify','denied']){await open(name);answers=await answered();
   assert.equal(answers[0].text,'Final answer');assert.equal(completes,name==='denied'?0:1);
-  assert.equal(utterances[1].kind,name==='denied'?'assistance_unavailable':'assistance');}
+  assert.equal(utterances[1].kind,name==='denied'?'assistance_unavailable':name==='repeat'?'question':'assistance');}
  console.log('PASS spoken assistance obeys saved allowances and releases the reading pause before listening');
  await open('failure');await page.getByRole('alert').waitFor();assert.equal(await page.evaluate(()=>window.answers.length),0);
  await open('captureError');await page.getByRole('alert').waitFor();assert.equal(await page.evaluate(()=>window.answers.length),0);

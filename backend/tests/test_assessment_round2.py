@@ -34,14 +34,14 @@ class Result:
 
 class AssessDB:
     def __init__(self, rubric=None):
-        self.rubric = rubric or {}
+        self.rubric = rubric if rubric is not None else {"criteria": grading.DEFAULT_CRITERIA}
         self.updates, self.grades, self.committed = [], [], False
 
     def execute(self, statement, params=None):
         sql = " ".join(str(statement).split())
         if "FROM exam_sessions s JOIN exam_templates t" in sql:
             return Result({"status": "pending_grading", "developer_demo": False, "professor_id": PROF,
-                           "rubric": self.rubric, "title": "Synthetic", "topic_coverage_required": "keys",
+                           "assessment_rubric_snapshot": self.rubric, "title": "Synthetic", "topic_coverage_required": "keys",
                            "video_status": "completed",
                            "video_expires_at": datetime.now(timezone.utc) + timedelta(days=30)})
         if "pg_advisory_xact_lock" in sql:
@@ -87,7 +87,7 @@ def test_assessment_saves_scores_and_an_evaluation_for_each_answer(monkeypatch):
     monkeypatch.setattr(grading.httpx, "post", post)
     db = AssessDB()
     result = grading.assess_session(db, SID)  # automatic run: no professor
-    assert result["default_rubric"] is True and len(db.grades) == 3 and db.committed
+    assert result["default_rubric"] is False and len(db.grades) == 3 and db.committed
     assert [u["n"] for u in db.updates] == [1, 2]
     assert db.updates[1]["evaluation"] == "Missing an example."
     assert '"questions"' in sent["messages"][0]["content"]
@@ -113,12 +113,16 @@ def test_custom_rubric_descriptions_reach_the_model(monkeypatch):
     assert payload["criteria"] == [{"name": "Terminology", "max_score": 5.0, "description": "Uses PK/FK"}]
 
 
-@pytest.mark.parametrize("rubric,expected", [
-    ({}, []), (None, []), ("not json", []), ('{"criteria": [{"name": "A", "max_score": 2}]}', ["A"]),
-    ({"criteria": [{"name": "A"}, {"max_score": 3}, "junk"]}, ["A"]),
-])
-def test_rubric_criteria_parsing(rubric, expected):
-    assert [c["name"] for c in grading.rubric_criteria(rubric)] == expected
+@pytest.mark.parametrize("rubric", [{}, None, "not json", {"criteria": [{"name": "A"}]},
+    {"criteria": [{"name": "A", "weight": 0.5}]}, {"type": "qualitative", "criteria": [{"name": "A", "max_score": 2}]}])
+def test_invalid_rubrics_are_not_silently_converted(rubric):
+    with pytest.raises(HTTPException):
+        grading.rubric_criteria(rubric)
+
+
+def test_explicit_points_rubric_parsing():
+    assert grading.rubric_criteria('{"criteria":[{"name":"A","max_score":2}]}') == [
+        {"name": "A", "description": "", "max_score": 2.0}]
 
 
 class RubricDB:
@@ -142,8 +146,11 @@ def test_rubric_save_and_reset_to_default():
     db, me = RubricDB(), {"professor_id": PROF}
     body = grading.RubricRequest(criteria=[{"name": " Terminology ", "max_score": 5, "description": " "}])
     assert grading.save_rubric(EXAM, body, me, db)["criteria"] == [{"name": "Terminology", "max_score": 5.0}]
-    assert grading.save_rubric(EXAM, grading.RubricRequest(criteria=[]), me, db)["default"] is True
-    assert db.saved == {"criteria": []}
+    from pydantic import ValidationError
+    with pytest.raises(ValidationError):
+        grading.RubricRequest(criteria=[])
+    result = grading.save_rubric(EXAM, grading.RubricRequest(criteria=grading.DEFAULT_CRITERIA), me, db)
+    assert result["default"] is False and len(db.saved["criteria"]) == 3
 
 
 def test_rubric_rejects_duplicate_names_and_other_professors():

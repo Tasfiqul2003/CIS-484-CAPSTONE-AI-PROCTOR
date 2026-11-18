@@ -1,3 +1,4 @@
+import {createHash} from 'node:crypto';
 // Actual StudentExam recording orchestration; child presentation/speech widgets,
 // network, recorder and streams are synthetic. No native device is acquired.
 import assert from 'node:assert/strict';
@@ -9,14 +10,17 @@ import { build } from 'esbuild';
 const require = createRequire(process.env.AVATAR_NODE_MODULES_PATH
   ? path.join(path.resolve(process.env.AVATAR_NODE_MODULES_PATH), 'package.json') : import.meta.url);
 const { chromium } = require('playwright');
+const realAutomatic=process.env.CYBROS_TEST_REAL_AUTOMATIC==='1';
 const frontend = fileURLToPath(new URL('..', import.meta.url));
 const bundle = await build({ stdin: { contents: `import React from 'react';import{createRoot}from'react-dom/client';import './src/index.css';
   import StudentExam from './src/pages/student/StudentExam';const root=createRoot(document.getElementById('root'));
   window.unmountHarness=()=>root.unmount();root.render(<StudentExam/>);`,
   resolveDir: frontend, loader: 'tsx' }, bundle: true, write: false, outdir: 'recording-browser-memory', jsx: 'automatic',
   define: { 'process.env.NODE_ENV': '"test"' }, logLevel: 'silent', plugins: [{ name: 'isolated-children', setup(builder) {
+    if(realAutomatic) builder.onLoad({filter:/oralCapture\.ts$/},()=>({loader:'ts',contents:`
+      export async function captureOralAnswer(stream,signal,onLevel){if(signal.aborted)throw new DOMException('Cancelled','AbortError');return new Blob(['Synthetic automatic answer'],{type:'audio/webm'});}` }));
     builder.onResolve({ filter: /\/(EnvironmentPreview|LiveExamPresentation|SpeechDraftPanel|AutomaticOralExam|liveVideo)$/ }, args =>
-      ({ path: args.path.split('/').at(-1), namespace: 'recording-fixture' }));
+      realAutomatic && args.path.endsWith('/AutomaticOralExam') ? undefined : ({ path: args.path.split('/').at(-1), namespace: 'recording-fixture' }));
     builder.onLoad({ filter: /.*/, namespace: 'recording-fixture' }, args => ({ loader: 'tsx', resolveDir: frontend,
       contents: args.path === 'EnvironmentPreview' ? `import React from 'react';export default function Preview({onContinue}){
         return <button onClick={()=>onContinue({avatar:'guide',background:'neutral',volume:0,textSize:16,reducedMotion:true,speed:1})}>Continue fixture preview</button>;}`
@@ -44,8 +48,8 @@ async function waitUntil(check) {
   }
 }
 try {
-  for (const scenario of ['upload-failure', 'upload-timeout', 'track-ended', 'recorder-error', 'unexpected-stop', 'normal-completion', 'final-upload-retry',
-    'automatic-completion', 'early-end', 'early-end-retry', 'early-end-timeout', 'technical-restart', 'completed-restart-denied', 'leave-pending-capture', 'leave-pending-start', 'leave-pending-recording-start', 'recording-start-failure']) {
+  for (const scenario of (realAutomatic?['automatic-completion']:['upload-failure', 'upload-timeout', 'track-ended', 'recorder-error', 'unexpected-stop', 'normal-completion', 'final-upload-retry',
+    'automatic-completion', 'early-end', 'early-end-retry', 'early-end-timeout', 'technical-restart', 'completed-restart-denied', 'leave-pending-capture', 'leave-pending-start', 'leave-pending-recording-start', 'recording-start-failure'])) {
     const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
     const errors = [], unexpected = [], events = [], accepted = new Set();
     let endCalls = 0; let status = 'in_progress', answerCalls = 0, completeCalls = 0, failedOnce = false, startCalls = 0, recordingStartCalls = 0;
@@ -93,6 +97,12 @@ try {
         const timeout = window.setTimeout.bind(window);
         window.setTimeout = (callback, ms, ...args) => timeout(callback, ms === 15000 ? 75 : ms, ...args);
       }
+      if(scenario==='automatic-completion'){
+        const nativeTimeout=window.setTimeout.bind(window);
+        window.setTimeout=(fn,ms,...args)=>nativeTimeout(fn,ms===1000?5:ms,...args);
+        HTMLMediaElement.prototype.play=function(){nativeTimeout(()=>this.dispatchEvent(new Event('ended')),30);return Promise.resolve();};
+        HTMLMediaElement.prototype.pause=function(){};
+      }
       if (window.speechSynthesis) window.speechSynthesis.speak = () => { throw Error('Speech output forbidden'); };
     }, { exam, student, scenario });
     const page = await context.newPage(); page.setDefaultTimeout(6000);
@@ -116,6 +126,18 @@ try {
       }
       assert.equal(request.headers()['authorization'], 'Bearer synthetic-session-token');
       if(url.pathname==='/api/exam/sessions/old-synthetic-attempt')return json({status:'flagged',technical_restart_allowed:scenario==='technical-restart'});
+      if(realAutomatic && url.pathname.endsWith('/presentation'))return json({detail:'Synthetic optional settings unavailable'},503);
+      if(realAutomatic && url.pathname.endsWith('/speech/capabilities'))return json({synthesis:{available:true},transcription:{available:true,accepted_mime_types:['audio/webm']}});
+      const bytes=Buffer.from('synthetic-wave');
+      const asset={asset_id:'50000000-0000-4000-8000-000000000001',interaction_id:'40000000-0000-4000-8000-000000000001',
+        audio_url:`/api/exam/sessions/${sid}/question-audio/50000000-0000-4000-8000-000000000001`,status:'ready',duration_seconds:1,
+        byte_count:bytes.length,content_sha256:createHash('sha256').update(bytes).digest('hex'),media_type:'audio/wav'};
+      if(realAutomatic && url.pathname.endsWith('/question-audio'))return json(asset);
+      if(realAutomatic && url.pathname.includes('/question-audio/'))return route.fulfill({contentType:'audio/wav',body:bytes});
+      if(realAutomatic && url.pathname.endsWith('/speech/transcribe'))return json({request_id:url.searchParams.get('request_id'),
+        transcript_draft_id:url.searchParams.get('request_id'),transcript_receipt:'synthetic-receipt',interaction_id:asset.interaction_id,
+        question_revision:asset.interaction_id,sequence_num:1,text:'Synthetic automatic answer',source:'machine_draft',status:'review_required'});
+      if(realAutomatic && url.pathname.endsWith('/speech/assess'))return json({request_id:request.postDataJSON().request_id,sequence_num:1,decision:'clear'});
       if (url.pathname.endsWith('/video-recording/start')) {
         recordingStartCalls++;
         if (scenario === 'leave-pending-recording-start') { releaseStart = () => json({ status: 'recording' }); return; }
@@ -178,6 +200,7 @@ try {
         await page.getByText('Your answers and the exam recording have been saved to the exam server.',{exact:false}).waitFor();
         assert.equal(answerCalls,1);assert.equal(completeCalls,1);assert.equal(status,'pending_grading');
         assert.deepEqual(unexpected,[]);assert.deepEqual(errors,[]);
+        if(realAutomatic) assert.deepEqual(events.filter(event=>event.kind.startsWith('question_audio')).map(event=>event.kind),['question_audio_started','question_audio_ended']);
         console.log('PASS automatic-completion: controller answer submits once and finalizes recording without typing or submit click');passed++;continue;
       }
       await page.getByText('Accessibility and recovery',{exact:true}).click();
@@ -241,7 +264,7 @@ try {
       assert.equal(resources.captures, 1); assert.equal(resources.display, 0);
       assert.deepEqual(unexpected, []); assert.deepEqual(errors, []);
       console.log(`PASS ${scenario}: retained bytes, correct termination, no resume, owned resources released`); passed++;
-    } finally { await context.close(); }
+    } catch(error) { console.log('FAIL STATE',await page.locator('body').innerText(),{unexpected,errors,events});throw error; } finally { await context.close(); }
   }
   console.log(`${passed} synthetic StudentExam recording scenarios passed; native capture/provider/backend use: zero.`);
 } finally { await browser.close(); }

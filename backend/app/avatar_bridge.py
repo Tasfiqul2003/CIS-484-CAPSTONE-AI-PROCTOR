@@ -12,10 +12,13 @@ import asyncio
 import json
 import os
 import re
+import time
+import jwt
+from .auth import get_secret
 from uuid import UUID
 
 import httpx
-from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, Query
 from fastapi.responses import Response, StreamingResponse
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -62,14 +65,36 @@ def _active_session(db: Session, session_id: str, authorization: str | None) -> 
         raise HTTPException(409, "This attempt is no longer in progress.")
 
 
-async def _relay_speech(said: str, lead: str = "") -> StreamingResponse:
+def snapshot_exam_profile(professor_id):
+    if not _enabled():
+        return {"id": None, "reason": "unconfigured"}
+    try:
+        response = httpx.get(SERVICE_URL + "/service/profiles", headers=_headers(), timeout=5)
+        response.raise_for_status()
+        listing = response.json()
+        chosen = listing.get("selections", {}).get(str(professor_id))
+        profile = next((p for p in listing.get("profiles", []) if p.get("id") == chosen
+            and p.get("complete") and (not p.get("owner") or str(p["owner"]) == str(professor_id))), None)
+        return {"id": chosen if profile else None, "reason": "selected" if profile else "unselected"}
+    except (httpx.HTTPError, ValueError, TypeError):
+        raise HTTPException(503, "Examiner selection could not be frozen. Try again when the avatar service is reachable.") from None
+
+
+def _media_url(name, profile, session_id=None, professor_id=None):
+    claims = {"aud": "avatar-media", "name": name, "profile": profile,
+        "sid": session_id, "professor_id": professor_id, "exp": int(time.time()) + 300}
+    token = jwt.encode(claims, get_secret(), algorithm="HS256")
+    return f"/api/avatar/media/{name}?cap={token}"
+
+
+async def _relay_speech(said: str, lead: str = "", *, profile: str, session_id=None, professor_id=None, guard=None, retain=None, completed=None) -> StreamingResponse:
     """Stream the avatar service's clips for `said`, with clip URLs rewritten to this backend.
     `lead` is a short stock line said first; it is sent as its own segment so its ready-made clip is used."""
     client = httpx.AsyncClient(timeout=httpx.Timeout(10, read=600))
     try:
         upstream = await client.send(
             client.build_request("POST", f"{SERVICE_URL}/service/speak", headers=_headers(),
-                                 json={"segments": [lead, said]} if lead else {"text": said}),
+                                 json={"segments": [lead, said] if lead else [said], "profile": profile}),
             stream=True)
     except httpx.HTTPError:
         await client.aclose()
@@ -90,15 +115,23 @@ async def _relay_speech(said: str, lead: str = "") -> StreamingResponse:
                     continue
                 if event.get("type") == "clip":
                     name = str(event.get("url", "")).rsplit("/", 1)[-1]
-                    if not MEDIA_NAME.fullmatch(name):
-                        continue
-                    event = {"type": "clip", "url": f"/api/avatar/media/{name}", "text": event.get("text", ""),
-                             "audio_s": event.get("audio_s")}
+                    if not MEDIA_NAME.fullmatch(name) or event.get("profile") != profile:
+                        yield json.dumps({"type":"error","message":"The renderer returned a mismatched profile or clip."}) + "\n"
+                        return
+                    if guard:
+                        guard()
+                    metadata = await retain(name, event) if retain else None
+                    event = {"type": "clip", "url": metadata["audio_url"] if metadata else _media_url(name, profile, session_id, professor_id),
+                        "text": event.get("text", ""), "audio_s": event.get("audio_s"), "asset": metadata}
                 elif event.get("type") == "error":
                     event = {"type": "error", "message": "The avatar could not finish this clip."}
                 else:
                     continue
                 yield json.dumps(event) + "\n"
+                if event.get("type") == "error":
+                    return
+            if completed:
+                completed()
             yield json.dumps({"type": "done"}) + "\n"
         finally:
             await upstream.aclose()
@@ -128,23 +161,55 @@ async def speak(session_id: UUID, request: Request, authorization: str | None = 
     if not _enabled():
         raise HTTPException(503, "The avatar service is not configured.")
     _active_session(db, str(session_id), authorization)
+    from .exam_speech import OralUtterance, _authorized_context, _guard, delivery_text
     try:
-        body = await request.json()
-    except ValueError:
-        raise HTTPException(400, "Bad request.")
-    said = " ".join(str(body.get("text") or "").split())
-    if not said or len(said) > MAX_TEXT:
-        raise HTTPException(422, f"Text must be 1-{MAX_TEXT} characters.")
-
-    # Only the stock lines are accepted as a lead-in, so it always has a ready-made clip.
-    lead = " ".join(str(body.get("lead") or "").split())
-    lead = lead if lead in LEAD_LINES else ""
-
-    target = await _exam_avatar(db, str(session_id))
-    if target:
-        await _wait_until_loaded(target)
-        await _prepare_exam_clips(db, target, session_id=str(session_id))
-    return await _relay_speech(said, lead)
+        body = OralUtterance.model_validate(await request.json())
+    except (ValueError, TypeError):
+        raise HTTPException(422, "A current question, request ID and approved delivery kind are required.") from None
+    sid = str(session_id)
+    context, settings, preferences, pending = _authorized_context(db, sid, authorization,
+        sequence_num=body.sequence_num, request_id=body.request_id)
+    said = delivery_text(db, sid, body, pending)
+    target = await _exam_avatar(db, sid)
+    from .question_audio import retained_avatar_delivery
+    cached = retained_avatar_delivery(db, context, target, body.kind, settings.presentation.voice, preferences.speed)
+    if cached:
+        async def replay():
+            for asset in cached:
+                _guard(db, sid, authorization, context, body.sequence_num)(context)
+                yield json.dumps({"type":"clip","url":asset["audio_url"],"text":said,"audio_s":asset["duration_seconds"],"asset":asset}) + "\n"
+            yield '{"type":"done"}\n'
+        return StreamingResponse(replay(), media_type="application/x-ndjson")
+    await _wait_until_loaded(target)
+    guard = _guard(db, sid, authorization, context, body.sequence_num)
+    guard(context)
+    index = 0
+    async def retain(name, event):
+        nonlocal index
+        from .question_audio import retain_avatar_segment
+        guard(context)
+        async with httpx.AsyncClient(timeout=httpx.Timeout(5, read=120)) as client:
+            async with client.stream("GET", f"{SERVICE_URL}/service/media/{name}", headers=_headers()) as response:
+                if response.status_code != 200:
+                    raise HTTPException(503, "The rendered segment could not be retained.")
+                data = bytearray()
+                async for chunk in response.aiter_bytes():
+                    data.extend(chunk)
+                    if len(data) > 10 * 1024 * 1024:
+                        raise HTTPException(502, "Rendered segment exceeds its limit.")
+        guard(context)
+        result = retain_avatar_segment(db, sid, authorization, body, context, settings, preferences,
+            target, index, bytes(data), event.get("audio_s"), str(event.get("text", "")))
+        index += 1
+        return result
+    def completed():
+        guard(context)
+        if index:
+            from .question_audio import _bind
+            db.execute(text(f"UPDATE exam_question_audio SET delivery_complete=true WHERE session_id={_bind(db,'sid')} AND delivery_id={_bind(db,'delivery')}"),
+                {'sid':sid,'delivery':str(body.request_id)})
+            db.commit()
+    return await _relay_speech(said, profile=target, session_id=sid, guard=lambda: guard(context), retain=retain, completed=completed)
 
 
 @router.get("/sessions/{session_id}/poster")
@@ -155,10 +220,9 @@ async def examiner_poster(session_id: UUID, authorization: str | None = Header(d
         raise HTTPException(404, "Not found.")
     _active_session(db, str(session_id), authorization)
     # Asking for the photo at the start of the exam also starts loading the professor's avatar.
-    pid = await _exam_avatar(db, str(session_id)) or ""
+    pid = _selected_profile(db, str(session_id))
     if not PROFILE_ID.fullmatch(pid):
         raise HTTPException(404, "No examiner photo yet.")
-    await _prepare_exam_clips(db, pid, session_id=str(session_id))
     r = await _service("GET", f"/service/profiles/{pid}/photo")
     if r.status_code != 200:
         raise HTTPException(404, "No examiner photo yet.")
@@ -172,23 +236,43 @@ async def examiner_idle(session_id: UUID, authorization: str | None = Header(def
     if not _enabled():
         raise HTTPException(404, "Not found.")
     _active_session(db, str(session_id), authorization)
-    r = await _service("GET", "/service/idle")
+    from .exam_speech import _authorized_context
+    _authorized_context(db, str(session_id), authorization)
+    target = await _exam_avatar(db, str(session_id))
+    await _wait_until_loaded(target)
+    r = await _service("GET", "/service/idle", params={"profile": target})
     if r.status_code != 200:
         raise HTTPException(404, "No idle clip yet.")
     name = str(r.json().get("url", "")).rsplit("/", 1)[-1]
     if not MEDIA_NAME.fullmatch(name):
         raise HTTPException(404, "No idle clip yet.")
-    return {"url": f"/api/avatar/media/{name}"}
+    return {"url": _media_url(name, target, session_id=str(session_id))}
 
 
 @router.get("/media/{name}")
-async def media(name: str):
+async def media(name: str, cap: str = Query(default=""), db: Session = Depends(get_db)):
     """Clip files have random or content-hash names and no student data; <video> cannot send a bearer token."""
     if not _enabled() or not MEDIA_NAME.fullmatch(name):
         raise HTTPException(404, "Not found.")
+    try:
+        claims = jwt.decode(cap, get_secret(), algorithms=["HS256"], audience="avatar-media")
+        if claims.get("name") != name or not PROFILE_ID.fullmatch(str(claims.get("profile", ""))):
+            raise ValueError()
+    except (jwt.PyJWTError, ValueError):
+        raise HTTPException(404, "Media capability is invalid or expired.") from None
+    if claims.get("sid"):
+        row = db.execute(text("SELECT status, examiner_profile_snapshot FROM exam_sessions WHERE id = :id"),
+            {"id": claims["sid"]}).mappings().first()
+        snapshot = row.get("examiner_profile_snapshot") if row else None
+        if isinstance(snapshot, str):
+            snapshot = json.loads(snapshot)
+        if not row or row["status"] != "in_progress" or not snapshot or snapshot.get("id") != claims["profile"]:
+            raise HTTPException(404, "Media is no longer available for this attempt.")
+    elif not claims.get("professor_id"):
+        raise HTTPException(404, "Media capability has no authorized scope.")
     client = httpx.AsyncClient(timeout=httpx.Timeout(10, read=120))
     try:
-        upstream = await client.send(client.build_request("GET", f"{SERVICE_URL}/media/{name}"), stream=True)
+        upstream = await client.send(client.build_request("GET", f"{SERVICE_URL}/service/media/{name}", headers=_headers()), stream=True)
     except httpx.HTTPError:
         await client.aclose()
         raise HTTPException(503, "The avatar service is unreachable.")
@@ -204,7 +288,7 @@ async def media(name: str):
             await upstream.aclose()
             await client.aclose()
 
-    return StreamingResponse(body(), media_type="video/mp4", headers={"Cache-Control": "private, max-age=3600"})
+    return StreamingResponse(body(), media_type="video/mp4", headers={"Cache-Control": "private, no-store"})
 
 
 @router.post("/sessions/{session_id}/transcribe")
@@ -214,7 +298,9 @@ async def transcribe(session_id: UUID, request: Request, authorization: str | No
     if not _enabled():
         raise HTTPException(503, "Spoken answers are not available on this server.")
     _active_session(db, str(session_id), authorization)
-    data = await request.body()
+    from .exam_speech import _authorized_context, _read_audio, _guard
+    context, _, _, pending = _authorized_context(db, str(session_id), authorization)
+    data, _ = await _read_audio(request)
     if not data or len(data) > MAX_AUDIO:
         raise HTTPException(413 if data else 400, "The recording is empty or too large.")
     try:
@@ -224,7 +310,8 @@ async def transcribe(session_id: UUID, request: Request, authorization: str | No
         raise HTTPException(503, "The speech service is unreachable.")
     if r.status_code != 200:
         raise HTTPException(503, "Speech recognition is not available right now.")
-    return {"text": str(r.json().get("text", ""))[:5000]}
+    _guard(db, str(session_id), authorization, context, pending["sequence_num"])(context)
+    return {"text": str(r.json().get("text", ""))[:5000], "source": "unsigned_review_only"}
 
 
 # ---------------- professor side: create and manage the talking avatar ----------------
@@ -286,25 +373,29 @@ def _other_exam_running(db: Session, professor_id: str, session_id: str | None =
     return row is not None
 
 
+def _selected_profile(db, session_id):
+    row = db.execute(text("SELECT examiner_profile_snapshot FROM exam_sessions WHERE id = :id"),
+        {"id": session_id}).mappings().first()
+    snapshot = row.get("examiner_profile_snapshot") if row else None
+    if isinstance(snapshot, str):
+        snapshot = json.loads(snapshot)
+    chosen = snapshot.get("id") if isinstance(snapshot, dict) else None
+    if not chosen or not PROFILE_ID.fullmatch(chosen):
+        raise HTTPException(409, "This attempt has no frozen examiner selection; use audio-only or keyboard mode.")
+    return chosen
+
+
 async def _exam_avatar(db: Session, session_id: str) -> str | None:
     """The avatar this session's exam should use, loading it first when it is not the one on the GPU."""
-    row = db.execute(text("""
-        SELECT t.professor_id FROM exam_sessions AS s JOIN exam_templates AS t ON t.id = s.exam_template_id
-        WHERE s.id = :id
-    """), {"id": session_id}).mappings().first()
+    chosen = _selected_profile(db, session_id)
     listing = await _profiles()
-    active = listing.get("active")
-    if row is None:
-        return active
-    professor = str(row["professor_id"])
-    chosen = (listing.get("selections") or {}).get(professor)
-    complete = {p.get("id") for p in listing.get("profiles", []) if p.get("complete")}
-    if not chosen or chosen not in complete or chosen == active:
-        return active
-    if _other_exam_running(db, professor, session_id):
-        return active
-    r = await _service("POST", f"/service/profiles/{chosen}/activate")
-    return chosen if r.status_code == 200 else active
+    if not any(p.get("id") == chosen and p.get("complete") for p in listing.get("profiles", [])):
+        raise HTTPException(409, "The selected examiner is unavailable.")
+    if listing.get("active") != chosen:
+        response = await _service("POST", f"/service/profiles/{chosen}/activate")
+        if response.status_code != 200:
+            raise HTTPException(503, "The selected examiner is busy or unavailable.")
+    return chosen
 
 
 _PREPARED: set[str] = set()   # sessions or professors whose question clips were already requested
@@ -376,8 +467,8 @@ async def professor_avatars(account: dict = Depends(require_professor), db: Sess
     return {
         "enabled": True,
         # The avatar this professor's exams use, and whether it can be loaded right now for a preview.
-        # Before a professor picks one, their exams use whichever avatar is loaded.
-        "selected": next((p for p in visible if p["selected"]), None) or active_visible,
+        # Missing selections remain unavailable; no global-profile fallback is inferred.
+        "selected": next((p for p in visible if p["selected"]), None),
         "other_exam_running": _other_exam_running(db, me),
         "ready": bool(status.get("ready")),
         "models_loaded": bool(status.get("models_loaded")),
@@ -472,4 +563,4 @@ async def professor_preview(account: dict = Depends(require_professor)):
     if not active:
         raise HTTPException(409, "No avatar is in use yet.")
     await _owned(active, account, allow_unowned=True)
-    return await _relay_speech(PREVIEW_TEXT)
+    return await _relay_speech(PREVIEW_TEXT, profile=active, professor_id=str(account["professor_id"]))

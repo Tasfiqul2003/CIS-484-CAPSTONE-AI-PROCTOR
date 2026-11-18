@@ -6,13 +6,13 @@ from uuid import UUID
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Header
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from .db import get_db, open_session
 from .evaluation_contracts import evaluation_output_schema, completed_evaluation
-from .assessment_contracts import session_lock_clause,rubric_criteria,require_retained_recording
+from .assessment_contracts import session_lock_clause,rubric_criteria,require_retained_recording,attempt_rubric,rubric_state
 from .timing_log import timed
 from .auth import require_professor
 from .student_auth import read_student_token
@@ -34,8 +34,7 @@ Reply ONLY with JSON in exactly this shape:
  "questions": [{"sequence_num": <number from the transcript>, "evaluation": "<1-2 sentences>"}]}"""
 
 
-# Used when an exam has no rubric of its own. No screen sets a rubric yet, so without this
-# default every AI assessment would be refused.
+# Suggested editor defaults. They become authoritative only when explicitly saved.
 DEFAULT_CRITERIA = [
     {"name": "Accuracy", "max_score": 10},
     {"name": "Depth of understanding", "max_score": 10},
@@ -56,23 +55,7 @@ class IntegrityEventRequest(BaseModel):
 
 
 def criterion_max(c: dict) -> float:
-    if c.get("max_score") is not None:
-        return float(c["max_score"])
-    if c.get("weight") is not None:
-        return float(c["weight"]) * 100
-    return 10.0
-
-
-def rubric_criteria(rubric) -> list[dict]:
-    """The exam's own criteria, or an empty list when it uses the default rubric."""
-    if isinstance(rubric, str):
-        try:
-            rubric = json.loads(rubric)
-        except ValueError:
-            rubric = {}
-    if not isinstance(rubric, dict):
-        return []
-    return [c for c in (rubric.get("criteria") or []) if isinstance(c, dict) and c.get("name")]
+    return float(c["max_score"])
 
 
 def assessment_output_schema(criteria):
@@ -87,7 +70,7 @@ def assess_session(db: Session, sid: str, professor_id=None) -> dict:
     """AI-suggested scores per criterion plus a short evaluation per answer.
     professor_id=None is the automatic run after an exam; otherwise the professor must own the exam."""
     session = db.execute(
-        text("""SELECT s.status, s.developer_demo, t.professor_id, t.rubric, t.title,
+        text("""SELECT s.status, s.developer_demo, t.professor_id, s.assessment_rubric_snapshot, t.title,
                        t.topic_coverage_required,
                        v.status AS video_status, v.expires_at AS video_expires_at
                 FROM exam_sessions s
@@ -121,16 +104,8 @@ def assess_session(db: Session, sid: str, professor_id=None) -> dict:
     if already:
         raise HTTPException(409, "This session already has grades")
 
-    rubric = session["rubric"]
-    if isinstance(rubric, str):
-        try:
-            rubric = json.loads(rubric)
-        except ValueError:
-            rubric = {}
-    criteria = rubric_criteria(rubric)
-    default_rubric = not criteria
-    if default_rubric:
-        criteria = DEFAULT_CRITERIA
+    criteria = attempt_rubric(session)
+    default_rubric = False
 
     answered = [dict(r) for r in db.execute(
         text("""SELECT sequence_num, question_text AS question,
@@ -351,24 +326,27 @@ def session_report(
 
     session_data = dict(session)
     session_data.pop("exam_professor_id", None)
-    rubric = db.execute(text("SELECT rubric FROM exam_templates WHERE id = CAST(:t AS uuid)"),
-                        {"t": str(session["exam_template_id"])}).scalar()
-    criteria = rubric_criteria(rubric)
+    criteria, rubric_error = rubric_state(session.get("assessment_rubric_snapshot"))
+    if session.get("assessment_rubric_snapshot") is None:
+        rubric_error = "Legacy attempt: no frozen professor rubric; existing grades have historical/unknown provenance."
     has_grades = bool(db.execute(text("SELECT count(*) FROM grades WHERE session_id = CAST(:sid AS uuid)"),
                                  {"sid": sid}).scalar())
     assessment = {"status": "done"} if has_grades else assessment_state(sid)
-    if (not has_grades and assessment["status"] == "not_started"
+    if (not rubric_error and not has_grades and assessment["status"] == "not_started"
             and session.get("status") in ("pending_grading", "flagged") and not session.get("developer_demo")):
         # Finished before automatic assessment existed, or the server restarted: start it now.
         if start_auto_assessment(sid):
             assessment = {"status": "running"}
+
+    if rubric_error and not has_grades:
+        assessment = {"status": "blocked", "error": rubric_error}
 
     def rows(sql):
         return [dict(r) for r in db.execute(text(sql), {"sid": sid}).mappings().all()]
 
     return {
         "session": session_data,
-        "rubric_criteria": [{"name": c["name"], "max_score": criterion_max(c)} for c in (criteria or DEFAULT_CRITERIA)], "rubric_error": None,
+        "rubric_criteria": [{"name": c["name"], "max_score": criterion_max(c)} for c in criteria], "rubric_error": rubric_error,
         "interactions": rows("""SELECT i.sequence_num, i.question_source, i.avatar_root_sequence,
                                        i.avatar_followup_index, i.question_text, i.student_answer_transcript,
                                        i.model_reasoning, i.ai_evaluation, q.topic,
@@ -383,7 +361,7 @@ def session_report(
                           FROM grades WHERE session_id = CAST(:sid AS uuid)
                           ORDER BY created_at"""),
         "assessment": assessment,
-        "rubric": {"default": not criteria, "criteria": criteria or DEFAULT_CRITERIA},
+        "rubric": {"default": False, "criteria": criteria, "provenance": "legacy_unknown" if session.get("assessment_rubric_snapshot") is None else "attempt_snapshot"},
         "integrity_events": rows("""SELECT event_type, event_timestamp, severity, notes
                                     FROM integrity_events
                                     WHERE session_id = CAST(:sid AS uuid)
@@ -392,13 +370,15 @@ def session_report(
 
 
 class RubricCriterion(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     name: str = Field(min_length=1, max_length=80)
-    max_score: float = Field(gt=0, le=100)
+    max_score: float = Field(strict=True, gt=0, le=100, allow_inf_nan=False)
     description: str | None = Field(default=None, max_length=400)
 
 
 class RubricRequest(BaseModel):
-    criteria: list[RubricCriterion] = Field(default_factory=list, max_length=12)
+    model_config = ConfigDict(extra="forbid")
+    criteria: list[RubricCriterion] = Field(min_length=1, max_length=12)
 
 
 def _owned_template(db: Session, exam_id: UUID, account: dict):
@@ -411,14 +391,15 @@ def _owned_template(db: Session, exam_id: UUID, account: dict):
 
 @router.get("/templates/{exam_id}/rubric")
 def get_rubric(exam_id: UUID, account: dict = Depends(require_professor), db: Session = Depends(get_db)):
-    criteria = rubric_criteria(_owned_template(db, exam_id, account)["rubric"])
-    return {"default": not criteria, "criteria": criteria or DEFAULT_CRITERIA, "default_criteria": DEFAULT_CRITERIA}
+    criteria, error = rubric_state(_owned_template(db, exam_id, account)["rubric"])
+    return {"default": False, "criteria": criteria, "rubric_error": error,
+            "default_criteria": DEFAULT_CRITERIA}
 
 
 @router.put("/templates/{exam_id}/rubric")
 def save_rubric(exam_id: UUID, body: RubricRequest, account: dict = Depends(require_professor),
                 db: Session = Depends(get_db)):
-    """An empty list switches the exam back to the default rubric. Applies to future assessments."""
+    """Explicitly save the supported points rubric for future attempts."""
     _owned_template(db, exam_id, account)
     names = [c.name.strip().lower() for c in body.criteria]
     if len(set(names)) != len(names):
@@ -426,7 +407,8 @@ def save_rubric(exam_id: UUID, body: RubricRequest, account: dict = Depends(requ
     criteria = [{"name": c.name.strip(), "max_score": c.max_score,
                  **({"description": c.description.strip()} if c.description and c.description.strip() else {})}
                 for c in body.criteria]
+    rubric_criteria({"type": "points", "criteria": criteria})
     db.execute(text("UPDATE exam_templates SET rubric = CAST(:r AS jsonb) WHERE id = CAST(:t AS uuid)"),
                {"r": json.dumps({"criteria": criteria}), "t": str(exam_id)})
     db.commit()
-    return {"default": not criteria, "criteria": criteria or DEFAULT_CRITERIA}
+    return {"default": False, "criteria": criteria}

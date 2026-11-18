@@ -12,6 +12,9 @@ import { readSpeechDraft } from './speechDraft';
 import { captureOralAnswer } from './oralCapture';
 import { playExaminerAudio } from './playExaminerAudio';
 import { abortable } from './abortable';
+import { requestQuestionAudio, loadRetainedAudio, type RetainedAsset } from '../avatar/retainedAudio';
+import type { MediaEventKind } from '../media/mediaTimeline';
+import { progressiveSpeech } from './progressiveSpeech';
 import './automatic-oral-exam.css';
 
 type HeardTurn = { id: string; sequence: number; text: string; status: string };
@@ -26,6 +29,7 @@ type Props = {
   onTiming: (timing: ExamTiming) => void;
   onMediaElement: (element: HTMLVideoElement | null) => void;
   onResumeAudio?: () => Promise<void>;
+  onObservation?: (kind: MediaEventKind, sequence: number, assetId?: string) => Promise<unknown>;
 };
 const LINES = {
   retry: 'I could not make out your answer. Take your time and try again, or say move on.',
@@ -145,28 +149,56 @@ export default function AutomaticOralExam(props: Props) {
       }
       return response;
     };
-    const play = async (url: string) => {
+    const observe = (kind: MediaEventKind, asset: RetainedAsset) => {
+      void latest.current.onObservation?.(kind, sequence, asset.asset_id).catch(() => {
+        if (!signal.aborted) setError('The playback observation could not be saved. The recording is separate.');
+      });
+    };
+    const play = async (url: string, asset?: RetainedAsset) => {
       const element = media.current;
       if (!element) throw new Error('Examiner audio is unavailable.');
       check(); setPhase('audio_ready'); setPlaybackNotice('Audio is ready. Starting browser playback…');
       element.volume = (latest.current.preferences?.volume ?? 70) / 100;
-      await playExaminerAudio(element, url, signal, {
+      let started = false;
+      try { await playExaminerAudio(element, url, signal, {
         resumeAudio: () => latest.current.onResumeAudio?.() ?? Promise.resolve(),
         onReady: action => { resumePlayback.current = action; },
-        onStarted: () => { if (!signal.aborted) { setPlaybackNotice(''); setPhase('speaking'); } },
+        onStarted: () => { if (!signal.aborted) { started = true; if (asset) observe('question_audio_started', asset); setPlaybackNotice(''); setPhase('speaking'); } },
         onBlocked: message => { if (!signal.aborted) setPlaybackNotice(message); },
       });
+        if (asset) observe('question_audio_ended', asset);
+      } catch (failure) {
+        if (asset && (started || !signal.aborted)) observe('question_audio_failed', asset);
+        throw failure;
+      }
     };
     const say = async (kind: 'question' | keyof typeof LINES | 'assistance', text?: string) => {
       check(); setPhase('preparing');
       const words = kind === 'question' ? question : kind === 'assistance' ? text! : LINES[kind];
       setCaption(words); setSpokenCaption(words);
       if (flashhead) {
-        // Keep audio and matching face motions together; never listen during playback.
-        const clips: AvatarClip[] = [];
-        await streamAvatarSpeech(sessionId, token, words, clip => clips.push(clip), signal);
-        check(); if (!clips.length) throw new Error('The talking examiner returned no speech.');
-        for (const clip of clips) { check(); setSpokenCaption(clip.text || words); await play(clip.url); }
+        await progressiveSpeech((push, producerSignal) => streamAvatarSpeech(sessionId, token, words, push, producerSignal, '', {
+          sequence_num: sequence, request_id: crypto.randomUUID(), kind,
+          ...(kind === 'assistance' && assistanceId ? { assistance_operation_id: assistanceId } : {}),
+        }), async (clip: AvatarClip) => {
+          check(); setSpokenCaption(clip.text || words);
+          if (!clip.asset) throw new Error('The examiner segment was not retained.');
+          const url = await loadRetainedAudio(clip.asset, sessionId, token, signal);
+          try { check(); await play(url, clip.asset); } finally { URL.revokeObjectURL(url); }
+        }, signal);
+      } else if (kind === 'question') {
+        const synthesis = new AbortController();
+        const cancel = () => synthesis.abort(); signal.addEventListener('abort', cancel, { once: true });
+        const deadline = window.setTimeout(cancel, 45000);
+        let asset: RetainedAsset, url: string;
+        try {
+          asset = await requestQuestionAudio(sessionId, token, sequence, crypto.randomUUID(), synthesis.signal);
+          url = await loadRetainedAudio(asset, sessionId, token, synthesis.signal);
+        } catch (failure) {
+          if (synthesis.signal.aborted && !signal.aborted) throw new Error('Retained examiner audio generation timed out. Resume to retry.');
+          throw failure;
+        } finally { window.clearTimeout(deadline); signal.removeEventListener('abort', cancel); }
+        try { check(); await play(url, asset); } finally { URL.revokeObjectURL(url); }
       } else {
         const synthesis = new AbortController();
         const cancel = () => synthesis.abort();
@@ -175,7 +207,7 @@ export default function AutomaticOralExam(props: Props) {
         let blob: Blob;
         try {
           const response = await abortable(request('utterance', { sequence_num: sequence, request_id: crypto.randomUUID(), kind,
-            ...(kind === 'assistance' ? { text } : {}) }, synthesis.signal), synthesis.signal);
+            ...(kind === 'assistance' ? { assistance_operation_id: assistanceId } : {}) }, synthesis.signal), synthesis.signal);
           blob = await abortable(response.blob(), synthesis.signal);
         } catch (failure) {
           if (synthesis.signal.aborted && !signal.aborted) throw new Error('Examiner audio generation timed out. Resume the spoken exam to try again.');
@@ -200,7 +232,7 @@ export default function AutomaticOralExam(props: Props) {
       }
       latest.current.onTiming(result);
       if (result.status !== 'succeeded' || !result.text) throw new Error('Question assistance could not be completed.');
-      await say('assistance', result.text);
+      await say(action === 'repeat' ? 'question' : 'assistance', result.text);
       const completed = await completeAssistance(sessionId, token, sequence, assistanceId);
       check(); latest.current.onTiming(completed); assistanceId = null;
     };
@@ -209,7 +241,7 @@ export default function AutomaticOralExam(props: Props) {
       // Check native speech independently of the avatar service. Never silently type or skip a provider failure.
       const capabilities = await (await request('capabilities')).json(); check();
       if (!capabilities.transcription?.available || (!flashhead && !capabilities.synthesis?.available))
-        throw new Error('Speech input and examiner audio must be available before the spoken exam can continue.');
+        throw new Error(capabilities.unavailable_notice || 'Speech input and examiner audio must be available before the spoken exam can continue.');
       if (!begun.current) {
         setPhase('countdown');
         for (let seconds = 5; seconds > 0; seconds--) { setCountdown(seconds); await delay(1000, signal); }

@@ -117,7 +117,7 @@ export default function ProvisionalAssessment({ sessionId, onConfirmed }: Props)
   }));
   const retained = report?.session.recording_status === 'completed' && !!report.session.recording_expires_at
     && Date.parse(report.session.recording_expires_at) > Date.now();
-  const editable = !!report && !report.session.developer_demo && retained
+  const editable = !!report && (!report.rubric_error || report.grades.length > 0) && !report.session.developer_demo && retained
     && ['pending_grading', 'flagged', 'graded'].includes(report.session.status);
 
   async function confirm() {

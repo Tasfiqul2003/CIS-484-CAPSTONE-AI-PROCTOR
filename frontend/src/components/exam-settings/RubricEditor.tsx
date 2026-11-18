@@ -3,7 +3,7 @@ import { Plus, Trash2 } from "lucide-react";
 import "./rubric-editor.css";
 
 type Criterion = { name: string; max_score: number; description?: string };
-type RubricResponse = { default: boolean; criteria: Criterion[]; default_criteria?: Criterion[] };
+type RubricResponse = { default: boolean; criteria: Criterion[]; default_criteria?: Criterion[]; rubric_error?: string | null };
 
 const blank = (): Criterion => ({ name: "", max_score: 10, description: "" });
 
@@ -26,7 +26,8 @@ export default function RubricEditor({ examId }: { examId: string }) {
         const data = await response.json() as RubricResponse & { detail?: string };
         if (!response.ok) throw new Error(data.detail || "The rubric could not be loaded.");
         setDefaults(data.default_criteria ?? data.criteria);
-        setUseDefault(data.default);
+        setUseDefault(data.criteria.length === 0);
+        if (data.rubric_error) setStatus(data.rubric_error + " Save a valid rubric before new attempts.");
         if (!data.default) setCriteria(data.criteria.map(c => ({ ...c, description: c.description ?? "" })));
       } catch (failure) {
         if (!controller.signal.aborted) setError(failure instanceof Error ? failure.message : "The rubric could not be loaded.");
@@ -51,7 +52,7 @@ export default function RubricEditor({ examId }: { examId: string }) {
     try {
       const response = await fetch(`/api/exam/templates/${encodeURIComponent(examId)}/rubric`, {
         method: "PUT", credentials: "include", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ criteria: useDefault ? [] : custom.map(c => ({
+        body: JSON.stringify({ criteria: (useDefault ? defaults : custom).map(c => ({
           name: c.name.trim(), max_score: Number(c.max_score), description: c.description?.trim() || null })) }),
       });
       const data = await response.json().catch(() => ({}));
@@ -59,7 +60,7 @@ export default function RubricEditor({ examId }: { examId: string }) {
         const detail = (data as { detail?: unknown }).detail;
         throw new Error(typeof detail === "string" ? detail : "Check that every criterion has a name and 1–100 points.");
       }
-      setStatus("Rubric saved. It applies to exams assessed from now on.");
+      setStatus("Rubric saved for future attempts. Existing attempts retain their frozen rubric.");
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : "The rubric could not be saved.");
     } finally {
@@ -77,7 +78,7 @@ export default function RubricEditor({ examId }: { examId: string }) {
     <fieldset className="rubric-choice">
       <legend className="rubric-sr">Rubric to use</legend>
       <label><input type="radio" name="rubric-choice" checked={useDefault} onChange={() => { setUseDefault(true); setStatus(""); }} />
-        <span><strong>Default rubric</strong>{defaults.map(c => c.name).join(", ")}, {defaults[0]?.max_score ?? 10} points each</span></label>
+        <span><strong>Suggested rubric (save to approve)</strong>{defaults.map(c => c.name).join(", ")}, {defaults[0]?.max_score ?? 10} points each</span></label>
       <label><input type="radio" name="rubric-choice" checked={!useDefault} onChange={() => { setUseDefault(false); setStatus(""); }} />
         <span><strong>My own rubric</strong>Write the criteria and points for this exam</span></label>
     </fieldset>

@@ -10,6 +10,10 @@ cd "$WORK"
 CB="$WORK/miniconda/envs/chatterbox/bin"; FH="$WORK/miniconda/envs/flashhead/bin"
 export HF_HOME="$WORK/hf"
 MODEL="${LLM:-qwen3:4b-instruct}"
+PACK_OLLAMA_PORT="${PACK_OLLAMA_PORT:-18145}"
+if (exec 3<>"/dev/tcp/127.0.0.1/$PACK_OLLAMA_PORT") 2>/dev/null; then
+  echo "Packaging port $PACK_OLLAMA_PORT is occupied; nothing was installed or stopped." >&2; exit 1
+fi
 
 echo "== ffmpeg inside both envs (the box may not have it) =="
 "$WORK/miniconda/bin/conda" install -y -n chatterbox -c conda-forge --override-channels ffmpeg
@@ -25,11 +29,23 @@ echo "== Ollama binary + $MODEL into $WORK/ollama =="
 mkdir -p "$WORK/ollama/bin" "$WORK/ollama/lib" "$WORK/ollama/models"
 cp -a "$(command -v ollama)" "$WORK/ollama/bin/"
 [ -d /usr/local/lib/ollama ] && cp -a /usr/local/lib/ollama "$WORK/ollama/lib/"
-pkill -f "ollama serve" || true; sleep 2
-OLLAMA_MODELS="$WORK/ollama/models" OLLAMA_HOST=127.0.0.1:11434 nohup "$WORK/ollama/bin/ollama" serve > "$WORK/ollama.log" 2>&1 &
-sleep 6
-OLLAMA_HOST=127.0.0.1:11434 "$WORK/ollama/bin/ollama" pull "$MODEL"
-OLLAMA_HOST=127.0.0.1:11434 "$WORK/ollama/bin/ollama" list
+# Internet-connected preparation only. Never terminate an existing daemon.
+PACK_OLLAMA_PORT="${PACK_OLLAMA_PORT:-18145}"
+if (exec 3<>"/dev/tcp/127.0.0.1/$PACK_OLLAMA_PORT") 2>/dev/null; then
+  echo "Packaging port $PACK_OLLAMA_PORT is occupied; nothing was stopped." >&2; exit 1
+fi
+OLLAMA_MODELS="$WORK/ollama/models" OLLAMA_HOST="127.0.0.1:$PACK_OLLAMA_PORT" nohup "$WORK/ollama/bin/ollama" serve > "$WORK/ollama.log" 2>&1 &
+PACK_PID=$!
+trap 'kill "$PACK_PID" 2>/dev/null || true; wait "$PACK_PID" 2>/dev/null || true' EXIT
+ready=false
+for _ in $(seq 1 30); do
+  kill -0 "$PACK_PID" 2>/dev/null || { echo "Owned packaging Ollama exited" >&2; exit 1; }
+  if curl --fail --silent "http://127.0.0.1:$PACK_OLLAMA_PORT/api/tags" >/dev/null; then ready=true; break; fi
+  sleep 1
+done
+[ "$ready" = true ] || { echo "Packaging Ollama readiness timed out" >&2; exit 1; }
+OLLAMA_HOST="127.0.0.1:$PACK_OLLAMA_PORT" "$WORK/ollama/bin/ollama" pull "$MODEL"
+OLLAMA_HOST="127.0.0.1:$PACK_OLLAMA_PORT" "$WORK/ollama/bin/ollama" list
 
 echo "== Offline check (Hugging Face switched off) =="
 HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 "$CB/python" -c "from faster_whisper import WhisperModel; from chatterbox.tts import ChatterboxTTS; WhisperModel('small', device='cuda', compute_type='float16'); ChatterboxTTS.from_pretrained(device='cuda'); print('OFFLINE LOAD OK')"

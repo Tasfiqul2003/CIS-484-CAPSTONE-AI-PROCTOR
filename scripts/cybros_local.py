@@ -9,6 +9,7 @@ import json
 import os
 from pathlib import Path
 import secrets
+import shutil
 import socket
 import subprocess
 import sys
@@ -22,7 +23,19 @@ STATE = DATA / "processes.json"
 PG = ROOT / ".cache" / "postgres" / "Library" / "bin"
 PYTHON = ROOT / ".venv" / "Scripts" / "python.exe"
 NODE = Path(r"C:\Program Files\nodejs\node.exe")
-OLLAMA = Path(r"C:\Users\Paulo\AppData\Local\Programs\Ollama\ollama.exe")
+def discover_ollama():
+    override = os.environ.get("CYBROS_OLLAMA_EXECUTABLE")
+    if override:
+        return Path(override).expanduser()
+    found = shutil.which("ollama")
+    if found:
+        return Path(found)
+    if os.name == "nt":
+        return Path(os.environ.get("LOCALAPPDATA", str(Path.home() / "AppData" / "Local"))) / "Programs" / "Ollama" / "ollama.exe"
+    return Path("/usr/local/bin/ollama")
+
+
+OLLAMA = discover_ollama()
 
 
 @contextmanager

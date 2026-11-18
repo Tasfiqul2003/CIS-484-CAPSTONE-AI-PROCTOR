@@ -11,7 +11,7 @@ from .db import get_db
 from .auth import require_professor
 from .media_timeline import read_timeline
 from .question_audio import review_assets
-from .assessment_contracts import session_lock_clause,rubric_criteria,require_retained_recording
+from .assessment_contracts import session_lock_clause,rubric_criteria,require_retained_recording,attempt_rubric
 
 router = APIRouter(prefix="/exam", tags=["review"])
 
@@ -61,7 +61,7 @@ def confirm_grades(
 ):
     sid = str(session_id)
     session = db.execute(text("""SELECT s.status, s.developer_demo,
-        t.professor_id AS exam_professor_id, t.rubric,
+        t.professor_id AS exam_professor_id, s.assessment_rubric_snapshot,
         v.status AS video_status, v.expires_at AS video_expires_at
         FROM exam_sessions AS s JOIN exam_templates AS t ON t.id=s.exam_template_id
         LEFT JOIN exam_session_videos AS v ON v.session_id=s.id
@@ -83,10 +83,7 @@ def confirm_grades(
     if not rows:
         # A professor may assess without an AI provider. Only an explicit complete
         # set of manually supplied scores can create these initial grade rows.
-        from .grading import DEFAULT_CRITERIA, rubric_criteria as main_rubric_criteria
-        # Main supplies a default rubric when no named criteria are saved.
-        # Keep strict bounded validation for an explicitly supplied rubric.
-        criteria = rubric_criteria(session["rubric"]) if main_rubric_criteria(session["rubric"]) else [dict(item) for item in DEFAULT_CRITERIA]
+        criteria = attempt_rubric(session)
         by_name={value["name"].casefold():value for value in criteria}
         if {value.rubric_criterion.casefold() for value in req.grades} != set(by_name):
             raise HTTPException(422,"Manual assessment must explicitly score every saved rubric criterion exactly once.")

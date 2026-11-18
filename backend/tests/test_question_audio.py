@@ -36,9 +36,18 @@ def assets(api, monkeypatch, tmp_path):
         db.execute(text('INSERT INTO exam_session_videos VALUES (:sid, :status, :expires)'),
             {'sid': SESSION, 'status': 'recording', 'expires': (datetime.now(timezone.utc)+timedelta(days=1)).isoformat()})
         migration = Path(__file__).parents[2] / 'database/migrations/019_question_audio_assets.sql'
-        sql = migration.read_text(encoding='utf-8').replace('DEFAULT clock_timestamp()', 'DEFAULT CURRENT_TIMESTAMP')
+        sql = migration.read_text(encoding='utf-8').replace('DEFAULT clock_timestamp()', 'DEFAULT CURRENT_TIMESTAMP').replace(',\n    UNIQUE (session_id, interaction_id, voice, speed)', '')
         for statement in sql.split(';'):
             if statement.strip(): db.execute(text(statement))
+        for statement in (
+            "ALTER TABLE exam_question_audio ADD COLUMN media_type TEXT DEFAULT 'audio/wav'",
+            "ALTER TABLE exam_question_audio ADD COLUMN profile_id TEXT",
+            "ALTER TABLE exam_question_audio ADD COLUMN segment_index INTEGER DEFAULT 0",
+            "ALTER TABLE exam_question_audio ADD COLUMN delivery_kind TEXT DEFAULT 'question'",
+            "ALTER TABLE exam_question_audio ADD COLUMN delivery_id TEXT",
+            "ALTER TABLE exam_question_audio ADD COLUMN delivery_complete BOOLEAN DEFAULT false",
+            "CREATE UNIQUE INDEX retained_wav_configuration ON exam_question_audio(session_id,interaction_id,voice,speed) WHERE media_type='audio/wav'"):
+            db.execute(text(statement))
     yield client, engine, provider, tmp_path
 
 
@@ -165,3 +174,34 @@ def test_native_question_audio_is_stored_retrieved_and_transcribed_through_authe
     assert draft['interaction_id'] == metadata['interaction_id'] == INTERACTION
     verify_transcript_receipt(draft['transcript_receipt'], student_id=STUDENT, session_id=SESSION,
         interaction_id=INTERACTION, sequence_num=1, draft_id=draft_id, machine_draft=draft['text'])
+
+
+def test_exact_avatar_segments_retain_type_order_hash_and_completed_replay(assets,monkeypatch):
+    from types import SimpleNamespace
+    from uuid import UUID
+    from sqlalchemy.orm import Session
+    from backend.app.speech_adapters import SpeechContext
+    from backend.app.exam_speech import OralUtterance
+    from backend.app.purge_exam_videos import _audio_inventory
+    client,engine,provider,root=assets
+    context=SpeechContext(UUID(SESSION),UUID(INTERACTION),'revision',UUID(REQUEST))
+    settings=SimpleNamespace(presentation=SimpleNamespace(voice='calm'))
+    preferences=SimpleNamespace(speed=1)
+    expiry=datetime.now(timezone.utc)+timedelta(days=1)
+    monkeypatch.setattr(question_audio,'_lock_current',lambda *args:expiry)
+    body=OralUtterance(sequence_num=1,request_id=UUID(REQUEST),kind='question')
+    data=b'\x00\x00\x00\x18ftypisom'+b'synthetic-container-fixture'
+    with Session(engine) as db:
+        first=question_audio.retain_avatar_segment(db,SESSION,'synthetic',body,context,settings,preferences,'prof-a',0,data,1,'Approved clip one')
+        second=question_audio.retain_avatar_segment(db,SESSION,'synthetic',body,context,settings,preferences,'prof-a',1,data+b'2',1,'Approved clip two')
+        assert question_audio.retained_avatar_delivery(db,context,'prof-a','question','calm',1)==[]
+        db.execute(text('UPDATE exam_question_audio SET delivery_complete=true'));db.commit()
+        replay=question_audio.retained_avatar_delivery(db,context,'prof-a','question','calm',1)
+        assert [value['segment_index'] for value in replay]==[0,1]
+        assert [value['asset_id'] for value in replay]==[first['asset_id'],second['asset_id']]
+        assert question_audio.retained_avatar_delivery(db,context,'prof-b','question','calm',1)==[]
+    response=client.get(first['audio_url'].removeprefix('/api'),headers=headers())
+    assert response.status_code==200 and response.content==data
+    assert response.headers['content-type']=='video/mp4'
+    assert all(path.suffix=='.mp4' for path in _audio_inventory(root,UUID(SESSION)))
+    assert provider.requests==[]

@@ -32,9 +32,13 @@ _native_lock = threading.Lock()
 
 
 def get_speech_service():
-    """Explicit local provider only. No desktop-script import or automatic cloud."""
+    """Explicit Windows or authenticated internal provider. No automatic cloud."""
     global _native_service
-    if os.environ.get('CYBROS_SPEECH_PROVIDER', '').strip() != 'windows-system-speech':
+    provider = os.environ.get('CYBROS_SPEECH_PROVIDER', '').strip()
+    if provider == 'avatar-service':
+        from .avatar_speech_provider import configured_avatar_service
+        return configured_avatar_service()
+    if provider != 'windows-system-speech':
         return _service
     with _native_lock:
         if _native_service is None:
@@ -104,8 +108,20 @@ def _failure(error):
 def capabilities(session_id: UUID, authorization: str | None = Header(default=None),
                  db: Session = Depends(get_db), service: SpeechService = Depends(get_speech_service)):
     _authorized_context(db, str(session_id), authorization, require_capture=False)
-    return {**service.capabilities(), "typed_input_available": True,
-            "transcript_confirmation_required": True}
+    result = service.capabilities()
+    notice = None
+    if not result['transcription']['available'] or not result['synthesis']['available']:
+        provider = os.environ.get('CYBROS_SPEECH_PROVIDER', '').strip()
+        if provider == 'avatar-service' and (not os.environ.get('CYBROS_SPEECH_SERVICE_URL') or not os.environ.get('CYBROS_SPEECH_SERVICE_TOKEN')):
+            notice = 'Internal speech provider setup is incomplete: the server URL and service token must both be configured. Keyboard input remains available.'
+        elif provider in ('avatar-service', 'windows-system-speech'):
+            notice = 'The configured speech provider is not ready or cannot be reached. Keyboard input remains available.'
+        else:
+            notice = 'No speech provider is configured for this server. Keyboard input remains available.'
+    return {**result, "unavailable_notice": notice, "typed_input_available": True,
+            "transcript_confirmation_required": True,
+            "transcript_workflows": {"reviewed_draft": "machine_reviewed",
+                "automatic": "machine_automatic", "receipt_required": True}}
 
 
 async def _read_audio(request: Request):
@@ -196,7 +212,30 @@ UNANSWERED_VOICE = "[System: No intelligible spoken answer captured.]"
 
 class OralUtterance(SynthesisRequest):
     kind: str = Field(default="question", pattern="^(question|retry|silence|move_on|assistance_unavailable|assistance)$")
-    text: str | None = Field(default=None, min_length=1, max_length=1500)
+    assistance_operation_id: UUID | None = None
+
+
+def delivery_text(db, sid, body, pending):
+    if body.kind == "question":
+        return pending["question_text"]
+    if body.kind != "assistance":
+        return ORAL_LINES[body.kind]
+    if body.assistance_operation_id is None:
+        raise HTTPException(422, "Assistance speech needs an approved operation ID.")
+    from .avatar_assistance import _request
+    operation = _request(db, sid, body.assistance_operation_id)
+    if (not operation or operation["status"] != "succeeded"
+            or str(operation["interaction_id"]) != str(pending["id"])
+            or operation["sequence_num"] != body.sequence_num
+            or operation["action"] not in ("repeat", "clarification", "hint", "explanation", "correctness")):
+        raise HTTPException(409, "This assistance operation is not authorized for the current question.")
+    stored = operation["response"]
+    if isinstance(stored, str):
+        stored = json.loads(stored)
+    words = stored.get("text") if isinstance(stored, dict) else None
+    if not isinstance(words, str) or not 1 <= len(words) <= 1500:
+        raise HTTPException(409, "The approved assistance output is unavailable.")
+    return words
 
 
 @router.post("/{session_id}/speech/utterance")
@@ -206,11 +245,7 @@ async def oral_utterance(session_id: UUID, body: OralUtterance,
     sid = str(session_id)
     context, settings, preferences, pending = _authorized_context(db, sid, authorization,
         sequence_num=body.sequence_num, request_id=body.request_id)
-    # Questions and recovery prompts come from trusted state. Assistance text is
-    # presentation-only, like the avatar bridge; it cannot change exam progression.
-    words = pending["question_text"] if body.kind == "question" else body.text if body.kind == "assistance" else ORAL_LINES[body.kind]
-    if not words:
-        raise HTTPException(422, "Assistance speech requires text.")
+    words = delivery_text(db, sid, body, pending)
     try:
         result = await service.synthesize(SpeechOutputRequest(context, words,
             settings.presentation.voice, preferences.speed),

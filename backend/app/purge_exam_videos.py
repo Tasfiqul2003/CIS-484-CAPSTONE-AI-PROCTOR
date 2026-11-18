@@ -41,7 +41,7 @@ def _audio_inventory(root: Path, session_id: UUID) -> list[Path]:
     paths = list(directory.iterdir())
     for path in paths:
         if (path.is_symlink() or not path.is_file()
-                or path.resolve().parent != directory.resolve() or path.suffix != ".wav"):
+                or path.resolve().parent != directory.resolve() or path.suffix not in (".wav", ".mp4")):
             raise OSError("Unexpected question audio file.")
         try:
             if str(UUID(path.stem)) != path.stem:

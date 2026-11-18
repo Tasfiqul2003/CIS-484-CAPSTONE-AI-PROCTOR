@@ -15,6 +15,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 from .student_auth import issue_student_token, read_student_token
+from .photo_test_access import photo_test_access, photo_test_policy
 from .face_matching import (
     FaceImageInvalid,
     FaceMatcherUnavailable,
@@ -165,6 +166,12 @@ class StartRequest(BaseModel):
 
 
 def _require_recent_face_check(db: Session, student_id: str):
+    # The exception never writes a match or changes an existing attempt.
+    if photo_test_policy():
+        student = db.execute(text('SELECT eid FROM students WHERE id = CAST(:student_id AS uuid)'),
+                             {'student_id': student_id}).mappings().first()
+        if student and photo_test_access(student['eid']):
+            return {'attempt_count': 0, 'status': 'test_bypass'}
     verification = db.execute(
         text("""
             SELECT attempt_count, status
@@ -395,7 +402,7 @@ def start_exam(req: StartRequest, db: Session = Depends(get_db)):
                            WHEN :developer_demo THEN 'not_required'
                            WHEN t.record_examination THEN 'pending'
                            ELSE 'not_required'
-                       END, TRUE, :identity_review_required, :identity_verification_attempts
+                       END, :identity_check_completed, :identity_review_required, :identity_verification_attempts
                 FROM exam_templates t JOIN exam_roster r ON r.exam_template_id = t.id
                     AND r.student_id = CAST(:s AS uuid)
                 WHERE t.id = CAST(:t AS uuid)
@@ -406,7 +413,8 @@ def start_exam(req: StartRequest, db: Session = Depends(get_db)):
          "avatar_policy": json.dumps(avatar_settings.model_dump()),
          "avatar_revision": avatar_revision, "avatar_mode": avatar_mode,
          "developer_demo": demo_enabled(),
-         "identity_review_required": False,
+         "identity_check_completed": face_check['status'] == 'matched',
+         "identity_review_required": face_check['status'] != 'matched',
          "identity_verification_attempts": int(face_check["attempt_count"])},
     ).mappings().first()
     if not snapshot:
@@ -901,6 +909,7 @@ def get_student_available_exams(
             "name": student["name"],
             "eid": student["eid"],
         },
+        "photo_test_access": photo_test_access(student['eid']),
         "exams": [
             {
                 "id": str(exam["id"]),

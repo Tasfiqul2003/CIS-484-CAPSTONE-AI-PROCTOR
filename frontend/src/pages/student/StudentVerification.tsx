@@ -11,6 +11,7 @@ type Student = {
 
 type LookupResponse = {
   student: Student;
+  photo_test_access?: boolean;
   exams: Array<{ id: string; status: string }>;
 };
 
@@ -18,6 +19,7 @@ export default function StudentVerification() {
   const [student, setStudent] = useState<Student | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [photoTestAccess, setPhotoTestAccess] = useState(false);
   const headingRef = useRef<HTMLHeadingElement>(null);
 
   useEffect(() => {
@@ -28,6 +30,7 @@ export default function StudentVerification() {
     setBusy(true);
     setError("");
     setStudent(null);
+    setPhotoTestAccess(false);
 
     try {
       const response = await fetch("/api/exam/student/available", {
@@ -51,6 +54,7 @@ export default function StudentVerification() {
       sessionStorage.removeItem("oralexam_exam_session_token");
       sessionStorage.removeItem("oralexam_developer_demo");
       setStudent(result.student);
+      setPhotoTestAccess(result.photo_test_access === true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to verify this card.");
     } finally {
@@ -60,11 +64,18 @@ export default function StudentVerification() {
 
   function continueToFaceCheck() {
     if (!student) return;
+    if (photoTestAccess) {
+      // Navigation only: the server independently rechecks the EID and expiry.
+      sessionStorage.setItem("oralexam_face_check_passed", "true");
+      window.location.href = "/student/exams";
+      return;
+    }
     window.location.href = "/student/face-verification";
   }
 
   function restart() {
     setStudent(null);
+    setPhotoTestAccess(false);
     setError("");
     sessionStorage.removeItem("oralexam_student_eid");
     sessionStorage.removeItem("oralexam_student_id");
@@ -106,8 +117,12 @@ export default function StudentVerification() {
               </div>
 
               <button type="button" className="continue-button" onClick={continueToFaceCheck}>
-                Continue to photo check
+                {photoTestAccess ? "Continue to exams for testing" : "Continue to photo check"}
               </button>
+              {photoTestAccess && <p role="status">
+                Temporary test access skips the photo check. Your identity remains unverified.
+                Recording still requires your consent.
+              </p>}
             </>
           )}
 

@@ -4,8 +4,8 @@ Preserves the running backend's environment, image, command, ports and binds.
 Only the backend is recreated. Private recovery files stay outside the checkout.
 """
 import argparse
-from dataclasses import dataclass
-from datetime import date, datetime, time as day_time, timezone
+from dataclasses import dataclass, field
+from datetime import date, datetime, timedelta, time as day_time, timezone
 import json
 import os
 from pathlib import Path
@@ -19,6 +19,8 @@ from uuid import uuid4
 ROOT = '/var/lib/oral-exam/recordings'
 DIR_KEY = 'EXAM_VIDEO_DIR'
 DATE_KEY = 'EXAM_VIDEO_RETENTION_UNTIL'
+PHOTO_EID_KEY = 'EXAM_TEST_PHOTO_EID'
+PHOTO_UNTIL_KEY = 'EXAM_TEST_PHOTO_UNTIL'
 BACKEND = 'cis-484-capstone-ai-proctor-backend-1'
 WORKER = 'cis-484-capstone-ai-proctor-transcription-worker-1'
 
@@ -88,6 +90,26 @@ def retention(value):
     except (ValueError, TypeError):
         raise ActivationError('Use a future YYYY-MM-DD date or an ISO timestamp with a timezone.') from None
     return value
+
+
+def photo_test_changes(eid=None, until=None, disable=False):
+    if disable:
+        if eid is not None or until is not None:
+            raise ActivationError('Choose either a test EID and expiry or disable test access.')
+        return {PHOTO_EID_KEY: '', PHOTO_UNTIL_KEY: ''}
+    if eid is None and until is None:
+        return {}
+    eid = (eid or '').strip().casefold()
+    if not re.fullmatch(r'[a-zA-Z0-9._-]{1,64}', eid) or not until:
+        raise ActivationError('Provide exactly one test EID and a timezone-aware expiry.')
+    try:
+        deadline = datetime.fromisoformat(until.replace('Z', '+00:00'))
+        now = datetime.now(timezone.utc)
+        if deadline.tzinfo is None or not now < deadline <= now + timedelta(hours=24):
+            raise ValueError
+    except ValueError:
+        raise ActivationError('Photo test access must expire within 24 hours using a timezone-aware timestamp.') from None
+    return {PHOTO_EID_KEY: eid, PHOTO_UNTIL_KEY: deadline.isoformat()}
 
 
 def escaped(value):
@@ -160,6 +182,7 @@ class Plan:
     after_yaml: str
     before_yaml: str
     already_attached: bool
+    private_updates: dict = field(default_factory=dict)
 
 
 def compose_document(backend, project, network, volume, env, mounts):
@@ -190,7 +213,8 @@ def compose_document(backend, project, network, volume, env, mounts):
     return '\n'.join(lines) + '\n'
 
 
-def make_plan(repo, backend, worker, base, retention_until=None):
+def make_plan(repo, backend, worker, base, retention_until=None, *, photo_test_eid=None,
+              photo_test_until=None, disable_photo_test=False):
     safe_host_configuration(backend)
     labels = backend['Config'].get('Labels') or {}
     project = labels.get('com.docker.compose.project')
@@ -233,12 +257,14 @@ def make_plan(repo, backend, worker, base, retention_until=None):
                                 'read_only': not old_media[0]['RW']})
     new_mounts = old_mounts + [{'type': 'volume', 'source': 'exam_videos', 'target': ROOT, 'read_only': False}]
     desired = {**original, DIR_KEY: ROOT, DATE_KEY: original.get(DATE_KEY, '')}
+    updates = photo_test_changes(photo_test_eid, photo_test_until, disable_photo_test)
     if retention_until is not None:
-        desired[DATE_KEY] = retention(retention_until)
+        updates[DATE_KEY] = retention(retention_until)
+    desired.update(updates)
     attached = bool(old_media and old_media[0]['RW'] and original == desired)
     return Plan(repo, project, backend, worker, desired, volume, network,
                 compose_document(backend, project, network, volume, desired, new_mounts),
-                compose_document(backend, project, network, volume, original, rollback_mounts), attached)
+                compose_document(backend, project, network, volume, original, rollback_mounts), attached, updates)
 
 
 def check_rendered(plan, rendered):
@@ -335,11 +361,17 @@ def private_write(path, data):
 
 
 def update_retention_setting(before, value):
+    return update_private_setting(before, DATE_KEY, value)
+
+
+def update_private_setting(before, key, value):
+    if key not in (DATE_KEY, PHOTO_EID_KEY, PHOTO_UNTIL_KEY) or any(c in value for c in "'\r\n"):
+        raise ActivationError('An unsupported private setting was requested.')
     content = before.decode('utf-8-sig')
-    pattern = r'(?m)^[ \t]*(?:export[ \t]+)?EXAM_VIDEO_RETENTION_UNTIL[ \t]*=[^\r\n]*'
+    pattern = r'(?m)^[ \t]*(?:export[ \t]+)?' + re.escape(key) + r'[ \t]*=[^\r\n]*'
     if len(re.findall(pattern, content)) > 1:
-        raise ActivationError('Resolve duplicate private retention settings before activation.')
-    line = DATE_KEY + "='" + value + "'"
+        raise ActivationError('Resolve duplicate private settings before activation: ' + key)
+    line = key + "='" + value + "'"
     if re.search(pattern, content):
         content = re.sub(pattern, lambda _: line, content)
     else:
@@ -400,13 +432,18 @@ def activate(plan, docker, backup_dir, retention_until=None, *, maintenance_wind
         private_write(folder / 'maintenance-window.json', json.dumps(initial, sort_keys=True).encode('utf-8'))
     env_file = plan.repo / '.env'
     env_before = env_file.read_bytes()
-    env_after = update_retention_setting(env_before, retention_until) if retention_until else env_before
+    updates = dict(plan.private_updates)
+    if retention_until:
+        updates[DATE_KEY] = retention_until
+    env_after = env_before
+    for key, value in updates.items():
+        env_after = update_private_setting(env_after, key, value)
     private_write(folder / 'env-before.env', env_before)
     print('Preserved the existing backend configuration outside Git: ' + str(folder))
     written_env = False
     attempted = False
     try:
-        if retention_until:
+        if updates:
             if env_file.read_bytes() != env_before:
                 raise ActivationError('The private settings changed during inspection; they were not overwritten.')
             temporary = plan.repo / ('.env.kay-storage-' + uuid4().hex + '.tmp')
@@ -442,6 +479,12 @@ def activate(plan, docker, backup_dir, retention_until=None, *, maintenance_wind
             remove = "from pathlib import Path; (Path(" + repr(ROOT) + ")/" + repr(probe) + ").unlink(missing_ok=True)"
             docker.run(['exec', BACKEND, 'python', '-c', remove])
         print('Backend database health, preserved settings and shared recording-volume access verified.')
+        if PHOTO_EID_KEY in updates:
+            if updates[PHOTO_EID_KEY]:
+                print('Temporary photo-check exception configured for one EID until ' + updates[PHOTO_UNTIL_KEY] + '.')
+                print('New test attempts remain unverified and flagged for professor review; recording consent is required.')
+            else:
+                print('Temporary photo-check exception disabled. Normal photo verification is required.')
         if plan.expected_env[DATE_KEY]:
             print('Recording retention is configured. A live synthetic consent/recording/submission test remains.')
         else:
@@ -465,6 +508,9 @@ def main():
     parser.add_argument('--repo', type=Path, required=True)
     parser.add_argument('--backup-dir', type=Path, default=Path.home() / 'CYBROS-backups')
     parser.add_argument('--retention-until')
+    parser.add_argument('--photo-test-eid')
+    parser.add_argument('--photo-test-until')
+    parser.add_argument('--disable-photo-test', action='store_true')
     parser.add_argument('--apply', action='store_true')
     parser.add_argument('--maintenance-window', action='store_true',
                         help='Operator confirms no one is taking an exam; keep all saved attempts unchanged.')
@@ -482,7 +528,9 @@ def main():
             raise ActivationError('Compose 2.24.4 or later is required for precise configuration replacement.')
         backend, worker = docker.inspect(BACKEND), docker.inspect(WORKER)
         base = json.loads(docker.run(docker.compose() + ['config', '--format', 'json']))
-        plan = make_plan(repo, backend, worker, base, args.retention_until)
+        plan = make_plan(repo, backend, worker, base, args.retention_until,
+                         photo_test_eid=args.photo_test_eid, photo_test_until=args.photo_test_until,
+                         disable_photo_test=args.disable_photo_test)
         rendered = json.loads(docker.run(docker.compose(plan.project, '-') + ['config', '--format', 'json'], data=plan.after_yaml))
         check_rendered(plan, rendered)
         volume = json.loads(docker.run(['volume', 'inspect', plan.volume]))

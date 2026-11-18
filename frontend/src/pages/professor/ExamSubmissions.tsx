@@ -486,6 +486,8 @@ export default function ExamSubmissions() {
                             : (student.face_check_attempt_count ?? 0) > 0
                               ? `${student.face_check_attempt_count} attempt${student.face_check_attempt_count === 1 ? "" : "s"} · not verified`
                               : "Not checked"
+                          : student.identity_review_required && student.identity_check_completed === false && student.identity_verification_attempts === 0
+                            ? "Unverified: photo check skipped for testing"
                           : student.identity_review_required
                             ? `Review required · ${student.identity_verification_attempts ?? 3} failed matches`
                             : student.identity_check_completed

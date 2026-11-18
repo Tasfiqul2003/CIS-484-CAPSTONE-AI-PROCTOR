@@ -1,5 +1,6 @@
 """Synthetic activation/rollback tests. No live containers or application DB."""
 import copy
+from datetime import datetime, timedelta, timezone
 from contextlib import redirect_stdout
 import importlib.util
 import io
@@ -201,6 +202,58 @@ class StorageActivationTests(unittest.TestCase):
         with redirect_stdout(io.StringIO()):
             module.activate(plan, docker, self.root / 'backups')
         self.assertFalse(docker.recreated)
+
+    def test_photo_exception_preserves_retention_and_private_values(self):
+        until = (datetime.now(timezone.utc) + timedelta(hours=2)).isoformat()
+        self.backend['Config']['Env'].append(module.DATE_KEY + '=2099-01-01')
+        plan = module.make_plan(self.repo, self.backend, self.worker, self.base,
+                                photo_test_eid=' SYNTHETIC1 ', photo_test_until=until)
+        self.assertEqual(plan.expected_env[module.PHOTO_EID_KEY], 'synthetic1')
+        self.assertEqual(plan.expected_env[module.DATE_KEY], '2099-01-01')
+        docker = FakeDocker(plan)
+        with redirect_stdout(io.StringIO()):
+            module.activate(plan, docker, self.root / 'backups')
+        updated = (self.repo / '.env').read_bytes()
+        self.assertIn(b'OTHER=synthetic$setting', updated)
+        self.assertIn(b"EXAM_TEST_PHOTO_EID='synthetic1'", updated)
+        self.assertIn(until.encode(), updated)
+
+    def test_photo_exception_failure_restores_prior_env_and_configuration(self):
+        until = (datetime.now(timezone.utc) + timedelta(hours=2)).isoformat()
+        plan = module.make_plan(self.repo, self.backend, self.worker, self.base,
+                                photo_test_eid='synthetic1', photo_test_until=until)
+        docker = FakeDocker(plan)
+        docker.fail_probe = True
+        with redirect_stdout(io.StringIO()), self.assertRaises(module.ActivationError):
+            module.activate(plan, docker, self.root / 'backups')
+        self.assertTrue(docker.restored)
+        self.assertEqual((self.repo / '.env').read_bytes(), self.env_before)
+
+    def test_disabling_photo_exception_clears_both_runtime_and_private_settings(self):
+        self.backend['Config']['Env'] += [module.PHOTO_EID_KEY + '=synthetic1',
+                                        module.PHOTO_UNTIL_KEY + '=2099-01-01T00:00:00Z']
+        plan = module.make_plan(self.repo, self.backend, self.worker, self.base, disable_photo_test=True)
+        self.assertEqual(plan.expected_env[module.PHOTO_EID_KEY], '')
+        self.assertEqual(plan.expected_env[module.PHOTO_UNTIL_KEY], '')
+        with redirect_stdout(io.StringIO()):
+            module.activate(plan, FakeDocker(plan), self.root / 'backups')
+        updated = (self.repo / '.env').read_bytes()
+        self.assertIn(b"EXAM_TEST_PHOTO_EID=''", updated)
+        self.assertIn(b"EXAM_TEST_PHOTO_UNTIL=''", updated)
+
+    def test_invalid_photo_test_configuration_is_refused(self):
+        valid = (datetime.now(timezone.utc) + timedelta(hours=2)).isoformat()
+        for eid, until in [('*', valid), ('one,two', valid), ('synthetic1', None),
+                           (None, valid), ('synthetic1', '2099-01-01T00:00:00Z'),
+                           ('synthetic1', '2026-11-18T16:00:00')]:
+            with self.subTest(eid=eid, until=until), self.assertRaises(module.ActivationError):
+                module.photo_test_changes(eid, until)
+
+    def test_private_setting_cannot_inject_newlines_or_override_credentials(self):
+        for key, value in [(module.PHOTO_EID_KEY, "synthetic1\nOTHER=changed"),
+                           ('AUTH_SECRET_KEY', 'changed')]:
+            with self.assertRaises(module.ActivationError):
+                module.update_private_setting(self.env_before, key, value)
 
     def test_explicit_maintenance_keeps_six_open_attempts_unchanged(self):
         docker = FakeDocker(self.plan)

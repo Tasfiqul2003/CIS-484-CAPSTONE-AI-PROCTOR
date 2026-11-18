@@ -235,3 +235,16 @@ def test_template_changes_do_not_change_frozen_attempt(api):
     assert len(client.get(f'/exam/{SESSION}/report').json()['rubric_criteria']) == 2
     assert client.put(f'/exam/{SESSION}/grades',json=confirm_body()).status_code == 200
     assert len(rows(engine)) == 2 and not calls
+
+
+def test_legacy_grades_remain_visible_with_unknown_rubric_provenance(api):
+    client,engine,calls=api
+    assert client.put(f'/exam/{SESSION}/grades',json=confirm_body()).status_code==200
+    before=rows(engine)
+    with engine.begin() as db:
+        db.execute(text('UPDATE exam_sessions SET assessment_rubric_snapshot=NULL'))
+        db.execute(text("UPDATE exam_templates SET rubric='{}'"))
+    report=client.get(f'/exam/{SESSION}/report').json()
+    assert report['rubric']['provenance']=='legacy_unknown'
+    assert report['rubric_error'] and report['session']['assessment_rubric'] is None
+    assert len(report['grades'])==2 and rows(engine)==before and not calls

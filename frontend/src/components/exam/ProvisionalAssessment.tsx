@@ -157,7 +157,7 @@ export default function ProvisionalAssessment({ sessionId, onConfirmed }: Props)
     {loading ? <p role="status">Loading professor assessment…</p> : report && <>
       {report.session.status === 'graded' && <p role="status">This attempt has a confirmed professor assessment. Further changes require explicit confirmation.</p>}
       {!editable && <p role="status">Assessment requires a submitted assessed attempt and a completed recording within its retention deadline.</p>}
-      {report.rubric_error && !report.grades.length && <p role="alert">{report.rubric_error}</p>}
+      {report.rubric_error && <p role={report.grades.length ? "status" : "alert"}>{report.rubric_error}</p>}
       <button type="button" disabled={!editable || Boolean(busy) || report.grades.length > 0 || !rows.length || report.session.status === 'graded'}
         onClick={() => void generateEvaluation()}>{busy === 'generate' ? 'Generating provisional evaluation…' : 'Generate provisional evaluation'}</button>{' '}
       <button type="button" disabled={Boolean(busy)} onClick={() => void reload()}>Reload assessment</button>

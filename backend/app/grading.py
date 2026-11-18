@@ -305,7 +305,7 @@ def session_report(
     sid = str(session_id)
     session = db.execute(
         text("""
-            SELECT s.*, t.professor_id AS exam_professor_id, t.rubric AS assessment_rubric,
+            SELECT s.*, t.professor_id AS exam_professor_id, s.assessment_rubric_snapshot AS assessment_rubric,
                    v.status AS recording_status, v.expires_at AS recording_expires_at
             FROM exam_sessions AS s
             JOIN exam_templates AS t ON t.id = s.exam_template_id

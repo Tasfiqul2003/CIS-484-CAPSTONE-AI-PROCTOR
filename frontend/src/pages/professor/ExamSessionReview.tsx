@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AlertTriangle, ArrowLeft, LoaderCircle, Play, RefreshCw, Sparkles } from "lucide-react";
 import ProfessorHeader from "../../components/professor/ProfessorHeader";
+import DownloadAllButton from '../../components/professor/DownloadAllButton';
 
 type ReviewData = {
   student_name: string;
@@ -188,6 +189,7 @@ export default function ExamSessionReview() {
             <p>{review.student_eid ? `EID ${review.student_eid}` : ""}{report?.session.started_at ? ` · ${when(report.session.started_at)}` : ""}</p>
           </div>}
           {review?.course && <span className="professor-review-course">{review.course}</span>}
+          <DownloadAllButton sessionId={sessionId} disabled={loading || !!error || !review} />
         </div>
 
         {loading ? (

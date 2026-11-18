@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import RecordingReview from './RecordingReview';
+import DownloadAllButton from '../../components/professor/DownloadAllButton';
 import { ArrowLeft, CheckCircle2, LoaderCircle, RefreshCw, Sparkles } from "lucide-react";
 
 type Interaction = {
@@ -207,10 +208,14 @@ export default function StudentReview({
             <h1>Student examination review</h1>
             <p>Review submitted answers, inspect integrity events, and confirm assessment scores.</p>
           </div>
+          <div className="exam-download-actions">
+          <DownloadAllButton sessionId={sessionId} disabled={loading || !report ||
+            !['pending_grading', 'flagged', 'graded'].includes(report.session.status)} />
           <button type="button" className="student-review-refresh"
             onClick={() => void loadReport()} disabled={loading}>
             <RefreshCw size={16} /> Refresh
           </button>
+          </div>
         </section>
 
         {loading && <div className="student-review-state" role="status">
@@ -255,9 +260,6 @@ export default function StudentReview({
                   </details>}
                 </article>)}
               </div>}
-            <div className="student-review-recording-note">
-              Recording playback is not currently exposed by the report API. Saved transcripts are displayed above.
-            </div>
           </section>
 
           <section className="student-review-section">

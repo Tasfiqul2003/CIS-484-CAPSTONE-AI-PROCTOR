@@ -9,6 +9,7 @@ import {
   Users,
 } from "lucide-react";
 import ProfessorHeader from "../../components/professor/ProfessorHeader";
+import DownloadAllButton from '../../components/professor/DownloadAllButton';
 import { recordingLabels } from '../student/examRecording';
 import type { RecordingStatus } from '../student/examRecording';
 
@@ -324,6 +325,9 @@ export default function ExamSubmissions() {
             <p>Who has taken this exam, who is still working, and which attempts are ready for you to review.</p>
           </div>
 
+          <div className="exam-download-actions">
+          <DownloadAllButton examId={examId} disabled={loading || !!error || !students.some(student =>
+            !student.developer_demo && ['pending_grading', 'flagged', 'graded'].includes(student.status ?? ''))} />
           <button
             type="button"
             className="progress-refresh-button"
@@ -337,6 +341,7 @@ export default function ExamSubmissions() {
             )}
             Refresh
           </button>
+          </div>
         </section>
 
         {error && (

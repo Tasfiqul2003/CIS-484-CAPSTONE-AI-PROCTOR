@@ -4,8 +4,8 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "test": "node --test tests/avatar-settings.test.mjs tests/developer-demo.test.mjs tests/exam-category-settings.test.mjs tests/exam-policy.test.mjs tests/exam-timing.test.mjs tests/live-avatar.test.mjs tests/ods-accommodations.test.mjs tests/student-settings.test.mjs tests/examRecording.test.mjs tests/recordingReview.test.mjs tests/voice-commands.test.mjs",
-    "test:recording": "node --test tests/examRecording.test.mjs tests/recordingReview.test.mjs",
+    "test": "node --test tests/avatar-settings.test.mjs tests/developer-demo.test.mjs tests/exam-category-settings.test.mjs tests/exam-policy.test.mjs tests/exam-timing.test.mjs tests/live-avatar.test.mjs tests/ods-accommodations.test.mjs tests/student-settings.test.mjs tests/examRecording.test.mjs tests/recordingReview.test.mjs tests/downloadAll.test.mjs tests/voice-commands.test.mjs",
+    "test:recording": "node --test tests/examRecording.test.mjs tests/recordingReview.test.mjs tests/downloadAll.test.mjs",
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview"

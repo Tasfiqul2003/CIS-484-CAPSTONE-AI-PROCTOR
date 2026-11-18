@@ -1,0 +1,8 @@
+.exam-download-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.exam-download-all { display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 10px 14px; border: 1px solid #5a3987; border-radius: 9px;
+  background: #5a3987; color: #fff; font: inherit; font-weight: 600;
+  text-decoration: none; cursor: pointer; white-space: nowrap; }
+.exam-download-all:hover { background: #482d70; color: #fff; }
+.exam-download-all:focus-visible { outline: 3px solid #b09bd1; outline-offset: 3px; }
+.exam-download-all:disabled { opacity: .55; cursor: not-allowed; }

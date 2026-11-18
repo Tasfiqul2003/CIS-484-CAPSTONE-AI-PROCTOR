@@ -16,6 +16,7 @@ from .avatar_assistance import router as avatar_assistance_router
 from .time_settings import router as time_settings_router
 from .recording_settings import router as recording_settings_router
 from .exam_video import router as exam_video_router
+from .exam_downloads import router as exam_downloads_router
 from .ods_accommodations import router as ods_accommodations_router
 from .developer_demo import router as developer_demo_router
 from .identity import router as identity_router
@@ -42,6 +43,7 @@ app.include_router(avatar_assistance_router)
 app.include_router(time_settings_router)
 app.include_router(recording_settings_router)
 app.include_router(exam_video_router)
+app.include_router(exam_downloads_router)
 app.include_router(ods_accommodations_router)
 app.include_router(developer_demo_router)
 app.include_router(identity_router)

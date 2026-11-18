@@ -118,7 +118,8 @@ def apply(repo, package, manifest, changes, commit=False):
         if not staged.issubset(names):
             raise ValueError('Unrelated files were staged concurrently. Review the index before committing.')
         if staged:
-            git(repo, 'commit', '-m', 'Complete saved examination transcripts and reduce recording resource use')
+            git(repo, 'commit', '-m', manifest.get('commit_message',
+                'Complete saved examination transcripts and reduce recording resource use'))
         receipt = {'head': git(repo, 'rev-parse', 'HEAD'),
                    'manifest_sha256': sha((package / 'manifest.json').read_bytes())}
         (package / 'applied.json').write_text(json.dumps(receipt, indent=2) + '\n')

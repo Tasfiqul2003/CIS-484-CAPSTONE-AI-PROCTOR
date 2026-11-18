@@ -24,23 +24,28 @@ def main():
     parser.add_argument('--target', type=Path, required=True)
     parser.add_argument('--prior-package', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--base-commit', default=BASE, help='Exact reviewed target HEAD; defaults to the original speech-update baseline.')
+    parser.add_argument('--commit-message', help='Commit message for the guarded installer.')
     args = parser.parse_args()
     repo = args.repo.resolve()
     git = lambda *options: subprocess.check_output(['git', '-C', str(repo), *options])
     target_head = subprocess.check_output(['git', '--git-dir', str(args.target / '.git'), 'rev-parse', 'HEAD']).decode().strip()
-    if target_head != BASE:
+    baseline = args.base_commit
+    if target_head != baseline:
         raise ValueError('The target HEAD changed; inspect it before preparing an update.')
     if git('status', '--porcelain').strip():
         raise ValueError('Commit the reviewed source before packaging it.')
-    names = git('diff', '--name-only', '-z', BASE, 'HEAD').decode().strip('\0').split('\0')
+    names = git('diff', '--name-only', '-z', baseline, 'HEAD').decode().strip('\0').split('\0')
     if any(name.startswith(('frontend/dist/', 'models/', '.git/')) or name == '.env' for name in names):
         raise ValueError('Generated, private or model files were included in the source delta.')
-    manifest = {'head': BASE, 'source_commit': git('rev-parse', 'HEAD').decode().strip(), 'files': []}
+    manifest = {'head': baseline, 'source_commit': git('rev-parse', 'HEAD').decode().strip(), 'files': []}
+    if args.commit_message:
+        manifest['commit_message'] = args.commit_message
     for name in names:
         source = repo / name
         if not source.is_file():
             raise ValueError('This package supports reviewed file writes only: ' + name)
-        old = subprocess.run(['git', '-C', str(repo), 'show', BASE + ':' + name], capture_output=True)
+        old = subprocess.run(['git', '-C', str(repo), 'show', baseline + ':' + name], capture_output=True)
         allowed = [sha(canonical(old.stdout))] if old.returncode == 0 else [None]
         prior = args.prior_package / 'files' / name
         if prior.is_file():

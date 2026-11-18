@@ -57,6 +57,8 @@ class VideoUpdateTests(unittest.TestCase):
         self.assertEqual(self.command('diff', '--cached', '--name-only'), '')
 
     def test_apply_commits_only_reviewed_files_and_keeps_unrelated_work(self):
+        self.manifest['commit_message'] = 'Synthetic reviewed recording storage update'
+        self.save_manifest()
         (self.repo / 'unrelated.txt').write_text('unrelated pending work\n')
         manifest, changes, _ = self.validate()
         with redirect_stdout(io.StringIO()):
@@ -67,6 +69,7 @@ class VideoUpdateTests(unittest.TestCase):
         self.assertEqual((self.repo / 'unrelated.txt').read_text(), 'unrelated pending work\n')
         self.assertEqual(self.command('branch', '--show-current'), 'kay')
         self.assertEqual(self.command('rev-parse', 'HEAD^'), self.head)
+        self.assertEqual(self.command('log', '-1', '--format=%s'), self.manifest['commit_message'])
         self.assertEqual(len(list(self.package.glob('backup_*/app.txt'))), 1)
         self.assertEqual(self.validate()[1:], ([], True))
 

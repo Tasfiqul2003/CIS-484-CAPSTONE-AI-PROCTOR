@@ -95,6 +95,9 @@ Ensure the API/frontend have also loaded the updated source and the base
 backend has its persistent video-volume mount. This guide does not select or
 change your existing frontend launcher.
 
+For the laptop's existing backend without that mount, use the guarded
+[recording storage activation procedure](recording-storage-activation.md).
+
 On Windows, `scripts/Setup_Speech_Model.ps1 -Apply` performs the guarded
 dependency repair, reuses a complete existing model, checks real synthetic
 audio, backs up private settings, and starts only the worker. Use

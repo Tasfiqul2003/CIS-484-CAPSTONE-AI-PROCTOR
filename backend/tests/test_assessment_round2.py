@@ -100,6 +100,23 @@ def test_a_professor_cannot_assess_someone_elses_exam(monkeypatch):
     assert error.value.status_code == 404
 
 
+@pytest.mark.parametrize('recording_status', [None, 'permission_denied', 'upload_failed', 'expired'])
+def test_assessment_requires_retained_video_even_when_typed_submission_is_allowed(monkeypatch, recording_status):
+    class OptionalRecordingDB(AssessDB):
+        def execute(self, statement, params=None):
+            result = super().execute(statement, params)
+            if result.row and 'video_status' in result.row:
+                result.row['video_status'] = recording_status
+                result.row['video_expires_at'] = None
+            return result
+    monkeypatch.setattr(grading.httpx, 'post', lambda *a, **k: pytest.fail('Blocked assessment must not invoke a model'))
+    db = OptionalRecordingDB()
+    with pytest.raises(HTTPException) as error:
+        grading.assess_session(db, SID, professor_id=PROF)
+    assert error.value.status_code == 409
+    assert db.grades == [] and not db.committed
+
+
 def test_custom_rubric_descriptions_reach_the_model(monkeypatch):
     seen = {}
 

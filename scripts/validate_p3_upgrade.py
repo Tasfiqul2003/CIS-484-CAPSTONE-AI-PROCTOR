@@ -33,7 +33,7 @@ def plan():
         executable_sql(migration)
     return {'action': 'plan', 'starts_services': False, 'database_changes': False,
             'catalog_files': len(migrations),
-            'new_migrations': [m.name for m in migrations if Path(m.name).name.startswith(('016_', '017_', '018_', '019_', '020_', '021_'))],
+            'new_migrations': [m.name for m in migrations if Path(m.name).name.startswith(('016_', '017_', '018_', '019_', '020_', '021_', '022_', '023_', '024_')) or Path(m.name).name in ('013_reconcile_live_exam_schema.sql', '014_exam_recording_settings.sql')],
             'maintenance': 'protected backup -> isolated restore -> migrations -> real SQL contracts -> optional reviewed source upgrade',
             'media_coverage': 'Database backup only; recording and WAV asset backups are separate.'}
 
@@ -42,9 +42,9 @@ def _run_locked(action):
     if action == 'plan':
         print(json.dumps(plan(), indent=2))
         return 0
-    if local.port_open(8000) or local.port_open(5173):
+    if local.port_open(8000) or local.port_open(5173) or local.port_open(8100):
         raise RuntimeError('Stop the owned CYBROS frontend/backend before database maintenance; no process was stopped automatically.')
-    if local.port_open(8000) or local.port_open(5173):
+    if local.port_open(8000) or local.port_open(5173) or local.port_open(8100):
         raise RuntimeError('Keep the local frontend/backend stopped during database maintenance.')
     cfg = local.load()
     environment = local.environment(cfg)
@@ -135,7 +135,7 @@ def _run_locked(action):
         if action == 'apply':
             report['step'] = 'source_migrations'
             save()
-            if local.port_open(8000) or local.port_open(5173):
+            if local.port_open(8000) or local.port_open(5173) or local.port_open(8100):
                 raise RuntimeError('The application started during validation; source migrations were not applied.')
             with source.begin() as connection:
                 applied_names = apply_migrations(connection, migrations)

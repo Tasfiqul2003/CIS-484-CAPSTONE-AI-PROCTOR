@@ -180,6 +180,9 @@ def prepare_turn(monkeypatch, db):
     def observe_response(_db, **event):
         db.timeline_events.append(event)
     monkeypatch.setattr(exam, "record_response_submitted", observe_response)
+    # The separate follow-up provider is optional; individual follow-up tests
+    # override this result. Timing tests must never contact a live model.
+    monkeypatch.setattr(exam, "ask_follow_up", lambda *a, **k: (None, None))
     monkeypatch.setattr(exam, "read_student_token", lambda *a, **k: CLAIMS)
     monkeypatch.setattr(exam, "load_exam_material_summaries", lambda *a: [])
     monkeypatch.setattr(stream, "load_exam_material_summaries", lambda *a: [])

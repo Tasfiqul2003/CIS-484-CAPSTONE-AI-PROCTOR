@@ -6,11 +6,12 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from uuid import UUID
 
+from fastapi import HTTPException
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
 from .db import open_session
-from .exam_video import _recording_root
+from .exam_video import _recording_root, _safe_path
 
 
 @dataclass
@@ -26,6 +27,7 @@ class PurgeReport:
 
 def _audio_inventory(root: Path, session_id: UUID) -> list[Path]:
     """Inspect only canonical UUID WAVs, without following links or junctions."""
+    _safe_path(root)
     root = root.resolve()
     base = root / "question-audio"
     directory = base / str(session_id)
@@ -61,8 +63,9 @@ def _remove_audio_files(root: Path, session_id: UUID, paths: list[Path]) -> None
 
 def _remove_recording_files(root: Path, session_id: UUID) -> None:
     """Validate the complete inventory before unlinking any files for this attempt."""
-    session_dir = root / str(session_id)
-    chunks_dir = session_dir / "chunks"
+    _safe_path(root)
+    session_dir = _safe_path(root / str(session_id))
+    chunks_dir = _safe_path(session_dir / "chunks")
     if session_dir.is_symlink() or chunks_dir.is_symlink():
         raise OSError("Unexpected link in recording storage.")
     if session_dir.resolve().parent != root.resolve():
@@ -70,7 +73,7 @@ def _remove_recording_files(root: Path, session_id: UUID) -> None:
     if chunks_dir.resolve().parent != session_dir.resolve():
         raise OSError("Chunk directory leaves recording storage.")
 
-    paths = [root / f"{session_id}.webm", root / f".{session_id}.webm.tmp"]
+    paths = [root / f"{session_id}.webm", root / f".{session_id}.webm.tmp", root / f"{session_id}.assembling"]
     if session_dir.exists():
         if not session_dir.is_dir() or any(p.name != "chunks" for p in session_dir.iterdir()):
             raise OSError("Unexpected recording directory contents.")
@@ -78,11 +81,12 @@ def _remove_recording_files(root: Path, session_id: UUID) -> None:
         if not chunks_dir.is_dir():
             raise OSError("Invalid chunk directory.")
         for path in chunks_dir.iterdir():
-            if not path.name.endswith(".chunk") or not path.name[:-6].isdigit():
+            if not (len(path.stem) == 8 and path.stem.isdigit() and path.suffix in (".chunk", ".tmp")):
                 raise OSError("Unexpected recording chunk name.")
             paths.append(path)
 
     for path in paths:
+        _safe_path(path)
         if path.is_symlink() or (path.exists() and not path.is_file()):
             raise OSError("Unexpected recording file type.")
     for path in paths:
@@ -132,7 +136,7 @@ def purge_expired_video_report(*, dry_run: bool = False) -> PurgeReport:
             try:
                 inventory = _audio_inventory(root, session_id)
                 selected = [path for path in inventory if recording_expired or path.stem in expired_ids]
-                recording_paths = (root / f"{session_id}.webm", root / f".{session_id}.webm.tmp", root / str(session_id))
+                recording_paths = (root / f"{session_id}.webm", root / f".{session_id}.webm.tmp", root / f"{session_id}.assembling", root / str(session_id))
                 recording_pending = recording_expired and (attempt["status"] != "expired"
                     or any(path.exists() or path.is_symlink() for path in recording_paths))
                 if not recording_pending and not metadata_pending and not selected:
@@ -143,14 +147,18 @@ def purge_expired_video_report(*, dry_run: bool = False) -> PurgeReport:
                 if recording_expired:
                     _remove_recording_files(root, session_id)
                 _remove_audio_files(root, session_id, selected)
-            except OSError:
+            except (OSError, HTTPException):
                 # Avoid exposing paths or OS diagnostics containing private data.
                 report.failed.append(str(session_id))
                 continue
             if recording_expired:
                 db.execute(text("""UPDATE exam_session_videos
                         SET status = 'expired', file_name = NULL,
-                            total_bytes = 0, next_chunk_index = 0
+                            total_bytes = 0, next_chunk_index = 0,
+                            generated_transcript = NULL, transcript_error = NULL,
+                            transcript_job_token = NULL, transcript_lease_until = NULL,
+                            transcript_status = CASE WHEN transcript_status = 'not_requested'
+                                THEN 'not_requested' ELSE 'expired' END, updated_at = CURRENT_TIMESTAMP
                         WHERE session_id = :sid"""), {"sid": str(session_id)})
             for asset in metadata_pending:
                 db.execute(text("UPDATE exam_question_audio SET status = 'expired' WHERE id = :aid AND session_id = :sid"),

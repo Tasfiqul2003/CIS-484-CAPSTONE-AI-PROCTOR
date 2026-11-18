@@ -4,6 +4,7 @@ import ProfessorHeader from "../../components/professor/ProfessorHeader";
 import OralExamMark from "../../components/brand/OralExamMark";
 import "../../styles/exam-ui-tokens.css";
 import "./exam-review.css";
+import RecordingReview from './RecordingReview';
 import ProvisionalAssessment from '../../components/exam/ProvisionalAssessment';
 
 type AnswerReview = {
@@ -18,6 +19,7 @@ type AnswerReview = {
   machine_transcript_draft?: string | null;
   question_audio_assets?: { asset_id: string; audio_url?: string; status: string; playback_status: string }[];
 };
+import DownloadAllButton from '../../components/professor/DownloadAllButton';
 
 type ReviewData = {
   student_name: string;
@@ -28,8 +30,9 @@ type ReviewData = {
   status: string;
   identity_check_completed?: boolean;
   identity_review_required?: boolean;
-  video_url: string;
-  recording_expires_at?: string;
+  video_url: string | null;
+  video_recording_status?: string | null;
+  recording_expires_at?: string | null;
   answers: AnswerReview[];
   media_events?: { event_id: string; question_sequence_num: number; kind: string;
     media_offset_seconds: number | null; continuity_boundary: boolean }[];
@@ -253,6 +256,7 @@ export default function ExamSessionReview() {
             <p>{review.student_eid ? `EID ${review.student_eid}` : ""}{report?.session.started_at ? ` · ${when(report.session.started_at)}` : ""}</p>
           </div>}
           {review?.course && <span className="professor-review-course">{review.course}</span>}
+          <DownloadAllButton sessionId={sessionId} disabled={loading || !!error || !review} />
         </div>
 
         {loading ? (
@@ -352,14 +356,14 @@ export default function ExamSessionReview() {
             <div className="professor-review-side">
               <section className="professor-review-panel professor-review-video" aria-labelledby="recording-heading">
                 <h2 id="recording-heading"><Headphones size={20} aria-hidden="true" />Recording</h2>
-                <video ref={bindVideo} controls preload="metadata" src={review.video_url}
+                {review.video_url ? <video ref={bindVideo} controls preload="metadata" src={review.video_url ?? undefined}
                   onError={() => setMediaError("Recording unavailable, expired, or unsupported by this browser.")}
                   onPlay={() => questionAudio.current?.pause()}
                   onTimeUpdate={() => { if (video.current && segmentEnd.current !== null && video.current.currentTime >= segmentEnd.current) { video.current.pause(); segmentEnd.current = null; } }}
                   onSeeking={() => { if (video.current && segmentEnd.current !== null && video.current.currentTime > segmentEnd.current) segmentEnd.current = null; }}
                   aria-label={`Video and audio recording for ${review.student_name}`}>
                   Your browser cannot play this exam recording.
-                </video>
+                </video> : <p role="status">Recording {review.video_recording_status?.replaceAll("_", " ") || "unavailable"}. Submitted answers remain available.</p>}
               <label>Playback speed{" "}
                 <select defaultValue="1" onChange={event => {
                   if (video.current) video.current.playbackRate = Number(event.target.value);
@@ -371,6 +375,7 @@ export default function ExamSessionReview() {
               </label>
               {mediaError && <p role="alert">{mediaError}</p>}
                 <p className="professor-review-note">Recording retention deadline: {review.recording_expires_at ? new Date(review.recording_expires_at).toLocaleString() : 'unavailable'}.</p>
+                <RecordingReview sessionId={sessionId} showPlayback={false} />
               </section>
 
               <section className="professor-review-panel" aria-labelledby="assessment-heading">

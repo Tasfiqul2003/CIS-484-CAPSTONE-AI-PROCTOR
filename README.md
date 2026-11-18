@@ -10,6 +10,17 @@ Run the BAT from Windows File Explorer or a terminal. The root `Start_Developer.
 
 ## Current capabilities
 
+The examination workflow supports optional consented camera/microphone
+recording, ordered private WebM uploads, failure notifications, and authenticated
+professor playback. Typed submissions remain available when recording is declined
+or cannot initialize. Professor assessment still requires a completed retained
+video under the existing main policy. A separate offline worker generates and saves timestamped speech
+transcripts, with private professor review and text downloads. The optional
+worker defaults to one CPU core and a 1 GB memory ceiling; camera capture uses
+640 by 480 pixels at 15 frames per second. See
+[recording setup, retention, migrations, and limits](docs/exam-video-review.md)
+and [local speech transcription setup](docs/speech-transcription.md).
+
 Saved Qwen3 4B Ollama configurations, separate examiner/follow-up/grading prompt designs, synthetic text fixtures, and a Python rubric experiment. This configures an existing model; it does not train one. **Version 2.0 names a model configuration, not a completed application release.** V2.1 is an experimental rubric prompt, not a reliable grading service.
 
 **AI Oral Examiner Foundation V1 — Core Voice + LLM Interaction Engine** adds a standalone spoken interaction prototype: microphone → dynamic silence detection → Faster-Whisper → Ollama/Qwen3 → structured `spoken_response` → speech cleanup and reasoning-phrase check → Piper TTS → speakers. The developer reports successful end-to-end Windows testing. This is the basic AI foundation, not the final examination product or a validated grading service.
@@ -18,7 +29,7 @@ The reference is `backend/ai_oral_examiner_foundation_v1.py`. It processes **one
 
 The preserved September 17 run has **4/19 automated passes and 15/19 failures**. Failures include invented numeric scales, incorrect totals, missed equivalent wording, and paraphrased evidence. See [status](docs/project-status.md) and [test instructions](tests/README.md).
 
-The student JACard flow has an experimental offline photo-comparison prototype: professors can import official reference photos with a roster ZIP, and students make a short camera capture. Model weights are not included; the feature returns an explicit unavailable error until configured. A non-match never grants access; after three recent failures, the professor sees an assistance indicator. This is not a validated identity or liveness check. Assessed exams record video and audio to configured local storage for professor review alongside typed answers; this is not speech transcription. See [photo comparison setup and limitations](docs/face-verification.md) and [exam video storage and review configuration](docs/exam-video-review.md).
+The student JACard flow has an experimental offline photo-comparison prototype: professors can import official reference photos with a roster ZIP, and students make a short camera capture. Model weights are not included; the feature returns an explicit unavailable error until configured. A non-match never grants access; after three recent failures, the professor sees an assistance indicator. This is not a validated identity or liveness check. Assessed exams record video and audio to configured local storage for professor review alongside typed answers; saved speech transcription requires the separate local worker. See [photo comparison setup and limitations](docs/face-verification.md) and [exam video storage and review configuration](docs/exam-video-review.md).
 
 For an offline Ubuntu deployment, see the [air-gapped update guide](docs/airgap-deployment.md). It documents the image-transfer bundle, external data volumes, TLS requirements, and migration steps.
 

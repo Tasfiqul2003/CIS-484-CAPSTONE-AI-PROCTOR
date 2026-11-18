@@ -8,6 +8,7 @@ import pytest
 from fastapi import HTTPException, UploadFile
 
 from backend.app import exam_video, purge_exam_videos as purge
+from backend.tests.test_exam_video import api, start, chunk, BASE, WEBM
 
 SID = UUID("20000000-0000-4000-8000-000000000001")
 OTHER_SID = UUID("20000000-0000-4000-8000-000000000002")
@@ -145,53 +146,26 @@ def test_compatibility_entrypoint_fails_when_cleanup_incomplete(monkeypatch):
         purge.purge_expired_videos()
 
 
-def test_expired_recording_rejects_chunks_and_finalization(monkeypatch, tmp_path):
-    monkeypatch.setattr(exam_video, "_session_for_student", lambda *args: {})
-
-    class DB:
-        def execute(self, *args):
-            return Result([{
-                "status": "recording", "next_chunk_index": 0, "total_bytes": 0,
-                "expires_at": datetime.now(timezone.utc) - timedelta(seconds=1),
-            }])
-
-    with pytest.raises(HTTPException) as uploaded:
-        asyncio.run(exam_video.upload_video_chunk(
-            SID, 0, UploadFile(BytesIO(b"synthetic")), "Bearer synthetic", DB(),
-        ))
-    assert uploaded.value.status_code == 410
-    with pytest.raises(HTTPException) as completed:
-        exam_video.complete_video_recording(
-            SID, exam_video.RecordingCompleteRequest(expected_chunk_count=1),
-            "Bearer synthetic", DB(),
-        )
-    assert completed.value.status_code == 410
+def test_expired_recording_rejects_chunks_and_finalization(api):
+    client, db, _, _ = api
+    start(client)
+    db.video['expires_at'] = datetime.now(timezone.utc) - timedelta(seconds=1)
+    assert chunk(client).status_code == 410
+    assert client.post(BASE + '/complete', json={'expected_chunk_count': 1}).status_code == 410
 
 
-def test_storage_exhaustion_does_not_write_a_chunk(monkeypatch, tmp_path):
-    monkeypatch.setattr(exam_video, "_session_for_student", lambda *args: {})
-    monkeypatch.setattr(exam_video, "_recording_root", lambda **kwargs: tmp_path)
-    monkeypatch.setattr(exam_video.shutil, "disk_usage", lambda root: type("Usage", (), {"free": 0})())
-
-    class DB:
-        def execute(self, *args):
-            return Result([{
-                "status": "recording", "next_chunk_index": 0, "total_bytes": 0,
-                "expires_at": datetime.now(timezone.utc) + timedelta(days=1),
-            }])
-
-    with pytest.raises(HTTPException) as error:
-        asyncio.run(exam_video.upload_video_chunk(
-            SID, 0, UploadFile(BytesIO(b"synthetic")), "Bearer synthetic", DB(),
-        ))
-    assert error.value.status_code == 507
-    assert not (tmp_path / str(SID) / "chunks" / "00000000.chunk").exists()
+def test_storage_exhaustion_does_not_write_a_chunk(api, monkeypatch):
+    client, _, _, root = api
+    start(client)
+    monkeypatch.setattr(exam_video.shutil, 'disk_usage', lambda path: type('Usage', (), {'free': 0})())
+    assert chunk(client).status_code == 507
+    assert not (root / str(SID) / 'chunks' / '00000000.chunk').exists()
 
 
 def test_safe_leaf_rejects_path_traversal(tmp_path):
     with pytest.raises(HTTPException) as error:
-        exam_video._safe_recording_file(tmp_path, "../outside.webm")
-    assert error.value.status_code == 500
+        exam_video._chunks(tmp_path, '../outside')
+    assert error.value.status_code == 503
 
 
 def test_symlinked_session_never_traversed(monkeypatch, tmp_path):
@@ -227,6 +201,6 @@ def test_redirected_session_directory_is_rejected_before_creating_chunks(monkeyp
 
     monkeypatch.setattr(type(session), "resolve", resolve)
     with pytest.raises(HTTPException) as error:
-        exam_video._session_video_dir(tmp_path, SID)
-    assert error.value.status_code == 500
+        exam_video._chunks(tmp_path, SID)
+    assert error.value.status_code == 503
     assert not session.exists()

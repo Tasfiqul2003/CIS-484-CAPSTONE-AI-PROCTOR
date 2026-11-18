@@ -16,6 +16,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 from .student_auth import issue_student_token, read_student_token
+from .photo_test_access import photo_test_access, photo_test_policy
 from .face_matching import (
     FaceImageInvalid,
     FaceMatcherUnavailable,
@@ -170,6 +171,12 @@ class StartRequest(BaseModel):
 
 
 def _require_recent_face_check(db: Session, student_id: str):
+    # The exception never writes a match or changes an existing attempt.
+    if photo_test_policy():
+        student = db.execute(text('SELECT eid FROM students WHERE id = CAST(:student_id AS uuid)'),
+                             {'student_id': student_id}).mappings().first()
+        if student and photo_test_access(student['eid']):
+            return {'attempt_count': 0, 'status': 'test_bypass'}
     verification = db.execute(
         text("""
             SELECT attempt_count, status
@@ -455,8 +462,7 @@ def start_exam(req: StartRequest, db: Session = Depends(get_db), http_request: R
         raise HTTPException(409, "You have already completed this exam.")
 
     face_check = _require_face_authorization(db, str(req.student_id), http_request)
-    developer_bypass = face_check.get('status') == 'developer_bypass'
-    if not demo_enabled():
+    if face_check.get('status') == 'developer_bypass' and not demo_enabled():
         _retention_deadline()
         _recording_root(require_space=True)
     avatar_settings, avatar_revision, avatar_mode = snapshot_for_exam(db, req.exam_template_id)
@@ -466,28 +472,33 @@ def start_exam(req: StartRequest, db: Session = Depends(get_db), http_request: R
     examiner_profile = ({"id": None, "reason": "minimal"} if minimal_enabled()
         else snapshot_exam_profile(template.get("professor_id")))
     snapshot = db.execute(
-        text("""INSERT INTO exam_sessions (student_id, exam_template_id, time_limit_minutes,
+        text("""INSERT INTO exam_sessions (
+                    student_id, exam_template_id, time_limit_minutes,
                     question_time_limit_minutes, extended_time_multiplier,
                     avatar_policy_snapshot, avatar_policy_revision, avatar_exam_mode, developer_demo, avatar_preferences,
-                        identity_check_completed, identity_review_required,
-                        identity_verification_attempts, assessment_rubric_snapshot, assessment_rubric_version, examiner_profile_snapshot)
+                    identity_check_completed, identity_review_required, identity_verification_attempts,
+                    assessment_rubric_snapshot, assessment_rubric_version, examiner_profile_snapshot,
+                    record_examination, generate_transcript, recording_consent_status)
                 SELECT CAST(:s AS uuid), t.id, t.time_limit_minutes, t.question_time_limit_minutes,
                        COALESCE(r.extended_time_multiplier, 1),
                        CAST(:avatar_policy AS jsonb), :avatar_revision, :avatar_mode, :developer_demo, CAST(:preferences AS jsonb),
                        :identity_check_completed, :identity_review_required, :identity_verification_attempts,
-                       t.rubric, 'points-v1', CAST(:examiner_profile AS jsonb)
+                       t.rubric, 'points-v1', CAST(:examiner_profile AS jsonb),
+                       CASE WHEN :developer_demo THEN FALSE ELSE t.record_examination END, t.generate_transcript,
+                       CASE WHEN :developer_demo THEN 'not_required' WHEN t.record_examination THEN 'pending' ELSE 'not_required' END
                 FROM exam_templates t JOIN exam_roster r ON r.exam_template_id = t.id
                     AND r.student_id = CAST(:s AS uuid)
                 WHERE t.id = CAST(:t AS uuid) AND t.status = 'published'
-                RETURNING id, time_limit_minutes, extended_time_multiplier, developer_demo"""),
+                RETURNING id, time_limit_minutes, extended_time_multiplier, developer_demo,
+                          record_examination, generate_transcript, recording_consent_status"""),
         {"s": str(req.student_id), "t": str(req.exam_template_id),
          "avatar_policy": json.dumps(avatar_settings.model_dump()),
          "avatar_revision": avatar_revision, "avatar_mode": avatar_mode,
          "examiner_profile": json.dumps(examiner_profile),
          "developer_demo": demo_enabled(),
          "preferences": req.presentation_preferences.model_dump_json() if req.presentation_preferences else "{}",
-         "identity_check_completed": not developer_bypass,
-         "identity_review_required": developer_bypass,
+         "identity_check_completed": face_check['status'] == 'matched',
+         "identity_review_required": face_check['status'] != 'matched',
          "identity_verification_attempts": int(face_check["attempt_count"])},
     ).mappings().first()
     if not snapshot:
@@ -573,7 +584,6 @@ def end_exam_early(session_id: UUID, authorization: str | None = Header(default=
         return {"done": True, "status": attempt["status"], "reason": "Attempt already ended"}
     if attempt["status"] != "in_progress":
         raise HTTPException(409, "This attempt cannot be ended from the student exam.")
-    require_active_video_recording(db, sid, bool(attempt.get("developer_demo", False)))
     db.execute(text("""INSERT INTO integrity_events(session_id,event_type,severity,notes)
         VALUES (CAST(:sid AS uuid),'student_ended_exam',1,:note)"""),
         {"sid":sid,"note":"Student chose End exam. Any unfinished response was not submitted."})
@@ -590,6 +600,8 @@ def read_session_state(db, session_id: str, claims: dict):
     row = db.execute(text(f"""SELECT student_id, exam_template_id, status, started_at,
         time_limit_minutes, question_time_limit_minutes, extended_time_multiplier,
         avatar_policy_snapshot, avatar_policy_revision, avatar_exam_mode, developer_demo,
+        record_examination, generate_transcript, recording_consent_status,
+        recording_consent_decided_at,
         (SELECT title FROM exam_templates WHERE id = exam_sessions.exam_template_id) AS exam_title,
         identity_check_completed, identity_review_required,
         (status = 'flagged' AND EXISTS (SELECT 1 FROM integrity_events restart_event
@@ -616,6 +628,13 @@ def read_session_state(db, session_id: str, claims: dict):
     return {"session_id": session_id, "status": row["status"],
             "developer_demo": bool(row.get("developer_demo", False)),
             "technical_restart_allowed": bool(row.get("technical_restart_allowed", False)),
+            "record_examination": bool(row.get("record_examination", False)),
+            "generate_transcript": bool(row.get("generate_transcript", False)),
+            "recording_consent_status": row.get("recording_consent_status", "not_required"),
+            "recording_consent_decided_at": (
+                row["recording_consent_decided_at"].isoformat()
+                if row.get("recording_consent_decided_at") else None
+            ),
             "exam_title": row.get("exam_title") or "",
             "started_at": row["started_at"].isoformat() if row.get("started_at") else None,
             "identity_check_completed": bool(row.get("identity_check_completed", True)),
@@ -648,7 +667,7 @@ def submit_answer(
 
     session = db.execute(
         text(f"""SELECT s.status, s.student_id, s.exam_template_id, s.time_limit_minutes, s.assessment_rubric_snapshot,
-                       s.extended_time_multiplier, s.developer_demo,
+                       s.extended_time_multiplier, s.developer_demo, s.recording_consent_status,
                        s.question_time_limit_minutes, s.avatar_policy_snapshot, s.avatar_policy_revision, s.avatar_exam_mode,
                        {active_pause_until_sql('s.id')} AS pause_until,
                        (EXTRACT(EPOCH FROM (clock_timestamp() - s.started_at)) - {pause_sum_sql('s.id')}) / 60 AS elapsed_min
@@ -670,11 +689,6 @@ def submit_answer(
         return replay
     if session["status"] != "in_progress":
         raise HTTPException(409, f"Session is {session['status']}")
-    require_active_video_recording(
-        db,
-        sid,
-        bool(session.get("developer_demo", False)),
-    )
 
     pending = db.execute(
         text(f"""SELECT id, sequence_num, avatar_root_sequence, avatar_followup_index,
@@ -687,6 +701,10 @@ def submit_answer(
     if not pending:
         raise HTTPException(409, "No question is waiting for an answer")
 
+    if session.get("recording_consent_status") == "pending":
+        raise HTTPException(409, "Choose whether to consent to recording before submitting an answer.")
+    if req.input_source != "typed":
+        require_active_video_recording(db, sid, bool(session.get("developer_demo", False)))
     avatar_settings = session_policy(session)
     if req.input_source in ("confirmed_transcript", "automatic_transcript"):
         verify_transcript_receipt(req.transcript_receipt, student_id=str(session["student_id"]),
@@ -1053,6 +1071,7 @@ def get_student_available_exams(
             "name": student["name"],
             "eid": student["eid"],
         },
+        "photo_test_access": photo_test_access(student['eid']),
         "exams": [
             {
                 "id": str(exam["id"]),
@@ -2140,7 +2159,7 @@ def get_exam_progress(
         )
 
     rows = db.execute(
-        text("""
+        text(f"""
             SELECT
                 s.id AS student_id,
                 s.name AS student_name,
@@ -2152,15 +2171,57 @@ def get_exam_progress(
                 latest.identity_check_completed,
                 latest.identity_review_required,
                 latest.identity_verification_attempts,
-                latest.video_recording_status,
                 COALESCE(recent_face_check.attempt_count, 0) AS face_check_attempt_count,
                 COALESCE(
                     recent_face_check.attempt_count >= 3
                     AND recent_face_check.status = 'no_match',
                     FALSE
                 ) AS face_check_help_required,
+                CASE
+                    WHEN latest.id IS NULL THEN NULL
+                    WHEN latest.developer_demo OR NOT latest.record_examination THEN 'not_required'
+                    WHEN latest.recording_consent_status = 'pending' THEN 'awaiting_consent'
+                    WHEN latest.recording_consent_status = 'declined' THEN 'consent_declined'
+                    WHEN video.expires_at <= clock_timestamp() THEN 'expired'
+                    WHEN video.status = 'recording' AND video.updated_at < now() - interval '90 seconds' THEN 'interrupted'
+                    WHEN video.status IS NULL AND latest.status IN ('pending_grading', 'flagged', 'graded') THEN 'interrupted'
+                    ELSE COALESCE(video.status, 'awaiting_recording')
+                END AS video_recording_status,
                 latest.started_at,
-                latest.ended_at
+                latest.ended_at,
+                progress_clock.server_now AS server_now,
+                CASE
+                    WHEN latest.time_limit_minutes IS NOT NULL
+                    THEN latest.time_limit_minutes
+                         * COALESCE(latest.extended_time_multiplier, 1) * 60
+                    ELSE NULL
+                END AS allowed_seconds,
+                CASE
+                    WHEN latest.started_at IS NOT NULL
+                    THEN GREATEST(
+                        0,
+                        EXTRACT(EPOCH FROM (
+                            COALESCE(latest.ended_at, progress_clock.server_now) - latest.started_at
+                        )) - {pause_sum_sql('latest.id')}
+                    )
+                    ELSE NULL
+                END AS elapsed_seconds,
+                CASE
+                    WHEN latest.status = 'in_progress'
+                     AND latest.started_at IS NOT NULL
+                     AND latest.time_limit_minutes IS NOT NULL
+                    THEN GREATEST(
+                        0,
+                        latest.time_limit_minutes
+                            * COALESCE(latest.extended_time_multiplier, 1) * 60
+                        - (
+                            EXTRACT(EPOCH FROM (
+                                progress_clock.server_now - latest.started_at
+                            )) - {pause_sum_sql('latest.id')}
+                        )
+                    )
+                    ELSE NULL
+                END AS remaining_seconds
             FROM exam_roster AS r
             JOIN students AS s
               ON s.id = r.student_id
@@ -2172,17 +2233,22 @@ def get_exam_progress(
                     es.identity_check_completed,
                     es.identity_review_required,
                     es.identity_verification_attempts,
-                    esv.status AS video_recording_status,
+                    es.record_examination,
+                    es.recording_consent_status,
                     es.started_at,
-                    es.ended_at
+                    es.ended_at,
+                    es.time_limit_minutes,
+                    es.extended_time_multiplier
                 FROM exam_sessions AS es
-                LEFT JOIN exam_session_videos AS esv
-                  ON esv.session_id = es.id
                 WHERE es.student_id = s.id
                   AND es.exam_template_id = r.exam_template_id
                 ORDER BY es.started_at DESC, es.id DESC
                 LIMIT 1
             ) AS latest ON TRUE
+            LEFT JOIN exam_session_videos AS video ON video.session_id = latest.id
+            CROSS JOIN (
+                SELECT clock_timestamp() AS server_now
+            ) AS progress_clock
             LEFT JOIN LATERAL (
                 SELECT fv.attempt_count, fv.status
                 FROM student_face_verifications AS fv

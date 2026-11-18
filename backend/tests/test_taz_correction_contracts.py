@@ -9,6 +9,7 @@ import httpx
 import pytest
 from fastapi import HTTPException, FastAPI
 from fastapi.testclient import TestClient
+from starlette.concurrency import run_in_threadpool
 from backend.app import avatar_bridge, exam_speech
 from backend.app.avatar_speech_provider import AvatarSynthesis, AvatarTranscription
 from backend.app.speech_adapters import SpeechContext, SpeechOutputRequest, TranscriptionRequest, SpeechService, SpeechError
@@ -117,7 +118,7 @@ def test_avatar_service_reserves_profile_through_all_segments_and_rejects_foreig
         for event in events:yield json.dumps(event)+'\n'
     namespace={'Request':object,'service_ok':lambda request:True,'bad':lambda message,status=400:SimpleNamespace(status_code=status),
         'split_sentences':lambda text:[text],'MAX_SPEAK_CHARS':8000,'avatar_ready':lambda:True,
-        'StreamingResponse':StreamingResponse,'PREP_LOCK':lock,'ACTIVE':active,'LIVE':{'speaking':0},
+        'StreamingResponse':StreamingResponse,'run_in_threadpool':run_in_threadpool,'PREP_LOCK':lock,'ACTIVE':active,'LIVE':{'speaking':0},
         'clip_for':clips,'ndjson':ndjson,'time':time,'re':__import__('re')}
     exec(compile(ast.Module(body=[function],type_ignores=[]),str(source),'exec'),namespace)
     class Request:

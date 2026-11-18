@@ -136,6 +136,30 @@ export default function StudentExams() {
     window.location.href = "/";
   }
 
+  async function handleLogout() {
+    try {
+      await fetch("/api/auth/logout", {
+        method: "POST",
+        credentials: "include",
+      });
+    } catch {
+      // Continue clearing local student data if the request fails.
+    } finally {
+      for (const key of [
+        "oralexam_student_eid",
+        "oralexam_student_id",
+        "oralexam_student_name",
+        "oralexam_face_check_passed",
+        "oralexam_exam_session_id",
+        "oralexam_exam_session_token",
+        "oralexam_developer_demo",
+      ]) {
+        sessionStorage.removeItem(key);
+      }
+
+      window.location.href = "/";
+    }
+  }
   const openExams = exams.filter(exam => !exam.completed_at);
   const completedExams = exams.filter(exam => exam.completed_at);
 
@@ -176,7 +200,7 @@ export default function StudentExams() {
                   <h2>Welcome, {student.name}</h2>
                   <p>EID · {student.eid}</p>
                 </div>
-                <button type="button" className="student-logout-button" onClick={logOut}>
+                <button type="button" className="student-logout-button" onClick={handleLogout}>
                   <LogOut size={18} aria-hidden="true" />Log out
                 </button>
               </header>}

@@ -15,7 +15,7 @@ def assets(monkeypatch, tmp_path):
     db = Session(engine)
     for sql in [
         "CREATE TABLE exam_sessions(id TEXT PRIMARY KEY)",
-        "CREATE TABLE exam_session_videos(session_id TEXT PRIMARY KEY, status TEXT, expires_at TEXT, file_name TEXT, total_bytes INTEGER, next_chunk_index INTEGER)",
+        "CREATE TABLE exam_session_videos(session_id TEXT PRIMARY KEY, status TEXT, expires_at TEXT, file_name TEXT, total_bytes INTEGER, next_chunk_index INTEGER, generated_transcript TEXT, transcript_error TEXT, transcript_job_token TEXT, transcript_lease_until TEXT, transcript_status TEXT DEFAULT 'queued', updated_at TEXT)",
         "CREATE TABLE exam_question_audio(id TEXT PRIMARY KEY, session_id TEXT, status TEXT, expires_at TEXT)",
         "CREATE TABLE exam_question_audio_requests(session_id TEXT, request_id TEXT, asset_id TEXT REFERENCES exam_question_audio(id))",
     ]:
@@ -31,7 +31,7 @@ def create_attempt(db, root, *, expired=True, status="completed", orphan=False):
     sid, aid = uuid4(), uuid4()
     expiry = datetime.now(timezone.utc) + timedelta(days=-1 if expired else 1)
     db.execute(text("INSERT INTO exam_sessions VALUES (:sid)"), {"sid": str(sid)})
-    db.execute(text("INSERT INTO exam_session_videos VALUES (:sid,:status,:expiry,:file,9,1)"),
+    db.execute(text("INSERT INTO exam_session_videos(session_id,status,expires_at,file_name,total_bytes,next_chunk_index) VALUES (:sid,:status,:expiry,:file,9,1)"),
                {"sid": str(sid), "status": status, "expiry": expiry.isoformat(), "file": f"{sid}.webm"})
     db.execute(text("INSERT INTO exam_question_audio VALUES (:aid,:sid,'ready',:expiry)"),
                {"aid": str(aid), "sid": str(sid), "expiry": expiry.isoformat()})
@@ -53,7 +53,14 @@ def create_attempt(db, root, *, expired=True, status="completed", orphan=False):
 def test_expired_attempt_removes_question_audio_orphans_and_marks_metadata_after_success(assets):
     db, root = assets
     sid, aid, asset, video, orphan = create_attempt(db, root, orphan=True)
+    db.execute(text("UPDATE exam_session_videos SET generated_transcript='Synthetic private text', transcript_error='Synthetic error', transcript_job_token='synthetic-job', transcript_lease_until='2099-01-01'"))
+    db.commit()
+    assembly = root / f"{sid}.assembling"
+    assembly.write_bytes(b'synthetic unfinished assembly')
     report = purge.purge_expired_video_report()
+    assert not assembly.exists()
+    cleared = db.execute(text("SELECT generated_transcript, transcript_error, transcript_job_token, transcript_lease_until, transcript_status FROM exam_session_videos")).one()
+    assert tuple(cleared) == (None, None, None, None, 'expired')
     assert report.removed == 1 and report.failed == []
     assert report.question_audio_assets_expired == 1
     assert report.question_audio_files_removed == 2 and report.orphan_files_removed == 1

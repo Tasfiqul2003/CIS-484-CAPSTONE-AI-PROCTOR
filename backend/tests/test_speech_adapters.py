@@ -131,7 +131,7 @@ def test_invalid_speech_requests_do_not_call_provider(changes):
 
 @pytest.mark.parametrize("audio,mime", [(b"", "audio/wav"), (b"fake", "audio/webm"),
     (b"fake", "audio/ogg"), (b"fake", "audio/mp4"), (wav(), "audio/unknown"),
-    (wav(120.01), "audio/wav")])
+    (wav(120.01), "audio/wav")], ids=["empty", "invalid-webm", "invalid-ogg", "invalid-mp4", "unknown-type", "too-long"])
 def test_invalid_transcription_input_does_not_call_provider(audio, mime):
     provider = SyntheticProvider()
     with pytest.raises(SpeechError) as failure:

@@ -1152,7 +1152,21 @@ async def service_speak(request: Request):
             LIVE["speaking"] -= 1
             PREP_LOCK.release()
 
-    return StreamingResponse(ndjson(events()), media_type="application/x-ndjson")
+    async def stream_events():
+        source = events()
+        try:
+            while True:
+                # The awaited worker completes before cancellation unwinds; no
+                # detached renderer may outlive the profile reservation.
+                event = await run_in_threadpool(next, source, None)
+                if event is None:
+                    break
+                for line in ndjson([event]):
+                    yield line
+        finally:
+            source.close()
+
+    return StreamingResponse(stream_events(), media_type="application/x-ndjson")
 
 
 @app.get("/service/idle")

@@ -166,11 +166,8 @@ def get_submission_review(
         raise HTTPException(409, "Exam review is available only after submission.")
     if session.get("video_status") == "expired" or (session.get("expires_at") is not None and session["expires_at"] <= datetime.now(timezone.utc)):
         raise HTTPException(410, "The exam video has passed its retention deadline.")
-    if (
-        session.get("video_status") != "completed"
-        or session.get("expires_at") is None
-    ):
-        raise HTTPException(409, "The completed exam video is not available yet.")
+    video_available = session.get("video_status") == "completed" and session.get("expires_at") is not None \
+        and session["expires_at"] > datetime.now(timezone.utc)
 
     answers = db.execute(
         text("""SELECT id AS interaction_id, sequence_num, question_text AS question,
@@ -203,10 +200,12 @@ def get_submission_review(
         "status": session["status"],
         "identity_check_completed": bool(session.get("identity_check_completed", True)),
         "identity_review_required": bool(session.get("identity_review_required", False)),
-        "recording_expires_at": session["expires_at"].isoformat(),
+        "recording_expires_at": session["expires_at"].isoformat() if session.get("expires_at") else None,
         "exam_template_id": str(session["exam_template_id"]) if session.get("exam_template_id") else None,
-        "video_url": f"/api/exam/sessions/{session_id}/video",
+        "video_url": f"/api/exam/sessions/{session_id}/video" if video_available else None,
+        "video_recording_status": ("expired" if session.get("expires_at") and session["expires_at"] <= datetime.now(timezone.utc)
+                                   else session.get("video_status")),
         "timeline_basis": "client_reported_approximate_recording_seconds",
-        'media_events': events,
+        "media_events": events,
         "answers": exchanges,
     }

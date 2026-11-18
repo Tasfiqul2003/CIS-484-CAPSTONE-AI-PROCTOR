@@ -38,6 +38,9 @@ type StartResponse = ExamTiming & {
   identity_check_completed?: boolean;
   identity_review_required?: boolean;
   technical_restart_allowed?: boolean;
+  record_examination?: boolean;
+  generate_transcript?: boolean;
+  recording_consent_status?: string;
 };
 
 type AnswerResponse = { done: true; reason?: string }
@@ -129,6 +132,7 @@ export default function StudentExam() {
     catch (failure) { setTimelineWarning('Some playback observations could not be saved. The exam recording continues separately.'); throw failure; }
   }, []);
   const [confirmedSpeechUsed, setConfirmedSpeechUsed] = useState(false);
+  const [captureRequired, setCaptureRequired] = useState(true);
   const [recordingActive, setRecordingActive] = useState(false);
   const [recordingError, setRecordingError] = useState("");
   const [interruptedRecording, setInterruptedRecording] = useState(false);
@@ -180,7 +184,7 @@ export default function StudentExam() {
   const recordingMix = useRef<RecordingMix | null>(null);
   const examinerVideo = useRef<HTMLVideoElement | null>(null);
   // The talking avatar and spoken answers appear only when this server runs the avatar service.
-  const avatarOn = !!avatar?.enabled && !developerMinimal && !!sessionId;
+  const avatarOn = !!avatar?.enabled && !developerMinimal && !!sessionId && (demoAttempt || recordingActive);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -339,6 +343,11 @@ export default function StudentExam() {
     setInterruptedRecording(false); setPartialRecordingSaved(false);
     recorder.addEventListener("dataavailable", event => {
       if (event.data.size === 0) return;
+      const buffered = recordingChunks.current.reduce((total, chunk) => total + chunk.blob.size, 0);
+      if (buffered + event.data.size > 16 * 1024 * 1024) {
+        interruptRecording('The recording upload buffer reached its limit. Save the partial recording and contact your professor.');
+        return;
+      }
       recordingChunks.current.push({
         index: nextChunkIndex.current++,
         blob: event.data,
@@ -427,7 +436,7 @@ export default function StudentExam() {
     } finally { setSavingPartialRecording(false); }
   }
 
-  async function beginExam() {
+  async function beginExam(recordMedia = true) {
     if (started.current) return;
     started.current = true;
     setLoading(true);
@@ -456,57 +465,43 @@ export default function StudentExam() {
       if (!studentToken) {
         throw new Error("Exam authorization is missing. Return to your exam list to start.");
       }
-      const preflight = await apiRequest<{
+      const preflight = recordMedia ? await apiRequest<{
         ready: boolean;
         recording_required: boolean;
       }>("/exam/video-recording/preflight", {
         student_id: studentId,
         exam_template_id: examTemplateId,
         student_token: studentToken,
-      });
+      }) : { ready: true, recording_required: false };
       if (!preflight.ready || typeof preflight.recording_required !== "boolean") {
         throw new Error("The server did not confirm exam recording readiness.");
       }
       if (!mounted.current) throw new Error('Exam startup was cancelled when leaving the page.');
       let mimeType = "";
-      if (preflight.recording_required) {
-        if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
-          throw new Error("Camera and microphone access requires a trusted HTTPS connection.");
-        }
-        if (typeof MediaRecorder === "undefined") {
-          throw new Error("This browser does not support exam video recording.");
-        }
-        mimeType = getRecordingMimeType();
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: { width: { ideal: 640 }, height: { ideal: 480 } },
-          audio: true,
-        });
-        if (!mounted.current) throw new Error('Exam startup was cancelled when leaving the page.');
-      }
+
 
       let saved = sessionStorage.getItem(storageKey);
-      if (saved && preflight.recording_required) {
-        let finished = false;
+      if (saved) {
+        let previous: StartResponse;
         try {
           const attempt = JSON.parse(saved) as { id: string; token: string };
-          const state = await fetch(`/api/exam/sessions/${encodeURIComponent(attempt.id)}`,
+          const response = await fetch(`/api/exam/sessions/${encodeURIComponent(attempt.id)}`,
             { headers: { Authorization: `Bearer ${attempt.token}` } });
-          if (state.ok) {
-            const previous = await state.json() as StartResponse;
-            if (previous.status === 'flagged' && previous.technical_restart_allowed === true) {
-              // This is a new attempt, explicitly authorized for a technical failure.
-              // Never resume the interrupted recording or erase its server evidence.
-              sessionStorage.removeItem(storageKey); saved = null;
-            } else finished = previous.status !== 'in_progress';
-          }
-        } catch { /* treat as interrupted below */ }
-        if (finished) {
-          sessionStorage.removeItem(storageKey);
-          throw new Error("You have already completed this exam.");
+          if (!response.ok) throw new Error('Unable to read the saved attempt.');
+          previous = await response.json() as StartResponse;
+        } catch {
+          throw new Error('Unable to safely resume this attempt. Contact your professor.');
         }
-        if (saved) throw new Error(
-          "This attempt may have an interrupted recording and cannot be safely resumed. Contact your professor.",
-        );
+        if (previous.status === 'flagged' && previous.technical_restart_allowed === true) {
+          // A technical restart creates a new attempt and preserves the old evidence.
+          sessionStorage.removeItem(storageKey); saved = null;
+        } else if (previous.status !== 'in_progress') {
+          sessionStorage.removeItem(storageKey);
+          throw new Error('You have already completed this exam.');
+        } else if (previous.recording_consent_status === 'consented'
+          || (previous.recording_consent_status === undefined && previous.record_examination !== false && !previous.developer_demo)) {
+          throw new Error('This attempt may have an interrupted recording and cannot be safely resumed. Contact your professor.');
+        }
       }
 
       let result: StartResponse;
@@ -539,30 +534,65 @@ export default function StudentExam() {
       }
 
       if (!mounted.current) throw new Error('Exam startup was cancelled when leaving the page.');
-      if (preflight.recording_required && result.developer_demo !== true) {
-        if (!stream) throw new Error("Camera and microphone access is required.");
-        const startResponse = await fetch(
-          `/api/exam/sessions/${encodeURIComponent(result.session_id)}/video-recording/start`,
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${sessionToken.current}`,
+      if (result.recording_consent_status === 'pending') {
+        const choice = await apiRequest<ExamTiming & { recording_consent_status: string; decided_at?: string }>(
+          `/exam/sessions/${encodeURIComponent(result.session_id)}/recording-consent`,
+          { consent: recordMedia }, sessionToken.current);
+        result = { ...result, ...choice, started_at: choice.decided_at ?? result.started_at };
+      }
+      const shouldCapture = result.developer_demo !== true && result.record_examination !== false
+        && result.recording_consent_status !== 'declined' && preflight.recording_required;
+      setCaptureRequired(shouldCapture);
+      if (!shouldCapture) setKeyboardMode(true);
+      if (shouldCapture) {
+
+        try {
+          if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
+            throw new Error("Camera and microphone access requires a trusted HTTPS connection.");
+          }
+          if (typeof MediaRecorder === "undefined") {
+            throw new Error("This browser does not support exam video recording.");
+          }
+          mimeType = getRecordingMimeType();
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: { width: { ideal: 640, max: 640 }, height: { ideal: 480, max: 480 }, frameRate: { ideal: 15, max: 15 } },
+            audio: true,
+          });
+          if (!mounted.current) throw new Error('Exam startup was cancelled when leaving the page.');
+
+          if (!stream) throw new Error("Camera and microphone access is required.");
+          const startResponse = await fetch(
+            `/api/exam/sessions/${encodeURIComponent(result.session_id)}/video-recording/start`,
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${sessionToken.current}`,
+              },
+              body: JSON.stringify({ content_type: mimeType }),
             },
-            body: JSON.stringify({ content_type: mimeType }),
-          },
-        );
-        if (!startResponse.ok) {
-          const body = await startResponse.json().catch(() => ({}));
-          throw new Error(
-            typeof body.detail === "string"
-              ? body.detail
-              : `Unable to start secure video recording (${startResponse.status}).`,
           );
+          if (!startResponse.ok) {
+            const body = await startResponse.json().catch(() => ({}));
+            throw new Error(
+              typeof body.detail === "string"
+                ? body.detail
+                : `Unable to start secure video recording (${startResponse.status}).`,
+            );
+          }
+          if (!mounted.current) throw new Error('Exam startup was cancelled when leaving the page.');
+          startMediaRecording(result.session_id, sessionToken.current, stream, mimeType);
+          stream = null;
+        } catch (failure) {
+          if (!mounted.current) throw failure;
+          (stream as MediaStream | null)?.getTracks().forEach(track => track.stop()); stream = null;
+          setCaptureRequired(false); setKeyboardMode(true);
+          setLiveMessage('Recording is unavailable. This attempt uses typed answers.');
+          const status = failure instanceof DOMException && ['NotAllowedError', 'SecurityError'].includes(failure.name)
+            ? 'permission_denied' : 'unavailable';
+          await apiRequest(`/exam/sessions/${encodeURIComponent(result.session_id)}/video-recording/failure`,
+            { status }, sessionToken.current).catch(() => undefined);
         }
-        if (!mounted.current) throw new Error('Exam startup was cancelled when leaving the page.');
-        startMediaRecording(result.session_id, sessionToken.current, stream, mimeType);
-        stream = null;
       }
 
       if (result.status === "in_progress") updateClock(result);
@@ -586,7 +616,7 @@ export default function StudentExam() {
         setShowConfirmation(true);
       }
     } catch (err) {
-      stream?.getTracks().forEach(track => track.stop());
+      (stream as MediaStream | null)?.getTracks().forEach(track => track.stop());
       if (startedAttempt && startedAttempt.developer_demo !== true && sessionToken.current) {
         if (mediaRecorder.current) interruptRecording('Recording could not be started safely. Contact your professor.');
         else void createMediaTimeline(startedAttempt.session_id, sessionToken.current, () => null)
@@ -639,7 +669,7 @@ export default function StudentExam() {
     if (!sessionId) return;
     setFinalizationPending(true);
     try {
-      if (!demoAttempt) await finishRecording(sessionId, sessionToken.current);
+      if (!demoAttempt && mediaRecorder.current) await finishRecording(sessionId, sessionToken.current);
       if (recordingInterrupted.current) { setPartialRecordingSaved(true); return; }
       setShowConfirmation(true);
       setRecordingError("");
@@ -681,7 +711,7 @@ export default function StudentExam() {
     const current = clock.current ? remainingTime(clock.current, performance.now()) : remaining;
     const timedOut = current.exam === 0 || current.question === 0;
     if (endRequestedRef.current || recordingInterrupted.current || !sessionId || (!answer.trim() && !timedOut) || submittingRequest.current
-        || assisting || speechBusy || questionAudioBusy || (!demoAttempt && (!recordingActive || Boolean(recordingError)))) return;
+        || assisting || speechBusy || questionAudioBusy || (captureRequired && !demoAttempt && (!recordingActive || Boolean(recordingError)))) return;
 
     submittingRequest.current = true;
     setSubmitting(true);
@@ -790,17 +820,18 @@ export default function StudentExam() {
     questionAudioBusy,
     demoAttempt,
     recordingActive,
+    captureRequired,
     recordingError,
     finalizeCompletedExam,
   ]);
 
   useEffect(() => {
     if (oralSubmission.current !== questionNumber || submitting || assisting || speechBusy || questionAudioBusy
-        || interruptedRecording || (!demoAttempt && (!recordingActive || Boolean(recordingError)))) return;
+        || interruptedRecording || (captureRequired && !demoAttempt && (!recordingActive || Boolean(recordingError)))) return;
     oralSubmission.current = null;
     void handleNext();
   }, [answer, questionNumber, submitting, assisting, speechBusy, questionAudioBusy, interruptedRecording,
-      demoAttempt, recordingActive, recordingError, handleNext]);
+      demoAttempt, captureRequired, recordingActive, recordingError, handleNext]);
 
   useEffect(() => { setVoiceNotice(""); setQuestionTextShown(false); }, [questionNumber]);
 
@@ -840,16 +871,18 @@ export default function StudentExam() {
           <h1>Exam recording notice</h1>
           <p>
             Assessed exams record camera video and microphone audio while the
-            exam is in progress. The recording and your submitted answers are
+            exam is in progress. If you consent, the recording and your submitted answers are
             stored on the exam server and made available to the professor who
             owns this exam for later review. The owning professor may also view
             your video live during the active attempt. Saved recordings follow
             this server's configured retention deadline.
           </p>
           <p>
-            Camera, microphone, and server storage must remain available for
-            the full exam. If recording cannot be started or saved, the exam
-            cannot proceed or be submitted.
+            Recording is optional. You may decline and submit typed answers. Your
+            professor will see that no recording was saved. Professor assessment
+            requires a completed retained recording under this server's policy.
+            During a recorded spoken attempt, a recording interruption ends the attempt
+            for professor review; it cannot be resumed.
           </p>
           {recordingNotice?.recording_required && <p>
             Recording retention deadline: <strong>{new Date(recordingNotice.retention_until!).toLocaleString(undefined, { timeZoneName: 'short' })}</strong>.
@@ -869,8 +902,11 @@ export default function StudentExam() {
                 void beginExam();
               }}
             >
-              I understand — start recording and exam
+              I consent — start recording and exam
             </button>
+            <button type="button" className="back-button" onClick={() => {
+              setConsentAccepted(true); void beginExam(false);
+            }}>Decline recording and use typed answers</button>
             <button
               type="button"
               className="back-button"
@@ -1026,7 +1062,7 @@ export default function StudentExam() {
   const sampleQuestion = question.startsWith("[Developer demo] ");
   const questionText = sampleQuestion ? question.slice("[Developer demo] ".length) : question;
   const endExamButton = <button type="button" className="exam-end-button"
-    disabled={submitting || endingExam || interruptedRecording || finalizationPending || (!demoAttempt && !recordingActive)}
+    disabled={submitting || endingExam || interruptedRecording || finalizationPending || (captureRequired && !demoAttempt && !recordingActive)}
     onClick={() => endRequested ? void endExamNow() : setEndConfirmation(true)}>
     {endingExam ? 'Ending exam…' : endRequested ? 'Retry ending exam' : 'End exam'}
   </button>;
@@ -1038,7 +1074,7 @@ export default function StudentExam() {
           <p>Listen to the examiner. The question appears here once it has been asked.</p>
           <button type="button" className="exam-question-show" onClick={() => setQuestionTextShown(true)}>Show the question now</button>
         </div>}
-    {!developerMinimal && <SpeechDraft sessionId={sessionId} token={sessionToken.current}
+    {!developerMinimal && (demoAttempt || recordingActive) && <SpeechDraft sessionId={sessionId} token={sessionToken.current}
       sequence={questionNumber} stream={mediaStream.current}
       disabled={endRequested || submitting || assisting || questionAudioBusy || expired || (!demoAttempt && (!recordingActive || Boolean(recordingError)))}
       onBusyChange={setSpeechBusy} onDraftConfirmed={(text, metadata) => {
@@ -1101,7 +1137,7 @@ export default function StudentExam() {
         )}
       </div>
     )}
-    {!demoAttempt && !recordingActive && !showConfirmation && !interruptedRecording && (
+    {captureRequired && !demoAttempt && !recordingActive && !showConfirmation && !interruptedRecording && (
       <p role="status">Exam interaction is paused until recording is active.</p>
     )}
     <div className="exam-question-footer">
@@ -1113,7 +1149,7 @@ export default function StudentExam() {
         type="submit"
         className="exam-next-button"
         disabled={endRequested || (!answer.trim() && !expired) || submitting || assisting || speechBusy || questionAudioBusy
-          || (!demoAttempt && (!recordingActive || Boolean(recordingError)))}
+          || (captureRequired && !demoAttempt && (!recordingActive || Boolean(recordingError)))}
       >
         {submitting ? "Saving…" : expired ? "Retry submission →" : demoAttempt ? "Submit test answer →" : "Submit answer →"}
       </button>
@@ -1169,7 +1205,7 @@ export default function StudentExam() {
         <summary>Accessibility and recovery</summary>
         <p>The examiner asks, listens, and continues automatically. You can say “repeat the question”, “can you clarify”, or “move on”.
           After two retries without an intelligible response, the examiner moves on and records the question as unanswered.</p>
-        <button type="button" disabled={endRequested || submitting || recording || speechBusy || questionAudioBusy} onClick={() => setKeyboardMode(value => !value)}>
+        <button type="button" disabled={endRequested || submitting || recording || speechBusy || questionAudioBusy || (!demoAttempt && !recordingActive)} onClick={() => setKeyboardMode(value => !value)}>
           {keyboardMode ? 'Return to spoken exam' : 'Use keyboard controls'}
         </button>
       </details>}

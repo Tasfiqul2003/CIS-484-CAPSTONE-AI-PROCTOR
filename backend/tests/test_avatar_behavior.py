@@ -114,6 +114,7 @@ def test_allowed_generated_followup_retains_root_and_increments_index(monkeypatc
         monkeypatch.setattr(module, 'demo_for_session', lambda session: True)
         monkeypatch.setattr(module, 'minimal_for_session', lambda session: False)
         monkeypatch.setattr(module, 'ai_available', lambda *a: True)
+    monkeypatch.setattr(exam, "ask_follow_up", lambda *a, **k: ("Allowed synthetic follow-up", "Synthetic focus"))
     monkeypatch.setattr(exam, "ask_model", lambda *a: {"question": "Allowed synthetic follow-up"})
     monkeypatch.setattr(stream, "decide", lambda *a: {"action": "follow_up", "follow_up_focus": "Synthetic focus"})
     if streaming:

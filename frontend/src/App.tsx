@@ -19,6 +19,7 @@ import ManageExam from "./pages/professor/ManageExam";
 import ExamSettingsPage, { LegacyAvatarSettingsRedirect } from "./pages/professor/ExamSettingsPage";
 import { examSettingsCategories } from "./pages/professor/examSettingsNavigation";
 import ExamSubmissions from "./pages/professor/ExamSubmissions";
+import StudentReview from "./pages/professor/StudentReview";
 import ExamSessionReview from "./pages/professor/ExamSessionReview";
 import ProfessorLiveVideo from "./pages/professor/ProfessorLiveVideo";
 import ProfessorAvatar from "./pages/professor/ProfessorAvatar";
@@ -122,6 +123,12 @@ if (
 
   if (/^\/professor\/exam-sessions\/[^/]+\/live\/?$/.test(path)) {
     return <ProfessorLiveVideo />;
+  }
+  const studentReviewRoute = path.match(
+    /^\/professor\/exams\/([^/]+)\/submissions\/([^/]+)\/?$/
+  );
+  if (studentReviewRoute) {
+    return <StudentReview examId={studentReviewRoute[1]} sessionId={studentReviewRoute[2]} />;
   }
 
   if (

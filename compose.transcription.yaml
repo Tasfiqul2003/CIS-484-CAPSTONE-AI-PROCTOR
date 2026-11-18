@@ -1,0 +1,29 @@
+# Use together with docker-compose.yml. This adds only the speech worker.
+services:
+  transcription-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.transcription
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      EXAM_VIDEO_DIR: /var/lib/oral-exam/recordings
+      EXAM_TRANSCRIPTION_MODEL_DIR: /models/transcription
+      EXAM_TRANSCRIPTION_CPU_THREADS: ${EXAM_TRANSCRIPTION_CPU_THREADS:-1}
+      EXAM_TRANSCRIPTION_TIMEOUT_SECONDS: ${EXAM_TRANSCRIPTION_TIMEOUT_SECONDS:-900}
+      EXAM_TRANSCRIPTION_LANGUAGE: ${EXAM_TRANSCRIPTION_LANGUAGE:-en}
+      OMP_NUM_THREADS: 1
+      OPENBLAS_NUM_THREADS: 1
+      MKL_NUM_THREADS: 1
+    volumes:
+      - exam_videos:/var/lib/oral-exam/recordings:ro
+      - ${EXAM_TRANSCRIPTION_MODELS_DIR:?Set EXAM_TRANSCRIPTION_MODELS_DIR to a local model directory}:/models/transcription:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    mem_limit: ${EXAM_TRANSCRIPTION_MEMORY_LIMIT:-1g}
+    cpus: 1
+    pids_limit: 128
+    restart: unless-stopped

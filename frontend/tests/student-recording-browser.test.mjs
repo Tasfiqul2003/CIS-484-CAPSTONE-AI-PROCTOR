@@ -48,8 +48,9 @@ async function waitUntil(check) {
   }
 }
 try {
-  for (const scenario of (realAutomatic?['automatic-completion']:['upload-failure', 'upload-timeout', 'track-ended', 'recorder-error', 'unexpected-stop', 'normal-completion', 'final-upload-retry',
-    'automatic-completion', 'early-end', 'early-end-retry', 'early-end-timeout', 'technical-restart', 'completed-restart-denied', 'leave-pending-capture', 'leave-pending-start', 'leave-pending-recording-start', 'recording-start-failure'])) {
+  const selected = process.env.CYBROS_RECORDING_SCENARIOS?.split(',');
+  for (const scenario of (selected ?? (realAutomatic?['automatic-completion']:['upload-failure', 'upload-timeout', 'track-ended', 'recorder-error', 'unexpected-stop', 'normal-completion', 'final-upload-retry',
+    'automatic-completion', 'early-end', 'early-end-retry', 'early-end-timeout', 'technical-restart', 'completed-restart-denied', 'leave-pending-capture', 'leave-pending-start', 'leave-pending-recording-start', 'recording-start-failure', 'recording-declined', 'permission-denied']))) {
     const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
     const errors = [], unexpected = [], events = [], accepted = new Set();
     let endCalls = 0; let status = 'in_progress', answerCalls = 0, completeCalls = 0, failedOnce = false, startCalls = 0, recordingStartCalls = 0;
@@ -74,6 +75,7 @@ try {
         get() { return this.fixtureStream || null; }, set(value) { this.fixtureStream = value; } });
       Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: {
         getUserMedia: async () => { fixture.fakeCaptureCalls++;
+          if (scenario === 'permission-denied') throw new DOMException('Synthetic denial', 'NotAllowedError');
           if (scenario === 'leave-pending-capture') return new Promise(resolve => { fixture.resolveCapture = () => resolve(stream); });
           return stream; },
         getDisplayMedia: () => { fixture.displayCalls++; throw Error('Display capture forbidden'); },
@@ -120,12 +122,18 @@ try {
         startCalls++;
         const respond = () => json({ session_id: sid, session_token: 'synthetic-session-token', status,
           sequence_num: 1, question: 'Synthetic approved question', developer_demo: false,
+          record_examination: true, generate_transcript: true, recording_consent_status: 'pending',
           server_now: new Date().toISOString(), deadline: null, question_deadline: null, pause_until: null });
         if (scenario === 'leave-pending-start') { releaseStart = respond; return; }
         return respond();
       }
       assert.equal(request.headers()['authorization'], 'Bearer synthetic-session-token');
       if(url.pathname==='/api/exam/sessions/old-synthetic-attempt')return json({status:'flagged',technical_restart_allowed:scenario==='technical-restart'});
+      if (url.pathname.endsWith('/recording-consent')) return json({
+        recording_consent_status: request.postDataJSON().consent ? 'consented' : 'declined',
+        recording_enabled: request.postDataJSON().consent, decided_at: new Date().toISOString(),
+        server_now: new Date().toISOString(), deadline: null, question_deadline: null });
+      if (url.pathname.endsWith('/video-recording/failure')) return json({ status: request.postDataJSON().status });
       if(realAutomatic && url.pathname.endsWith('/presentation'))return json({detail:'Synthetic optional settings unavailable'},503);
       if(realAutomatic && url.pathname.endsWith('/speech/capabilities'))return json({synthesis:{available:true},transcription:{available:true,accepted_mime_types:['audio/webm']}});
       const bytes=Buffer.from('synthetic-wave');
@@ -171,9 +179,9 @@ try {
     try {
       await page.goto(`http://127.0.0.1:52396/student/exam?templateId=${exam}&studentId=${student}`);
       await page.getByRole('button', { name: 'Continue fixture preview', exact: true }).click();
-      await page.getByRole('button', { name: 'I understand — start recording and exam', exact: true }).click();
+      await page.getByRole('button', { name: scenario === 'recording-declined' ? 'Decline recording and use typed answers' : 'I consent — start recording and exam', exact: true }).click();
       if(scenario==='completed-restart-denied'){await page.getByText('You have already completed this exam.',{exact:true}).waitFor();assert.equal(startCalls,0);assert.equal(recordingStartCalls,0);assert.deepEqual(unexpected,[]);assert.deepEqual(errors,[]);console.log('PASS completed-restart-denied: ordinary terminal attempt cannot reopen');passed++;continue;}
-      if (scenario.startsWith('leave-pending-') || scenario === 'recording-start-failure') {
+      if (scenario.startsWith('leave-pending-')) {
         if (scenario === 'leave-pending-capture') {
           await page.waitForFunction(() => window.fixture.fakeCaptureCalls === 1);
           await page.evaluate(() => { window.unmountHarness(); window.fixture.resolveCapture(); });
@@ -186,7 +194,7 @@ try {
           await waitUntil(() => status === 'flagged');
           assert.equal(startCalls, 1);
           assert.ok(await page.evaluate(({ exam, student }) => !!sessionStorage.getItem(`oralexam_attempt:${exam}:${student}`), { exam, student }));
-        } else { assert.equal(startCalls, 0); assert.equal(recordingStartCalls, 0); }
+        } else { await waitUntil(() => status === 'flagged'); assert.equal(startCalls, 1); assert.equal(recordingStartCalls, 0); }
         const resource = await page.evaluate(() => ({ starts: window.fixture.recordingStarts, live: window.fixture.liveStops }));
         assert.equal(resource.starts, 0); assert.equal(resource.live, 0);
         assert.equal(answerCalls, 0); assert.equal(completeCalls, 0);
@@ -194,10 +202,21 @@ try {
         console.log(`PASS ${scenario}: late startup cannot acquire ongoing resources or lose a created attempt receipt`); passed++;
         continue;
       }
+      if (['recording-declined', 'permission-denied', 'recording-start-failure'].includes(scenario)) {
+        await page.getByLabel('Your answer', { exact: true }).fill('Synthetic typed answer without recording');
+        await page.getByRole('button', { name: /Submit answer/ }).click();
+        await page.getByText('No complete recording was saved for this attempt.', { exact: false }).waitFor();
+        assert.equal(answerCalls, 1); assert.equal(completeCalls, 0); assert.equal(status, 'pending_grading');
+        assert.equal(events.length, 0, 'No recording timeline is invented for a typed-only attempt');
+        assert.equal(await page.evaluate(() => window.fixture.fakeCaptureCalls), scenario === 'recording-declined' ? 0 : 1);
+        assert.equal(await page.evaluate(() => window.fixture.recordingStarts), 0);
+        assert.deepEqual(unexpected, []); assert.deepEqual(errors, []);
+        console.log(`PASS ${scenario}: typed answers submit without media, with no false recording completion`); passed++; continue;
+      }
       if(scenario==='automatic-completion'){
         await page.waitForFunction(()=>!!window.fixture.recorder);
         await page.evaluate(()=>window.fixture.emitChunk());
-        await page.getByText('Your answers and the exam recording have been saved to the exam server.',{exact:false}).waitFor();
+        await page.getByText('The exam recording has also been saved.',{exact:false}).waitFor();
         assert.equal(answerCalls,1);assert.equal(completeCalls,1);assert.equal(status,'pending_grading');
         assert.deepEqual(unexpected,[]);assert.deepEqual(errors,[]);
         if(realAutomatic) assert.deepEqual(events.filter(event=>event.kind.startsWith('question_audio')).map(event=>event.kind),['question_audio_started','question_audio_ended']);
@@ -213,12 +232,12 @@ try {
         const end=page.getByRole('button',{name:'End exam',exact:true});await end.click();
         const dialog=page.getByRole('dialog',{name:'End this exam?'});await dialog.waitFor();
         const box=await dialog.boundingBox();assert.ok(box.x>=0&&box.x+box.width<=390);
-        if(scenario==='early-end')await page.screenshot({path:path.join(frontend,'../.cache/end-exam-dialog.png'),fullPage:true});
+        if(scenario==='early-end')await page.screenshot({path:path.join(process.env.TEMP || process.env.TMP || frontend,'cybros-merge-end-exam-dialog.png'),fullPage:true});
         await page.getByRole('button',{name:'Continue exam',exact:true}).click();
         assert.equal(endCalls,0);assert.equal(answerCalls,0);assert.equal(await answer.inputValue(),'Synthetic answer retained across failure');
         await end.click();await page.getByRole('button',{name:'End exam and save',exact:true}).click();
         if(['early-end-retry','early-end-timeout'].includes(scenario))await page.getByRole('button',{name:'Retry ending exam',exact:true}).click();
-        await page.getByText('Your answers and the exam recording have been saved to the exam server.',{exact:false}).waitFor();
+        await page.getByText('The exam recording has also been saved.',{exact:false}).waitFor();
         assert.equal(answerCalls,0);assert.equal(completeCalls,1);assert.equal(accepted.size,2);
         assert.equal(endCalls,['early-end-retry','early-end-timeout'].includes(scenario)?2:1);assert.equal(status,'pending_grading');
         assert.deepEqual(unexpected,[]);assert.deepEqual(errors,[]);
@@ -232,7 +251,7 @@ try {
         if (scenario === 'final-upload-retry') {
           await page.getByRole('button', { name: 'Retry saving the completed recording', exact: true }).click();
         }
-        await page.getByText('Your answers and the exam recording have been saved to the exam server.', { exact: false }).waitFor();
+        await page.getByText('The exam recording has also been saved.', { exact: false }).waitFor();
         assert.equal(status, 'pending_grading'); assert.equal(answerCalls, 1);
         if(scenario==='technical-restart')assert.equal(startCalls,1);
         assert.equal(events.filter(event => event.kind === 'recording_interrupted').length, 0);

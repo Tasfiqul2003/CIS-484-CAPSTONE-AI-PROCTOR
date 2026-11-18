@@ -24,7 +24,9 @@ def test_default_plan_never_reads_secrets_starts_database_or_connects(monkeypatc
     monkeypatch.setattr(upgrade, 'create_engine', forbidden)
     assert upgrade.run('plan') == 0
     assert '"starts_services": false' in capsys.readouterr().out
-    assert len(upgrade.plan()['new_migrations']) == 7
+    assert len(upgrade.plan()['new_migrations']) == 14
+    assert 'migrations/014_exam_recording_settings.sql' in upgrade.plan()['new_migrations']
+    assert 'migrations/024_retained_avatar_segments.sql' in upgrade.plan()['new_migrations']
     assert 'migrations/021_automatic_oral_transcripts.sql' in upgrade.plan()['new_migrations']
 
 

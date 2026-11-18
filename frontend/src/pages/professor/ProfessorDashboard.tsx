@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import ProfessorHeader from "../../components/professor/ProfessorHeader";
 import ExamRow from "../../components/professor/ExamRow";
+import "./recording-notifications.css";
 
 type Professor = {
   username: string;
@@ -23,6 +24,17 @@ type Exam = {
   flagged_count: number;
   submitted_student_count?: number;
   roster_count?: number;
+};
+
+type RecordingNotification = {
+  id: string;
+  event_type: "recording_declined" | "recording_failed";
+  exam_id: string;
+  exam_title: string;
+  course: string | null;
+  student_name: string;
+  student_eid: string;
+  created_at: string;
 };
 
 function getErrorMessage(data: any, fallback: string): string {
@@ -53,6 +65,45 @@ export default function ProfessorDashboard() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [recordingNotifications, setRecordingNotifications] =
+    useState<RecordingNotification[]>([]);
+  const [notificationsLoading, setNotificationsLoading] = useState(true);
+  const [notificationError, setNotificationError] = useState("");
+
+  const loadRecordingNotifications = useCallback(async () => {
+    setNotificationsLoading(true);
+    setNotificationError("");
+
+    try {
+      const response = await fetch(
+        "/api/auth/professor/recording-notifications",
+        { credentials: "include" }
+      );
+
+      const data = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        if (response.status === 401 || response.status === 403) {
+          window.location.href = "/professor/login";
+          return;
+        }
+
+        throw new Error(
+          getErrorMessage(data, "Unable to load recording notifications.")
+        );
+      }
+
+      setRecordingNotifications(Array.isArray(data) ? data : []);
+    } catch (err) {
+      setNotificationError(
+        err instanceof Error
+          ? err.message
+          : "Unable to load recording notifications."
+      );
+    } finally {
+      setNotificationsLoading(false);
+    }
+  }, []);
   // Clicking an overview card shows just those exams.
   const [filter, setFilter] = useState<"all" | "published" | "draft" | "awaiting">("all");
 
@@ -97,7 +148,10 @@ export default function ProfessorDashboard() {
         }
 
         setProfessor(user);
-        await loadExams();
+        await Promise.all([
+          loadExams(),
+          loadRecordingNotifications(),
+        ]);
       } catch (err) {
         setError(
           err instanceof Error
@@ -110,7 +164,7 @@ export default function ProfessorDashboard() {
     }
 
     initialize();
-  }, [loadExams]);
+  }, [loadExams, loadRecordingNotifications]);
 
 
   async function togglePublication(exam: Exam) {
@@ -206,10 +260,6 @@ export default function ProfessorDashboard() {
       <main className="professor-dashboard-content">
         <section className="dashboard-welcome">
           <h1>Welcome back, {professorName}.</h1>
-          <p>
-            Your oral examinations, student activity, and grading
-            workflow — all in one place.
-          </p>
         </section>
 
         {error && (
@@ -217,6 +267,79 @@ export default function ProfessorDashboard() {
             {error}
           </p>
         )}
+
+        <section
+          className="recording-notifications"
+          aria-labelledby="recording-notifications-heading"
+        >
+          <div className="recording-notifications-heading">
+            <div>
+              <p className="eyebrow">STUDENT CONSENT</p>
+              <h2 id="recording-notifications-heading">
+                Recording notifications
+              </h2>
+              <p>
+                  Recording consent declines and capture failures appear here.
+              </p>
+            </div>
+
+            <span className="recording-notification-count">
+              {recordingNotifications.length}
+            </span>
+          </div>
+
+          {notificationsLoading ? (
+            <p>Loading recording notifications...</p>
+          ) : notificationError ? (
+            <p className="dashboard-error" role="alert">
+              {notificationError}
+            </p>
+          ) : recordingNotifications.length === 0 ? (
+            <div className="recording-notifications-empty">
+              <p>No recording consent notifications.</p>
+            </div>
+          ) : (
+            <div className="recording-notification-list">
+              {recordingNotifications.map((notification) => (
+                <article
+                  className="recording-notification-item"
+                  key={notification.id}
+                >
+                  <div
+                    className="recording-notification-icon"
+                    aria-hidden="true"
+                  >
+                    !
+                  </div>
+
+                  <div className="recording-notification-details">
+                      <strong>{notification.event_type === 'recording_declined'
+                        ? 'Student declined recording' : 'Examination recording failed or was interrupted'}</strong>
+                    <p>
+                      {notification.student_name} · {notification.student_eid}
+                    </p>
+                    <p>
+                      {notification.exam_title}
+                      {notification.course
+                        ? ` · ${notification.course}`
+                        : ""}
+                    </p>
+                    <time dateTime={notification.created_at}>
+                      {new Date(notification.created_at).toLocaleString()}
+                    </time>
+                  </div>
+
+                  <a
+                    href={`/professor/exams/${notification.exam_id}/submissions`}
+                    className="recording-notification-link"
+                  >
+                    View submissions
+                  </a>
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
 
         <section className="dashboard-actions" aria-labelledby="dashboard-actions-heading">
           <h2 id="dashboard-actions-heading" className="dashboard-section-title">Create and set up</h2>

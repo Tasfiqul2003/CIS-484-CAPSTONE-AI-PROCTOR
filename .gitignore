@@ -75,3 +75,9 @@ oralexam-airgap-images.tar
 # Frontend media orchestration is source code, not private recording data.
 !/frontend/src/components/media/
 !/frontend/src/components/media/*.ts
+# Sensitive local media and recording assembly output
+recordings/
+*.webm
+*.chunk
+*.assembling
+frontend/tests/*.generated.mjs

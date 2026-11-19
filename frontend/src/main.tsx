@@ -4,6 +4,10 @@ import "./index.css";
 import App from "./App";
 // Loaded last so the review fixes win without editing index.css.
 import "./styles/review-polish.css";
+import "./styles/portal-theme.css";
+import { applyPortalTheme } from "./components/theme/portalTheme";
+
+applyPortalTheme();
 
 const rootElement = document.getElementById("root");
 

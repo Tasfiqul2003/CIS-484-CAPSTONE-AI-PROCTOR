@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import PortalThemeToggle from "../theme/PortalThemeToggle";
+import OralExamMark from "../brand/OralExamMark";
 import ExamStageAvatar from "./ExamStageAvatar";
 import { environmentPresentation, type EnvironmentPresentation } from "./environmentPresentation";
 import type { StudentPreferences } from "../student-settings/studentSettings";
@@ -44,7 +46,12 @@ export default function EnvironmentPreview({ onContinue }: { onContinue: (prefer
     finally { setSaving(false); }
   }
 
-  return <div className="student-exam-page"><main className="student-exam-content">
+  return <div className="student-exam-page">
+    <header className="student-exam-header">
+      <div className="student-exam-logo"><span aria-hidden="true"><OralExamMark size={34} /></span><strong>OralExam AI</strong></div>
+      <PortalThemeToggle />
+    </header>
+    <main className="student-exam-content">
     <section className="exam-question-card environment-preview" aria-labelledby="environment-preview-heading">
       <h1 id="environment-preview-heading">Choose your examiner environment</h1>
       <p>Preview the examiner's background before your exam begins. This preview does not start the timer or use your camera or microphone.</p>

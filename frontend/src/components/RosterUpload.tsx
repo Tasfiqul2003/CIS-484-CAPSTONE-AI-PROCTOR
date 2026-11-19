@@ -5,6 +5,8 @@ type Props = {
 };
 
 type RosterRow = {
+  student_id?: string;
+  has_photo?: boolean;
   name: string;
   email: string;
   eid: string;
@@ -110,6 +112,29 @@ function readRoster(text: string): RosterRow[] {
   return roster;
 }
 
+function RosterPhoto({ examId, student }: { examId: string; student: RosterRow }) {
+  const [failed, setFailed] = useState(false);
+  const src = student.has_photo && student.student_id
+    ? `/api/exam/templates/${encodeURIComponent(examId)}/roster/${encodeURIComponent(student.student_id)}/photo`
+    : null;
+  useEffect(() => setFailed(false), [src]);
+
+  return src && !failed ? (
+    <img
+      className="roster-photo-thumbnail"
+      src={src}
+      alt={`Reference photo for ${student.name}`}
+      width={48}
+      height={64}
+      loading="lazy"
+      decoding="async"
+      onError={() => setFailed(true)}
+    />
+  ) : (
+    <span className="roster-photo-placeholder">{failed ? "No preview" : "No photo"}</span>
+  );
+}
+
 export default function RosterUpload({ examId }: Props) {
   const [file, setFile] = useState<File | null>(null);
   const isPhotoArchive = file?.name.toLowerCase().endsWith(".zip") ?? false;
@@ -125,6 +150,7 @@ export default function RosterUpload({ examId }: Props) {
   const [savedRosterError, setSavedRosterError] = useState("");
   const [deleting, setDeleting] = useState(false);
   const [deleteMessage, setDeleteMessage] = useState("");
+  const previewRoster = result || !file ? savedRoster : roster;
 
   async function handleFileChange(
     event: React.ChangeEvent<HTMLInputElement>
@@ -499,7 +525,7 @@ export default function RosterUpload({ examId }: Props) {
                   {result ? "Uploaded Student Roster" : "Review Students"}
                 </h2>
                 <p className="roster-modal-subtitle">
-                  {file?.name ?? "Saved roster"} · {(file ? roster : savedRoster).length} students
+                  {file?.name ?? "Saved roster"} · {previewRoster.length} students
                 </p>
               </div>
 
@@ -531,15 +557,17 @@ export default function RosterUpload({ examId }: Props) {
                   <thead>
                     <tr>
                       <th scope="col">#</th>
+                      <th scope="col">Photo</th>
                       <th scope="col">Student name</th>
                       <th scope="col">Email address</th>
                       <th scope="col">JMU EID</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {(file ? roster : savedRoster).map((student, index) => (
+                    {previewRoster.map((student, index) => (
                       <tr key={`${student.eid}-${index}`}>
                         <td>{index + 1}</td>
+                        <td><RosterPhoto examId={examId} student={student} /></td>
                         <td className="roster-student-name">{student.name}</td>
                         <td>{student.email}</td>
                         <td>

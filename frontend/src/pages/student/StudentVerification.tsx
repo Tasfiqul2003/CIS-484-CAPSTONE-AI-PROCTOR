@@ -1,3 +1,4 @@
+import PortalThemeToggle from "../../components/theme/PortalThemeToggle";
 import { useEffect, useRef, useState } from "react";
 import { CheckCircle2 } from "lucide-react";
 import JACardScanner from "../../components/JACardScanner";
@@ -94,6 +95,7 @@ export default function StudentVerification() {
           <span className="logo-icon" aria-hidden="true"><OralExamMark size={34} /></span>
           <span>OralExam AI</span>
         </a>
+        <PortalThemeToggle />
       </header>
 
       <main id="main-content" className="verification-content" aria-labelledby="verification-heading">

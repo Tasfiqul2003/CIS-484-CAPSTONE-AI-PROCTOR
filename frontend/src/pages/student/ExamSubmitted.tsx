@@ -1,3 +1,4 @@
+import PortalThemeToggle from "../../components/theme/PortalThemeToggle";
 import { useState } from "react";
 import { DemoAttemptNotice } from "../../components/developer-demo/DemoWorkspace";
 
@@ -57,6 +58,7 @@ export default function ExamSubmitted() {
 
   return (
     <div className="student-submission-page">
+      <div className="portal-submission-toolbar"><PortalThemeToggle /></div>
       <div className="student-submission-card">
         <div className="submission-success-icon">✓</div>
         <p className="submission-eyebrow">EXAM COMPLETE</p>

@@ -4,7 +4,7 @@ import type { OdsAccommodationsState } from "./odsAssignmentState";
 import "./category-settings.css";
 import "./ods-accommodations.css";
 
-export default function OdsAccommodations({ examId }: { examId: string }) {
+export default function OdsAccommodations({ examId, refreshKey = 0 }: { examId: string; refreshKey?: number }) {
   const [data, setData] = useState<OdsAccommodationsState | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState("");
@@ -16,8 +16,9 @@ export default function OdsAccommodations({ examId }: { examId: string }) {
   const [file, setFile] = useState<File | null>(null);
   const action = useRef<AbortController | null>(null);
   const fileInput = useRef<HTMLInputElement | null>(null);
+  const lastRefresh = useRef(refreshKey);
   const endpoint = `/api/exam/templates/${encodeURIComponent(examId)}/ods-accommodations`;
-  const timeSettings = `/professor/exams/${encodeURIComponent(examId)}/settings/time-scheduling`;
+  const timeSettings = "#time-limits";
   const disabled = loading || !!busy || !data;
 
   const readResponse = async (response: Response) => {
@@ -62,6 +63,16 @@ export default function OdsAccommodations({ examId }: { examId: string }) {
       action.current = null;
     };
   }, [load]);
+
+  useEffect(() => {
+    // Refresh totals after a time save, without clearing an in-progress EID form.
+    // If an accommodation save is active, wait for it to finish first.
+    if (refreshKey === lastRefresh.current || busy) return;
+    lastRefresh.current = refreshKey;
+    const controller = new AbortController();
+    void load(controller.signal);
+    return () => controller.abort();
+  }, [refreshKey, busy, load]);
 
   async function save(kind: string, suffix: string, init: RequestInit, success: string) {
     if (disabled || action.current) return;

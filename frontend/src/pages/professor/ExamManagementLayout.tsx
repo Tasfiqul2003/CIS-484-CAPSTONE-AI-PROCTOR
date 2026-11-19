@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { ArrowLeft, BookOpen, ClipboardList, FolderOpen, LayoutDashboard, Users } from "lucide-react";
-import { examManagementPath, examSettingsCategories, examSettingsPath } from "./examSettingsNavigation";
+import { ArrowLeft, ClipboardList, FolderUp, LayoutDashboard } from "lucide-react";
+import { examManagementPath, examSettingsCategories, examSettingsPath, examUploadsPath } from "./examSettingsNavigation";
 import ProfessorHeader from "../../components/professor/ProfessorHeader";
 import "./exam-management.css";
 
@@ -19,7 +19,7 @@ export type ManagedExam = {
 };
 
 /** Which part of the exam is open: the overview, a content page, or one of the settings areas. */
-export type ExamSection = "overview" | "questions" | "materials" | "roster" | (typeof examSettingsCategories)[number]["slug"];
+export type ExamSection = "overview" | "uploads" | (typeof examSettingsCategories)[number]["slug"];
 
 /** Manage Exam: a side menu of every part of the exam, with the open part on the right. */
 export default function ExamManagementLayout({ examId, section = "overview", category: _category, children }: {
@@ -64,7 +64,7 @@ export default function ExamManagementLayout({ examId, section = "overview", cat
     <a href={href} aria-current={section === key ? "page" : undefined}>{icon}<span>{label}</span></a>;
   const published = exam?.status === "published";
   const sectionHref = (key: ExamSection) => key === "overview" ? base
-    : key === "questions" || key === "materials" || key === "roster" ? `${base}/${key}`
+    : key === "uploads" ? examUploadsPath(examId)
       : examSettingsPath(examId, key);
 
   return <div className="professor-dashboard-page manage-exam-page manage-exam-v3">
@@ -82,9 +82,7 @@ export default function ExamManagementLayout({ examId, section = "overview", cat
             <span>Go to</span>
             <select value={section} onChange={event => { window.location.href = sectionHref(event.target.value as ExamSection); }}>
               <option value="overview">Overview</option>
-              <option value="questions">Questions</option>
-              <option value="materials">Course materials</option>
-              <option value="roster">Student roster</option>
+              <option value="uploads">Exam uploads</option>
               <optgroup label="Settings">
                 {examSettingsCategories.map(category => <option key={category.slug} value={category.slug}>{category.title.replace(" Settings", "")}</option>)}
               </optgroup>
@@ -92,9 +90,7 @@ export default function ExamManagementLayout({ examId, section = "overview", cat
           </label>
           <nav aria-label="Exam sections">
             {link("overview", base, "Overview", <LayoutDashboard size={17} aria-hidden="true" />)}
-            {link("questions", `${base}/questions`, "Questions", <BookOpen size={17} aria-hidden="true" />)}
-            {link("materials", `${base}/materials`, "Course materials", <FolderOpen size={17} aria-hidden="true" />)}
-            {link("roster", `${base}/roster`, "Student roster", <Users size={17} aria-hidden="true" />)}
+            {link("uploads", examUploadsPath(examId), "Exam uploads", <FolderUp size={17} aria-hidden="true" />)}
             <p className="manage-exam-nav-heading">Settings</p>
             {examSettingsCategories.map(category => link(category.slug, examSettingsPath(examId, category.slug), category.title.replace(" Settings", ""),
               <span className="manage-exam-nav-glyph" aria-hidden="true">{category.icon}</span>))}

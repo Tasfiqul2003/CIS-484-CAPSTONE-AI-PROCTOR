@@ -1,8 +1,7 @@
 import { useEffect, useState } from "react";
-import { BookOpen, FolderOpen, Trash2, Users } from "lucide-react";
-import RosterUpload from "../../components/RosterUpload";
+import { FolderUp, Trash2 } from "lucide-react";
 import ExamManagementLayout, { type ManagedExam } from "./ExamManagementLayout";
-import { examSettingsCategories, examSettingsPath } from "./examSettingsNavigation";
+import { examSettingsCategories, examSettingsPath, examUploadsPath } from "./examSettingsNavigation";
 
 function errorText(data: unknown, fallback: string) {
   const detail = (data as { detail?: unknown } | null)?.detail;
@@ -71,9 +70,7 @@ function Overview({ exam, reload }: { exam: ManagedExam; reload: () => Promise<v
 
     <h2 className="manage-exam-section-title">Set up</h2>
     <ul className="manage-exam-shortcuts">
-      <li><a href={`/professor/exams/${exam.id}/questions`}><BookOpen size={18} aria-hidden="true" /><strong>Questions</strong><span>{exam.question_count ?? 0} in the bank</span></a></li>
-      <li><a href={`/professor/exams/${exam.id}/materials`}><FolderOpen size={18} aria-hidden="true" /><strong>Course materials</strong><span>What the AI draws on</span></a></li>
-      <li><a href={`/professor/exams/${exam.id}/roster`}><Users size={18} aria-hidden="true" /><strong>Student roster</strong><span>{roster} student{roster === 1 ? "" : "s"}</span></a></li>
+      <li><a href={examUploadsPath(exam.id)}><FolderUp size={18} aria-hidden="true" /><strong>Exam uploads</strong><span>Student roster, course materials, and questions</span></a></li>
       {examSettingsCategories.map(category => <li key={category.slug}>
         <a href={examSettingsPath(exam.id, category.slug)}><span className="manage-exam-nav-glyph" aria-hidden="true">{category.icon}</span>
           <strong>{category.title.replace(" Settings", "")}</strong><span>{category.description}</span></a>
@@ -91,9 +88,8 @@ function Overview({ exam, reload }: { exam: ManagedExam; reload: () => Promise<v
 }
 
 export default function ManageExam() {
-  const match = window.location.pathname.match(/^\/professor\/exams\/([^/]+)(?:\/(roster))?\/?$/);
+  const match = window.location.pathname.match(/^\/professor\/exams\/([^/]+)\/?$/);
   const examId = match?.[1] ?? "";
-  const section = match?.[2] === "roster" ? "roster" : "overview";
   useEffect(() => {
     // An old fragment link can be followed while the overview is already open.
     // Hash-only navigation does not remount this pathname-based application.
@@ -106,7 +102,7 @@ export default function ManageExam() {
     window.addEventListener("hashchange", openLegacyAvatar);
     return () => window.removeEventListener("hashchange", openLegacyAvatar);
   }, [examId]);
-  return <ExamManagementLayout examId={examId} section={section}>{(exam, reload) => section === "roster"
-    ? <RosterUpload examId={exam.id} />
-    : <Overview exam={exam} reload={reload} />}</ExamManagementLayout>;
+  return <ExamManagementLayout examId={examId} section="overview">{(exam, reload) =>
+    <Overview exam={exam} reload={reload} />
+  }</ExamManagementLayout>;
 }

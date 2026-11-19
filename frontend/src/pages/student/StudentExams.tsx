@@ -1,3 +1,4 @@
+import PortalThemeToggle from "../../components/theme/PortalThemeToggle";
 import { useEffect, useState } from "react";
 import { CheckCircle2, Clock, ListChecks, LogOut, Timer } from "lucide-react";
 import OralExamMark from "../../components/brand/OralExamMark";
@@ -171,6 +172,7 @@ export default function StudentExams() {
           <span className="logo-icon" aria-hidden="true"><OralExamMark size={34} /></span>
           <span>OralExam AI</span>
         </a>
+        <PortalThemeToggle />
       </header>
 
       <main id="main-content" className="student-exams-content" aria-labelledby="student-exams-heading">

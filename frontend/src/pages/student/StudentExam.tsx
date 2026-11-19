@@ -1,3 +1,4 @@
+import PortalThemeToggle from "../../components/theme/PortalThemeToggle";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { formatRemaining, readExamClock, remainingTime } from "./examTiming";
 import type { ExamClock, ExamTiming, RemainingTime } from "./examTiming";
@@ -865,6 +866,7 @@ export default function StudentExam() {
           <span aria-hidden="true"><OralExamMark size={34} /></span>
           <strong>OralExam AI</strong>
         </div>
+        <PortalThemeToggle />
       </header>
       <main className="student-exam-content">
         <div className="exam-question-card">
@@ -929,6 +931,7 @@ export default function StudentExam() {
             <span aria-hidden="true"><OralExamMark size={34} /></span>
             <strong>OralExam AI</strong>
           </div>
+          <PortalThemeToggle />
         </header>
         <main className="student-exam-content">
           <div className="exam-question-card">
@@ -949,6 +952,7 @@ export default function StudentExam() {
             <span aria-hidden="true"><OralExamMark size={34} /></span>
             <strong>OralExam AI</strong>
           </div>
+          <PortalThemeToggle />
         </header>
         <main className="student-exam-content">
           <div className="exam-question-card">
@@ -978,6 +982,7 @@ export default function StudentExam() {
             <strong>OralExam AI</strong>
           </div>
           <div className="student-exam-progress">Exam Complete</div>
+          <PortalThemeToggle />
         </header>
 
         <main className="student-confirmation-content">
@@ -1177,6 +1182,7 @@ export default function StudentExam() {
               <span>Question time left</span><strong>{remaining.question === null ? "No limit" : formatRemaining(remaining.question).padStart(5, "0")}</strong>
             </div>
             </>}
+        <PortalThemeToggle />
       </div>
     </header>
     <main className={`student-exam-content student-exam-stage-content${avatarOn ? " is-two-column" : ""}`}>

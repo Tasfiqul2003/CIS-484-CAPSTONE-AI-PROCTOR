@@ -3,7 +3,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import QuestionDrafts from "../../components/exam/QuestionDrafts";
 import {useRequestScope} from "../../components/exam/useRequestScope";
 import type {RequestScope} from "../../components/exam/useRequestScope";
-import OralExamMark from "../../components/brand/OralExamMark";
 import ExamManagementLayout from "./ExamManagementLayout";
 
 type Question = {
@@ -22,9 +21,7 @@ function getExamId(): string | null {
   return match?.[1] ?? null;
 }
 
-export default function QuestionBank() {
-  const examId = getExamId();
-
+export function QuestionBankContent({ examId }: { examId: string }) {
   const [questions, setQuestions] = useState<Question[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
@@ -145,13 +142,12 @@ export default function QuestionBank() {
   }
 
   return (
-    <ExamManagementLayout examId={examId ?? ""} section="questions">{() => (
       <div className="question-bank-content in-manage-layout">
 
 
 
         <div className="question-bank-heading">
-                    <h1>Question Bank</h1>
+          <h2>Questions</h2>
           <p>
             Import questions for this examination, review them, and manage
             the questions your oral exam can use.
@@ -203,8 +199,6 @@ export default function QuestionBank() {
             </p>
           </div>
         </section>
-
-        {examId && <QuestionDrafts examId={examId} onApproved={loadQuestions} />}
 
         <section className="question-list">
           <div className="question-list-heading">
@@ -274,6 +268,8 @@ export default function QuestionBank() {
           )}
         </section>
 
+        {examId && <QuestionDrafts examId={examId} onApproved={loadQuestions} />}
+
         {preview && loadedExam===examId && (
           <div
             className="question-preview-overlay"
@@ -341,6 +337,12 @@ export default function QuestionBank() {
           </div>
         )}
       </div>
-    )}</ExamManagementLayout>
   );
+}
+
+export default function QuestionBank() {
+  const examId = getExamId() ?? "";
+  return <ExamManagementLayout examId={examId} section="uploads">{exam =>
+    <QuestionBankContent key={exam.id} examId={exam.id} />
+  }</ExamManagementLayout>;
 }

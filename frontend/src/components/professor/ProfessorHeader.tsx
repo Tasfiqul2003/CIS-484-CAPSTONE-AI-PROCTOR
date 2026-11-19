@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { UserRound } from "lucide-react";
 import OralExamMark from "../brand/OralExamMark";
+import PortalThemeToggle from "../theme/PortalThemeToggle";
 
 let signedInName: Promise<string> | null = null;
 
@@ -39,6 +40,9 @@ export default function ProfessorHeader({ title, current }: { title?: string; cu
       </nav>
       {name && <span className="professor-topbar-user"><UserRound size={16} aria-hidden="true" />{name}</span>}
     </div>
-    <button type="button" className="dashboard-logout professor-topbar-logout" onClick={() => void logOut()}>Log Out</button>
+    <div className="portal-header-actions">
+      <PortalThemeToggle />
+      <button type="button" className="dashboard-logout professor-topbar-logout" onClick={() => void logOut()}>Log Out</button>
+    </div>
   </header>;
 }

@@ -11,9 +11,10 @@ import {
 import type { ExamSettings, ExamSettingsCategory } from "./examSettings";
 import "./category-settings.css";
 
-export default function ExamCategorySettings({ examId, category }: {
+export default function ExamCategorySettings({ examId, category, onTimeSettingsSaved }: {
   examId: string;
   category: ExamSettingsCategory;
+  onTimeSettingsSaved?: () => void;
 }) {
   const [settings, setSettings] = useState<ExamSettings>(defaultExamSettings);
   const [savedSettings, setSavedSettings] = useState<ExamSettings>(defaultExamSettings);
@@ -255,6 +256,7 @@ export default function ExamCategorySettings({ examId, category }: {
       setSavedSettings(next);
       setSettingsError("");
       setSaved(true);
+      if (category === "time-scheduling") onTimeSettingsSaved?.();
     } catch (error) {
       setSettingsError(
         error instanceof Error
@@ -275,7 +277,7 @@ export default function ExamCategorySettings({ examId, category }: {
       <div className="exam-settings-header">
         <div>
           <p className="eyebrow">CONFIGURATION</p>
-          <h2>Exam Settings</h2>
+          <h2>{category === "time-scheduling" ? "Time limits" : "Exam Settings"}</h2>
           <p>
             {category === "time-scheduling"
               ? "Set time per question and time per exam for new attempts."
@@ -300,7 +302,7 @@ export default function ExamCategorySettings({ examId, category }: {
           className={saved ? "settings-save-button saved" : "settings-save-button"}
           onClick={saveSettings}
         >
-          {saving ? "Saving..." : saved ? "✓ Settings Saved" : "Save Settings"}
+          {saving ? "Saving..." : saved ? "✓ Settings Saved" : category === "time-scheduling" ? "Save time limits" : "Save Settings"}
         </button>
       </div>
 
@@ -325,7 +327,7 @@ export default function ExamCategorySettings({ examId, category }: {
                   ⏱
                 </div>
                 <div>
-                  <h3>Time & Scheduling</h3>
+                  <h3>Exam and question time</h3>
                   <p>Control how long students have to complete the oral examination.</p>
                 </div>
               </div>
@@ -411,7 +413,7 @@ export default function ExamCategorySettings({ examId, category }: {
 
               <p className="settings-notice">
                 Approved extended time is assigned by student EID in{" "}
-                <a href={`/professor/exams/${encodeURIComponent(examId)}/settings/ods-accommodations`}>
+                <a href="#ods-accommodations">
                   ODS Accommodations
                 </a>.
                 {" "}It applies only to the total exam time for that student's new attempts. Time per question stays unchanged.
@@ -446,7 +448,7 @@ export default function ExamCategorySettings({ examId, category }: {
 
               <p className="settings-notice avatar-question-bank-note">
                 Question difficulty is set by the professor in the{" "}
-                <a href={`/professor/exams/${examId}/questions`}>Question Bank</a>.
+                <a href={`/professor/exams/${encodeURIComponent(examId)}/uploads#questions`}>Question Bank</a>.
               </p>
 
               <div className="settings-toggle-list">

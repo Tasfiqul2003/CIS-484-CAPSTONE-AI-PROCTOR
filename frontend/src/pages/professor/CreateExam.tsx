@@ -1,3 +1,4 @@
+import PortalThemeToggle from "../../components/theme/PortalThemeToggle";
 import { useState } from "react";
 import OralExamMark from "../../components/brand/OralExamMark";
 
@@ -145,22 +146,25 @@ export default function CreateExam() {
           <span className="logo-icon" aria-hidden="true"><OralExamMark size={34} /></span>
           <span>OralExam AI</span>
         </div>
-        <button
-          type="button"
-          className="dashboard-logout"
-          onClick={async () => {
-            try {
-              await fetch("/api/auth/logout", {
-                method: "POST",
-                credentials: "include",
-              });
-            } finally {
-              window.location.href = "/";
-            }
-          }}
-        >
-          Log Out
-        </button>
+        <div className="portal-header-actions">
+          <PortalThemeToggle />
+          <button
+            type="button"
+            className="dashboard-logout"
+            onClick={async () => {
+              try {
+                await fetch("/api/auth/logout", {
+                  method: "POST",
+                  credentials: "include",
+                });
+              } finally {
+                window.location.href = "/";
+              }
+            }}
+          >
+            Log Out
+          </button>
+        </div>
       </header>
 
       <main className="create-exam-content">

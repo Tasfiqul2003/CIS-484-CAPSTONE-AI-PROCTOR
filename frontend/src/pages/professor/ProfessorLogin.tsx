@@ -1,3 +1,4 @@
+import PortalThemeToggle from "../../components/theme/PortalThemeToggle";
 
 import { useState, type FormEvent } from "react";
 import OralExamMark from "../../components/brand/OralExamMark";
@@ -71,6 +72,7 @@ export default function ProfessorLogin() {
           <span className="logo-icon" aria-hidden="true"><OralExamMark size={34} /></span>
           <span>OralExam AI</span>
         </a>
+        <PortalThemeToggle />
       </header>
 
       <main className="professor-login-content">

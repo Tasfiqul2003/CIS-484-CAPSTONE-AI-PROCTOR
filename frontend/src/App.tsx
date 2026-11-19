@@ -16,8 +16,10 @@ import QuestionBank from "./pages/professor/QuestionBank";
 import MaterialUpload from "./pages/professor/MaterialUpload";
 import CreateExam from "./pages/professor/CreateExam";
 import ManageExam from "./pages/professor/ManageExam";
+import ExamUploads from "./pages/professor/ExamUploads";
+import ExamPageRedirect from "./pages/professor/ExamPageRedirect";
 import ExamSettingsPage, { LegacyAvatarSettingsRedirect } from "./pages/professor/ExamSettingsPage";
-import { examSettingsCategories } from "./pages/professor/examSettingsNavigation";
+import { examSettingsCategories, examSettingsPath, examUploadsPath } from "./pages/professor/examSettingsNavigation";
 import ExamSubmissions from "./pages/professor/ExamSubmissions";
 import StudentReview from "./pages/professor/StudentReview";
 import ExamSessionReview from "./pages/professor/ExamSessionReview";
@@ -95,6 +97,10 @@ if (path === "/professor/exams/new") {
 
   // Specific settings pages must precede the general Manage Exam route.
   const settingsRoute = path.match(/^\/professor\/exams\/([^/]+)\/settings\/([^/]+)\/?$/);
+  if (settingsRoute && ["time-scheduling", "ods-accommodations"].includes(settingsRoute[2])) {
+    const anchor = settingsRoute[2] === "time-scheduling" ? "time-limits" : "ods-accommodations";
+    return <ExamPageRedirect to={examSettingsPath(settingsRoute[1], "time-ods") + window.location.search + `#${anchor}`} />;
+  }
   const settingsCategory = examSettingsCategories.find(item => item.slug === settingsRoute?.[2]);
   if (settingsRoute && settingsCategory) {
     return <ExamSettingsPage examId={settingsRoute[1]} category={settingsCategory.slug} />;
@@ -107,18 +113,12 @@ if (path === "/professor/exams/new") {
     return <LegacyAvatarSettingsRedirect examId={legacyAvatar[1]} />;
   }
 
-if (
-  path.startsWith("/professor/exams/") &&
-  path.endsWith("/questions")
-  ) {
-    return <QuestionBank />;
-  }
-
-  if (
-    path.startsWith("/professor/exams/") &&
-    path.endsWith("/materials")
-  ) {
-    return <MaterialUpload />;
+  const uploadsRoute = path.match(/^\/professor\/exams\/([^/]+)\/(uploads|questions|materials|roster)\/?$/);
+  if (uploadsRoute) {
+    if (uploadsRoute[2] === "uploads") return <ExamUploads examId={uploadsRoute[1]} />;
+    const section = uploadsRoute[2] as "questions" | "materials" | "roster";
+    const target = examUploadsPath(uploadsRoute[1]) + window.location.search + `#${section}`;
+    return <ExamPageRedirect to={target} />;
   }
 
   if (/^\/professor\/exam-sessions\/[^/]+\/live\/?$/.test(path)) {

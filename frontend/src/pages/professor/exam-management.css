@@ -96,3 +96,25 @@
 @media (prefers-reduced-motion: reduce) {
   .manage-exam-page :is(.manage-exam-card, button, a) { animation: none; transition: none; transform: none; }
 }
+
+/* Combined exam editors keep one sidebar destination for each workflow. */
+.exam-combined-page { display: grid; gap: 24px; min-width: 0; }
+.exam-combined-heading h1 { margin: 0 0 10px; color: var(--oe-text); font-size: clamp(1.75rem, 3vw, 2.25rem); line-height: 1.2; }
+.exam-combined-heading p { margin: 0; color: var(--oe-text-muted); line-height: 1.65; }
+.exam-section-jump { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px; border: 1px solid var(--oe-border); border-radius: 12px; background: var(--oe-surface); }
+.exam-section-jump a { display: inline-flex; align-items: center; min-height: 44px; padding: 10px 14px; border-radius: 8px; color: var(--oe-accent); background: var(--oe-accent-soft); font-weight: 600; font-size: .875rem; text-decoration: none; }
+.exam-section-jump a:hover { background: var(--oe-surface-muted); }
+.exam-section-jump a:focus-visible { outline: 3px solid var(--oe-accent); outline-offset: 2px; }
+.exam-upload-section,
+.exam-combined-section { min-width: 0; scroll-margin-top: 24px; }
+.exam-upload-section { padding: clamp(16px, 2.2vw, 28px); border: 1px solid var(--oe-border); border-radius: 14px; background: var(--oe-surface); }
+.exam-upload-section > .roster-section { padding: 0; }
+.exam-upload-section > .in-manage-layout { width: 100%; max-width: none; margin: 0; padding: 0; }
+.exam-upload-section :is(.question-bank-heading, .material-heading) { margin-bottom: 24px; }
+.exam-upload-section :is(.question-bank-heading, .material-heading) h2 { margin: 0 0 10px; color: var(--oe-text); font-size: 1.5rem; }
+.exam-upload-section :is(.question-bank-heading, .material-heading) p { margin: 0; color: var(--oe-text-muted); font-size: 1rem; }
+.exam-upload-section :is(.question-builder, .question-list, .material-upload-card, .materials-list):last-child { margin-bottom: 0; }
+@media (max-width: 480px) {
+  .exam-section-jump a { flex: 1 1 auto; justify-content: center; }
+  .exam-upload-section :is(.question-builder, .question-list, .material-upload-card, .materials-list) { padding: 16px; }
+}

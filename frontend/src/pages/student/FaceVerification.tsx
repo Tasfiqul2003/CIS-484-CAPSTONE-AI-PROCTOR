@@ -1,3 +1,4 @@
+import PortalThemeToggle from "../../components/theme/PortalThemeToggle";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { CameraOff } from "lucide-react";
 import OralExamMark from "../../components/brand/OralExamMark";
@@ -412,6 +413,7 @@ export default function FaceVerification() {
           </span>
           <span>OralExam AI</span>
         </a>
+        <PortalThemeToggle />
       </header>
 
       <main id="main-content" className="verification-content" aria-labelledby="photo-check-heading">

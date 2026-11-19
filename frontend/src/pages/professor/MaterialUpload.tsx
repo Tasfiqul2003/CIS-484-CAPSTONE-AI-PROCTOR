@@ -46,9 +46,7 @@ async function readResponse(response: Response) {
   return data;
 }
 
-export default function MaterialUpload() {
-  const examId = getExamId();
-
+export function MaterialUploadContent({ examId }: { examId: string }) {
   const [materials, setMaterials] = useState<Material[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
@@ -214,11 +212,10 @@ export default function MaterialUpload() {
   }
 
   return (
-    <ExamManagementLayout examId={examId ?? ""} section="materials">{() => (
       <div className="material-upload-content in-manage-layout">
         <div className="material-heading">
 
-                    <h1>Course Materials</h1>
+          <h2>Course materials</h2>
           <p>
             Upload textbooks, lecture notes, slides, study guides,
             and other course materials.
@@ -387,7 +384,13 @@ export default function MaterialUpload() {
           </div>
         )}
       </div>
-    )}</ExamManagementLayout>
   );
+}
+
+export default function MaterialUpload() {
+  const examId = getExamId() ?? "";
+  return <ExamManagementLayout examId={examId} section="uploads">{exam =>
+    <MaterialUploadContent key={exam.id} examId={exam.id} />
+  }</ExamManagementLayout>;
 }
 

@@ -1,0 +1,296 @@
+/* Shared portal appearance. The homepage never mounts a switch or selects dark. */
+.portal-theme-toggle.portal-theme-toggle {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: auto;
+  min-height: 44px;
+  margin: 0;
+  padding: 8px 12px;
+  border: 1px solid var(--oe-border);
+  border-radius: 999px;
+  background: var(--oe-surface);
+  color: var(--oe-text-muted);
+  font: inherit;
+  font-size: .875rem;
+  font-weight: 600;
+  line-height: 1.3;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.portal-theme-toggle.portal-theme-toggle:hover { background: var(--oe-surface-muted); border-color: var(--oe-accent-border); color: var(--oe-text); }
+.portal-theme-toggle.portal-theme-toggle:focus-visible { outline: 3px solid var(--oe-accent); outline-offset: 3px; }
+.portal-theme-track { display: block; flex: 0 0 30px; width: 30px; height: 18px; padding: 2px; border-radius: 999px; background: var(--oe-border); }
+.portal-theme-track > span { display: block; width: 14px; height: 14px; border-radius: 50%; background: var(--oe-surface); box-shadow: 0 1px 3px rgb(0 0 0 / 20%); transition: transform 160ms ease; }
+.portal-theme-toggle[aria-checked="true"] .portal-theme-track { background: var(--oe-accent); }
+.portal-theme-toggle[aria-checked="true"] .portal-theme-track > span { transform: translateX(12px); }
+
+/* Keep existing header actions and the switch in the normal layout, including mobile. */
+:is(.simple-header, .student-exam-header, .dashboard-header):has(> .portal-theme-toggle) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  height: auto;
+  min-height: 76px;
+  padding-block: 14px;
+}
+:is(.simple-header, .student-exam-header, .dashboard-header):has(> .portal-theme-toggle) > :nth-child(2) { margin-inline-start: auto; }
+.portal-submission-toolbar { position: absolute; top: 20px; right: clamp(16px, 3vw, 40px); }
+.student-submission-page:has(.portal-submission-toolbar) { position: relative; padding-top: 88px; }
+
+/* Reuse the existing dark palette and supply aliases used by the progress screen. */
+:root[data-theme="dark"] {
+  --oe-card: var(--oe-surface);
+  --oe-muted: var(--oe-text-muted);
+  --oe-table-header: var(--oe-surface-muted);
+  --oe-hover: var(--oe-surface-muted);
+  --oe-avatar-bg: var(--oe-accent-soft);
+  --oe-on-accent: #241735;
+}
+
+/* Legacy screens and dialogs still contain fixed light colors. */
+:root[data-theme="dark"] :is(.professor-dashboard, .student-submission-page, .student-confirmation-page) { background: var(--oe-bg); color: var(--oe-text); }
+:root[data-theme="dark"] :is(
+  .dashboard-header, .face-card, .student-submission-card, .student-confirmation-card,
+  .manage-exam-header, .roster-upload-card, .roster-saved-panel, .question-preview-modal,
+  .student-settings-panel-header, .student-settings-panel-footer, .professor-exam-card,
+  .create-section, .question-builder, .question-list, .materials-list, .exam-settings-container,
+  .exam-response-panel, .developer-exam-panel
+) { background: var(--oe-surface); color: var(--oe-text); border-color: var(--oe-border); }
+
+:root[data-theme="dark"] :is(
+  .verification-icon, .login-icon, .student-avatar, .card-icon, .confirmation-icon,
+  .submission-success-icon, .confirmation-summary, .submission-status,
+  .manage-exam-icon, .manage-exam-card-icon, .settings-section-icon,
+  .roster-file-card, .roster-format-card, .roster-actions, .material-preview,
+  .question-preview-meta, .exam-countdown, .exam-stats, .nested-setting,
+  .exam-icon, .create-upload-icon, .question-upload-icon, .material-upload-icon,
+  .material-count, .question-count, .question-upload-help, .exam-icon-option,
+  .student-demo-response, .student-demo-avatar, .live-exam-stage-status
+) { background: var(--oe-surface-muted); color: var(--oe-text); border-color: var(--oe-border); }
+
+:root[data-theme="dark"] :is(input, select, textarea) { background-color: var(--oe-surface); color: var(--oe-text); border-color: var(--oe-border); }
+:root[data-theme="dark"] :where(p, small) { color: var(--oe-text-muted); }
+:root[data-theme="dark"] :where(strong) { color: inherit; }
+:root[data-theme="dark"] :is(.eyebrow, .submission-eyebrow, .confirmation-eyebrow, .manage-exam-card-link) { color: var(--oe-accent); }
+:root[data-theme="dark"] :is(.exam-details, .exam-stats span, .question-item-content > span, .roster-selected-file-info span) { color: var(--oe-text-muted); }
+:root[data-theme="dark"] :is(.create-exam-heading, .question-bank-heading, .material-heading, .dashboard-welcome, .create-section-heading) p:last-child { color: var(--oe-text-muted); }
+:root[data-theme="dark"] .exam-icon-name { color: var(--oe-text-muted); }
+:root[data-theme="dark"] .question-preview-meta span { background: var(--oe-surface-muted); color: var(--oe-text); }
+:root[data-theme="dark"] :is(.material-summary, .material-preview-text) { background: var(--oe-surface-muted); color: var(--oe-text); border-color: var(--oe-border); }
+:root[data-theme="dark"] :is(.question-actions button, .question-preview-footer button, .question-preview-close, .material-item > button) { background: var(--oe-surface); color: var(--oe-accent); border-color: var(--oe-border); }
+:root[data-theme="dark"] :is(.question-actions button, .question-preview-footer button, .question-preview-close, .material-item > button):hover { background: var(--oe-accent-soft); color: var(--oe-accent-hover); }
+:root[data-theme="dark"] :is(.delete-question, .delete-material) { color: var(--oe-danger); }
+:root[data-theme="dark"] :is(.view-submissions-button, .publication-button, .delete-exam-button, .roster-preview-button) { background: var(--oe-surface); color: var(--oe-text); border-color: var(--oe-border); }
+:root[data-theme="dark"] .publication-button.is-published { background: var(--oe-success-bg); color: var(--oe-success); border-color: var(--oe-success); }
+:root[data-theme="dark"] :is(.view-submissions-button, .publication-button, .roster-preview-button):hover { background: var(--oe-accent-soft); color: var(--oe-accent); }
+:root[data-theme="dark"] .delete-exam-button { color: var(--oe-danger); }
+:root[data-theme="dark"] .delete-exam-button:hover { background: var(--oe-danger-bg); }
+:root[data-theme="dark"] .exam-icon-option.selected { background: var(--oe-accent-soft); border-color: var(--oe-accent); }
+:root[data-theme="dark"] :is(button, input, textarea, select):disabled { background: var(--oe-surface-muted); color: var(--oe-text-muted); border-color: var(--oe-border); }
+
+/* Presentation previews use the same chrome; avatar artwork keeps its own colors. */
+:root[data-theme="dark"] :is(.student-preview-notice, .student-preview-state, .student-policy-context,
+  .student-policy-update, .student-assistance-remaining, .student-settings-preview-entry
+) { background: var(--oe-accent-soft); color: var(--oe-accent); border-color: var(--oe-accent-border); }
+:root[data-theme="dark"] :is(.student-preview-notice, .student-policy-context, .student-policy-update) p { color: var(--oe-text-muted); }
+:root[data-theme="dark"] :is(.student-demo-stage, .live-exam-presentation .exam-avatar-stage) { background-color: var(--oe-surface-muted); }
+:root[data-theme="dark"] .student-settings-preview-page :where(main) button:not(.student-preview-primary) { background: var(--oe-surface); color: var(--oe-accent); border-color: var(--oe-accent-border); }
+:root[data-theme="dark"] :is(.student-assistance-exhausted, .student-demo-response) { background: var(--oe-surface-muted); color: var(--oe-text-muted); border-color: var(--oe-border); }
+:root[data-theme="dark"] :is(.overview-icon-amber, .live-exam-presentation-minimal .live-exam-stage-status) { background: var(--oe-warning-bg); color: var(--oe-warning); }
+:root[data-theme="dark"] .overview-icon-blue { background: var(--oe-info-bg); color: var(--oe-info); }
+:root[data-theme="dark"] .ods-accommodations th { background: var(--oe-surface-muted); }
+:root[data-theme="dark"] .ods-accommodations p.ods-success { background: var(--oe-success-bg); color: var(--oe-success); border-color: var(--oe-success); }
+
+:root[data-theme="dark"] :is(h1, h2, h3, h4, label, legend, summary,
+  .question-text, .question-topic, .material-name, .student-details h2,
+  .student-submission-card strong, .confirmation-row strong, .submission-status-row strong,
+  .manage-exam-settings-heading h2, .manage-exam-settings-card h3
+) { color: var(--oe-text); }
+:root[data-theme="dark"] :is(
+  .face-description, .jacard-placeholder p, .face-instructions, .face-instructions p,
+  .confirmation-message, .submission-message, .submission-status-row span,
+  .student-settings-description, .student-settings-help, .student-settings-status,
+  .roster-saved-empty, .roster-file-card p, .settings-description, .settings-field > span
+) { color: var(--oe-text-muted); }
+
+:root[data-theme="dark"] :is(
+  .submission-divider, .student-settings-group + .student-settings-group
+) { border-color: var(--oe-border); }
+:root[data-theme="dark"] .submission-divider { background: var(--oe-border); }
+:root[data-theme="dark"] :is(.student-settings-panel select, .student-settings-panel button) { background: var(--oe-surface); color: var(--oe-text); border-color: var(--oe-border); }
+:root[data-theme="dark"] :is(.student-settings-panel button:hover:not(:disabled), .student-demo-assistance-item button) { background: var(--oe-surface-muted); color: var(--oe-accent); border-color: var(--oe-accent-border); }
+
+/* Lavender primary controls need a dark foreground in this palette. */
+:root[data-theme="dark"] :is(
+  .login-button, .create-exam-button, .save-exam-button, .manage-exam-button,
+  .exam-start-button, .exam-next-button, .continue-button, .confirmation-submit-button,
+  .settings-save-button, .dashboard-action.primary, .jacard-placeholder button,
+  .question-upload-zone button, .create-upload-zone button, .submission-exit-button,
+  .student-settings-panel .student-settings-save, .exam-card-actions .primary
+):not(:disabled) { background: var(--oe-accent); color: var(--oe-on-accent); border-color: var(--oe-accent); }
+:root[data-theme="dark"] :is(
+  .login-button, .create-exam-button, .save-exam-button, .manage-exam-button,
+  .exam-start-button, .exam-next-button, .continue-button, .confirmation-submit-button,
+  .settings-save-button, .dashboard-action.primary, .jacard-placeholder button,
+  .question-upload-zone button, .create-upload-zone button, .submission-exit-button,
+  .student-settings-panel .student-settings-save, .exam-card-actions .primary
+):hover:not(:disabled) { background: var(--oe-accent-hover); color: var(--oe-on-accent); }
+:root[data-theme="dark"] .dashboard-action.primary :is(strong, p, .dashboard-action-icon, .dashboard-action-arrow) { color: var(--oe-on-accent); }
+
+/* Preserve status meanings across both themes. */
+:root[data-theme="dark"] :is(.status-not-started, .status-abandoned, .status-unknown) { background: var(--oe-surface-muted); color: var(--oe-text-muted); border-color: var(--oe-border); }
+:root[data-theme="dark"] :is(.status-in-progress, .settings-notice, .avatar-notice) { background: var(--oe-info-bg); color: var(--oe-info); border-color: var(--oe-info); }
+:root[data-theme="dark"] :is(.status-pending, .developer-demo-banner, .developer-demo-note) { background: var(--oe-warning-bg); color: var(--oe-warning); border-color: var(--oe-warning); }
+:root[data-theme="dark"] :is(.status-graded, .verified-badge, .exam-status-badge, .submission-success-icon) { background: var(--oe-success-bg); color: var(--oe-success); border-color: var(--oe-success); }
+:root[data-theme="dark"] :is(.status-flagged, .progress-error, .student-settings-error, .confirmation-warning) { background: var(--oe-danger-bg); color: var(--oe-danger); border-color: var(--oe-danger); }
+:root[data-theme="dark"] :is(.form-error, .login-error, .dashboard-error, .exam-error, .material-error, .question-error, .avatar-error, .student-policy-error) { background: var(--oe-danger-bg); color: var(--oe-danger); border-color: var(--oe-danger); }
+
+@media (max-width: 600px) {
+  :is(.simple-header, .student-exam-header, .dashboard-header):has(> .portal-theme-toggle) { padding-inline: 16px; }
+  .portal-theme-toggle.portal-theme-toggle { gap: 6px; padding-inline: 10px; }
+  :is(.simple-header, .dashboard-header):has(> .portal-theme-toggle) .dashboard-role-label { display: none; }
+  .portal-submission-toolbar { top: 16px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .portal-theme-toggle, .portal-theme-track > span { transition: none; }
+}
+
+/* The current professor header is shared by dashboards, settings, reviews and avatars. */
+.portal-header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-inline-start: auto;
+}
+.professor-topbar > .portal-header-actions { justify-self: end; }
+.portal-header-actions .dashboard-logout { margin: 0; white-space: nowrap; }
+.simple-header:has(> .portal-header-actions) { height: auto; min-height: 76px; }
+.create-exam-page .simple-header { flex-wrap: wrap; gap: 12px; padding-block: 14px; }
+.student-exam-header > .portal-theme-toggle { margin-inline-start: auto; align-self: center; }
+
+/* New row layouts and avatar/review editors reuse the existing semantic palette. */
+:root[data-theme="dark"] :is(.student-exams-completed, .review-rubric-table th) {
+  background: var(--oe-surface-muted);
+  color: var(--oe-text);
+  border-color: var(--oe-border);
+}
+:root[data-theme="dark"] :is(.exam-row-status.published, .student-exams-completed li svg, .record-found-badge) {
+  background: var(--oe-success-bg);
+  color: var(--oe-success);
+}
+:root[data-theme="dark"] .exam-row-status.draft { background: var(--oe-warning-bg); color: var(--oe-warning); }
+:root[data-theme="dark"] :is(.exam-row-danger, .manage-exam-danger button) { color: var(--oe-danger); }
+:root[data-theme="dark"] :is(.exam-row-danger, .manage-exam-danger button):hover {
+  background: var(--oe-danger-bg);
+  border-color: var(--oe-danger);
+}
+:root[data-theme="dark"] :is(
+  .exam-row-actions > .exam-row-primary, .manage-exam-overview .is-primary,
+  .avatar-primary-button, .avatar-primary, .rubric-save, .professor-back-button,
+  .professor-review-assess, .avatar-tabs button[aria-pressed="true"],
+  .professor-review-page .review-primary-button
+):not(:disabled) { background: var(--oe-accent); color: var(--oe-on-accent); border-color: var(--oe-accent); }
+:root[data-theme="dark"] :is(
+  .exam-row-actions > .exam-row-primary, .manage-exam-overview .is-primary,
+  .avatar-primary-button, .avatar-primary, .rubric-save, .professor-back-button,
+  .professor-review-assess, .avatar-tabs button[aria-pressed="true"],
+  .professor-review-page .review-primary-button
+):hover:not(:disabled) { background: var(--oe-accent-hover); color: var(--oe-on-accent); }
+:root[data-theme="dark"] .manage-exam-sidebar nav a[aria-current="page"] {
+  background: var(--oe-accent);
+  color: var(--oe-on-accent);
+}
+:root[data-theme="dark"] .manage-exam-sidebar nav a[aria-current="page"] span { color: inherit; }
+:root[data-theme="dark"] :is(.avatar-passage, .review-answer) {
+  background: var(--oe-surface-muted);
+  color: var(--oe-text);
+  border-color: var(--oe-border);
+}
+:root[data-theme="dark"] .review-evaluation {
+  background: var(--oe-warning-bg);
+  color: var(--oe-warning);
+  border-color: var(--oe-warning);
+}
+:root[data-theme="dark"] .review-evaluation span { color: var(--oe-warning); }
+:root[data-theme="dark"] .manage-exam-danger {
+  background: var(--oe-danger-bg);
+  border-color: var(--oe-danger);
+}
+:root[data-theme="dark"] :is(.manage-exam-danger button, .exam-row-actions > button.exam-row-danger) {
+  background: var(--oe-danger-bg);
+  color: var(--oe-danger);
+  border-color: var(--oe-danger);
+}
+
+@media (max-width: 760px) {
+  header.simple-header.professor-topbar {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: "logo theme" "nav nav" ". logout";
+    padding-inline: 16px;
+  }
+  .professor-topbar > .portal-header-actions { display: contents; }
+  .professor-topbar .portal-header-actions > .portal-theme-toggle { grid-area: theme; justify-self: end; }
+  .professor-topbar .portal-header-actions > .professor-topbar-logout { grid-area: logout; justify-self: end; }
+  .student-exam-header > .exam-header-controls { order: 3; flex-basis: 100%; }
+}
+@media (max-width: 380px) {
+  .portal-theme-toggle > svg { display: none; }
+  .simple-header:has(.portal-theme-toggle) .logo { font-size: 16px; gap: 8px; white-space: nowrap; }
+}
+
+/* Current recording/review and automatic-exam screens use the same dark surfaces. */
+.portal-live-toolbar { display: flex; justify-content: flex-end; margin-bottom: 12px; }
+:root[data-theme="dark"] :is(.professor-review-page.review-settings-style, .student-exam-page.student-exam-active) {
+  background: var(--oe-bg); color: var(--oe-text);
+}
+:root[data-theme="dark"] :is(.review-settings-style, .student-review-page) :is(
+  .professor-review-heading, .exam-card, .question-builder, .professor-review-panel,
+  .review-question, .student-review-heading, .student-review-card, .student-review-section,
+  fieldset, th, td
+) { background: var(--oe-surface); color: var(--oe-text); border-color: var(--oe-border); }
+:root[data-theme="dark"] :is(.review-settings-style, .student-review-page) :is(
+  p, .professor-review-title h1 span, .review-question-label, .review-turn-meta,
+  .professor-review-note, .student-review-meta, .student-review-context
+) { color: var(--oe-text-muted); }
+:root[data-theme="dark"] .review-settings-style :is(.review-answer, .review-transcript-line) {
+  background: var(--oe-surface-muted); color: var(--oe-text); border-color: var(--oe-border);
+}
+:root[data-theme="dark"] .review-settings-style .review-evaluation {
+  background: var(--oe-warning-bg); color: var(--oe-warning);
+}
+:root[data-theme="dark"] .student-exam-page.student-exam-active .student-exam-header {
+  background: var(--oe-surface); border-color: var(--oe-border);
+}
+:root[data-theme="dark"] .student-exam-active :is(.student-exam-title, .exam-timer-chip span) { color: var(--oe-text-muted); }
+:root[data-theme="dark"] .student-exam-active .exam-timer-chip {
+  background: var(--oe-surface-muted); border-color: var(--oe-border);
+}
+:root[data-theme="dark"] .student-exam-active .exam-timer-chip strong { color: var(--oe-accent); }
+:root[data-theme="dark"] :is(.automatic-heard-panel, .automatic-playback-recovery, .environment-preview-choices label, .exam-identity-notice) {
+  background: var(--oe-surface-muted); color: var(--oe-text); border-color: var(--oe-border);
+}
+:root[data-theme="dark"] .environment-preview-choices label:has(input:checked) { background: var(--oe-accent-soft); border-color: var(--oe-accent); }
+:root[data-theme="dark"] .automatic-captions-toggle { background: var(--oe-surface); color: var(--oe-accent); border-color: var(--oe-accent-border); }
+:root[data-theme="dark"] :is(.recording-notifications, .create-review-section) {
+  background: var(--oe-surface); color: var(--oe-text); border-color: var(--oe-border);
+}
+:root[data-theme="dark"] :is(.create-workflow-guide, .create-review-grid > div) {
+  background: var(--oe-surface-muted); border-color: var(--oe-border);
+}
+:root[data-theme="dark"] .create-exam-page :is(.create-context-heading p, .create-workflow-guide small,
+  .create-review-heading > p:last-child, .create-review-grid dt, .create-review-note) { color: var(--oe-text-muted); }
+:root[data-theme="dark"] .create-exam-page .create-review-grid dd { color: var(--oe-text); }
+:root[data-theme="dark"] .create-workflow-guide strong { color: var(--oe-text); }
+:root[data-theme="dark"] .recording-notifications-empty {
+  background: var(--oe-surface-muted); color: var(--oe-text-muted); border-color: var(--oe-border);
+}
+:root[data-theme="dark"] .recording-notifications p:not(.eyebrow) { color: var(--oe-text-muted); }
+:root[data-theme="dark"] .student-review-roster-link { color: var(--oe-accent); }
+:root[data-theme="dark"] .student-review-roster-action { background: var(--oe-surface); color: var(--oe-accent); border-color: var(--oe-border); }
+:root[data-theme="dark"] .automatic-heard-meta { color: var(--oe-text-muted); }

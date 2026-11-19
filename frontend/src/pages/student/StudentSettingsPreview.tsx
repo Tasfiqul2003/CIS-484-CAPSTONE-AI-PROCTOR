@@ -1,3 +1,4 @@
+import PortalThemeToggle from "../../components/theme/PortalThemeToggle";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import StudentSettingsPanel from "../../components/student-settings/StudentSettingsPanel";
 import AIAvatar from "../../components/AIAvatar";
@@ -200,6 +201,7 @@ function StudentPreview({ policy, preferenceExamId, onRestart, policyNotice, con
     <header className="simple-header">
       <div className="logo"><span className="logo-icon" aria-hidden="true"><OralExamMark size={34} /></span><span>OralExam AI</span></div>
       <a href="/student/exams">Back to Exams</a>
+        <PortalThemeToggle />
     </header>
     <main className="student-settings-preview-content">
       <div className="student-preview-heading">

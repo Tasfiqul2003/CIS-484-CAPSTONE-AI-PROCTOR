@@ -4,7 +4,7 @@ import stat
 import zipfile
 from pathlib import PurePosixPath
 
-from PIL import Image, UnidentifiedImageError
+from PIL import Image, ImageOps, UnidentifiedImageError
 
 
 MAX_ARCHIVE_BYTES = 25 * 1024 * 1024
@@ -14,6 +14,24 @@ MAX_PHOTO_BYTES = 5 * 1024 * 1024
 MAX_TOTAL_PHOTO_BYTES = 20 * 1024 * 1024
 MAX_PHOTO_DIMENSION = 4096
 PHOTO_PATH = re.compile(r"photos/([A-Za-z0-9._-]{1,64})\.(jpg|jpeg|png)", re.IGNORECASE)
+
+
+def roster_photo_thumbnail(data: bytes) -> bytes:
+    """Return a bounded, upright JPEG preview without the source metadata."""
+    if not data or len(data) > MAX_PHOTO_BYTES:
+        raise ValueError("Photo unavailable.")
+    try:
+        with Image.open(io.BytesIO(data)) as image:
+            if image.format not in {"JPEG", "PNG"} or max(image.size) > MAX_PHOTO_DIMENSION:
+                raise ValueError("Photo unavailable.")
+            thumbnail = ImageOps.exif_transpose(image).convert("RGB")
+            thumbnail.thumbnail((128, 160), Image.Resampling.LANCZOS)
+            thumbnail.info.clear()
+            output = io.BytesIO()
+            thumbnail.save(output, format="JPEG", quality=85)
+            return output.getvalue()
+    except (OSError, Image.DecompressionBombError) as error:
+        raise ValueError("Photo unavailable.") from error
 
 
 def _read_photo(data: bytes, filename: str) -> bytes:

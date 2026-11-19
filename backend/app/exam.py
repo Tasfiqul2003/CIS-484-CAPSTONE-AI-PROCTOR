@@ -11,6 +11,7 @@ from datetime import timedelta, datetime, timezone
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, File, Form, UploadFile, Header, Request
+from fastapi.responses import Response
 from pydantic import BaseModel, Field, ConfigDict, model_validator
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -24,7 +25,7 @@ from .face_matching import (
     face_check_decision,
     get_face_matcher,
 )
-from .roster_photos import MAX_ARCHIVE_BYTES, read_photo_roster_archive
+from .roster_photos import MAX_ARCHIVE_BYTES, read_photo_roster_archive, roster_photo_thumbnail
 from .exam_video import _recording_root, _retention_deadline
 from .avatar_session import snapshot_for_exam, session_policy, StudentPreferences, _validate_preferences
 from .avatar_timing import pause_sum_sql, active_pause_until_sql
@@ -2114,7 +2115,8 @@ def get_exam_roster(
 
     rows = db.execute(
         text("""
-            SELECT s.name, s.email, s.eid
+            SELECT s.id AS student_id, s.name, s.email, s.eid,
+                   (s.official_photo IS NOT NULL AND octet_length(s.official_photo) > 0) AS has_photo
             FROM exam_roster AS r
             JOIN students AS s ON s.id = r.student_id
             WHERE r.exam_template_id = CAST(:exam_id AS uuid)
@@ -2124,6 +2126,40 @@ def get_exam_roster(
     ).mappings().all()
 
     return [dict(row) for row in rows]
+
+
+@router.get("/templates/{exam_template_id}/roster/{student_id}/photo")
+def get_roster_photo(
+    exam_template_id: UUID,
+    student_id: UUID,
+    account: dict = Depends(require_professor),
+    db: Session = Depends(get_db),
+):
+    # Scope the photo to both the saved roster and the authenticated exam owner.
+    student = db.execute(
+        text("""
+            SELECT s.official_photo
+            FROM exam_roster AS r
+            JOIN students AS s ON s.id = r.student_id
+            JOIN exam_templates AS e ON e.id = r.exam_template_id
+            WHERE r.exam_template_id = CAST(:exam_id AS uuid)
+              AND r.student_id = CAST(:student_id AS uuid)
+              AND e.professor_id = CAST(:professor_id AS uuid)
+        """),
+        {
+            "exam_id": str(exam_template_id),
+            "student_id": str(student_id),
+            "professor_id": account["professor_id"],
+        },
+    ).mappings().first()
+    headers = {"Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff"}
+    if not student or not student["official_photo"]:
+        raise HTTPException(404, "Photo unavailable.", headers=headers)
+    try:
+        thumbnail = roster_photo_thumbnail(bytes(student["official_photo"]))
+    except ValueError:
+        raise HTTPException(404, "Photo unavailable.", headers=headers)
+    return Response(thumbnail, media_type="image/jpeg", headers=headers)
 
 
 @router.get("/templates/{exam_template_id}/progress")

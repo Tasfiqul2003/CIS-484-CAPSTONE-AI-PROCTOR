@@ -1,3 +1,4 @@
+import PortalThemeToggle from "../../components/theme/PortalThemeToggle";
 import { useEffect, useRef, useState } from "react";
 import { createLiveVideo, type LiveVideoState } from "../../components/media/liveVideo";
 
@@ -39,6 +40,7 @@ export default function ProfessorLiveVideo() {
   const active = started && !["ended", "unavailable"].includes(state);
   return (
     <main className="dashboard-main" style={{ maxWidth: "70rem", margin: "0 auto", padding: "1rem" }}>
+      <div className="portal-live-toolbar"><PortalThemeToggle /></div>
       <a href="/professor/exams">Back to exams</a>
       <h1>Live student video</h1>
       <p>This view is available to the owning professor during an active assessed recording. Saved recording review is available separately after submission.</p>

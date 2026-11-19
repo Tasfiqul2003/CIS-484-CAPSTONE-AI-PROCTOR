@@ -1,3 +1,4 @@
+import PortalThemeToggle from "../../components/theme/PortalThemeToggle";
 import { useCallback, useEffect, useState } from "react";
 import RecordingReview from './RecordingReview';
 import DownloadAllButton from '../../components/professor/DownloadAllButton';
@@ -201,6 +202,7 @@ export default function StudentReview({
           <span className="logo-icon" aria-hidden="true"><span>OE</span></span>
           <span>OralExam AI</span>
         </div>
+        <PortalThemeToggle />
       </header>
 
       <main className="student-review-content">
